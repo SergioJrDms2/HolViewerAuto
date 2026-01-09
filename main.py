@@ -605,48 +605,6 @@ def main():
                         use_container_width=True
                     )
                     
-                    # Exportar
-                    st.markdown("---")
-                    st.subheader("💾 Exportar Resultados")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        # Excel
-                        buffer = io.BytesIO()
-                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                            df_filtrado.to_excel(writer, index=False, sheet_name='Oportunidades')
-                        buffer.seek(0)
-                        
-                        st.download_button(
-                            label="📥 Download Excel",
-                            data=buffer,
-                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
-                        )
-                    
-                    with col2:
-                        # CSV
-                        csv = df_filtrado.to_csv(index=False, encoding='utf-8-sig')
-                        st.download_button(
-                            label="📥 Download CSV",
-                            data=csv,
-                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                    
-                    with col3:
-                        # JSON
-                        json_data = df_filtrado.to_json(orient='records', indent=2)
-                        st.download_button(
-                            label="📥 Download JSON",
-                            data=json_data,
-                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                            mime="application/json",
-                            use_container_width=True
-                        )
 
     # Footer
     st.markdown("---")
