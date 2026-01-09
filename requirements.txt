@@ -1,3 +1,4 @@
 pdfplumber
 PyPDF2
 plotly
+pandas
