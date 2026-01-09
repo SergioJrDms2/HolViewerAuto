@@ -77,9 +77,7 @@ CARTOES_CONHECIDOS = [
     "PIXCARD",
     "MEUCASHCARD",
     "PINE",
-    "BRADESCO",
-    "STARCARD",
-    "ANTICIPAY"
+    "BRADESCO"
 ]
 
 # ============================================================================
