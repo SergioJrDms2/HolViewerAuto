@@ -453,21 +453,13 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
     
     return valores_cartoes
 
-def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict) -> Dict:
+def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict, salario_liquido_real: float = 0.0) -> Dict:
     """
-    Calcula a margem disponível do cliente
-    
-    Fórmula: Margem = (Salário Bruto - Descontos Fixos) × 30%
-    
-    Args:
-        salario_bruto: Valor do salário bruto extraído do contracheque
-        descontos_fixos: Dicionário com os descontos fixos categorizados
-        valores_cartoes: Dicionário com os valores de cartões/empréstimos
-    
-    Returns:
-        Dicionário com informações detalhadas da margem
+    Calcula a margem disponível baseada na regra:
+    Margem = Líquido do Holerite - Comprometido (Cartões)
     """
-    # Soma todos os descontos fixos
+    
+    # Soma descontos fixos (apenas para registro/exibição)
     total_descontos_fixos = (
         descontos_fixos['inss'] +
         descontos_fixos['irrf'] +
@@ -477,26 +469,29 @@ def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valo
         descontos_fixos['vale_transporte']
     )
     
-    # Calcula o salário líquido (antes dos empréstimos)
-    salario_liquido = salario_bruto - total_descontos_fixos
-    
-    # Calcula a margem total disponível (30% do salário líquido)
-    margem_total = salario_liquido * 0.30
-    
-    # Total já comprometido com cartões/empréstimos
+    # Total já comprometido com cartões identificados
     total_cartoes = valores_cartoes['total']
     
-    # Margem disponível para novos empréstimos
-    margem_disponivel = margem_total - total_cartoes
+    # LÓGICA NOVA:
+    # A base agora é o VALOR LÍQUIDO extraído do PDF.
+    # Se por algum motivo o código não achou o líquido (0.0), 
+    # usamos (Bruto - Descontos Fixos) como fallback.
+    if salario_liquido_real > 0:
+        base_calculo = salario_liquido_real
+    else:
+        base_calculo = salario_bruto - total_descontos_fixos
+
+    # Cálculo da Margem Disponível (Líquido - Comprometido)
+    margem_disponivel = base_calculo - total_cartoes
     
     return {
         'salario_bruto': salario_bruto,
         'total_descontos_fixos': total_descontos_fixos,
-        'salario_liquido': salario_liquido,
-        'margem_total': margem_total,
+        'salario_liquido': base_calculo, # Agora reflete a base usada
+        'margem_total': base_calculo,    # Para o gráfico, o "Total" agora é o Líquido
         'total_cartoes': total_cartoes,
         'margem_disponivel': margem_disponivel,
-        'percentual_utilizado': (total_cartoes / margem_total * 100) if margem_total > 0 else 0,
+        'percentual_utilizado': (total_cartoes / base_calculo * 100) if base_calculo > 0 else 0,
         'tem_margem': margem_disponivel > 0
     }
 
@@ -537,12 +532,22 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
     valores_cartoes = extrair_valores_cartoes(texto, cartoes)
     salario_bruto = extrair_salario_bruto(texto)
     
-    # VALIDAÇÃO: Se não conseguiu extrair salário bruto,
-    # tenta usar vencimentos_total como fallback
+    # Obtém o salário líquido extraído (trata se vier vazio/string)
+    salario_liquido_real = info_financeira.get('liquido', 0.0)
+    if isinstance(salario_liquido_real, str):
+        salario_liquido_real = 0.0
+    
+    # VALIDAÇÃO: Se não conseguiu extrair salário bruto, tenta fallback
     if salario_bruto == 0.0 and info_financeira.get('vencimentos_total', 0) > 0:
         salario_bruto = info_financeira['vencimentos_total']
     
-    margem = calcular_margem_disponivel(salario_bruto, descontos_fixos, valores_cartoes)
+    # === AQUI ESTÁ A MUDANÇA NA CHAMADA ===
+    margem = calcular_margem_disponivel(
+        salario_bruto, 
+        descontos_fixos, 
+        valores_cartoes, 
+        salario_liquido_real=salario_liquido_real
+    )
     
     return {
         'arquivo': nome_arquivo,
@@ -759,7 +764,7 @@ def main():
                     
                     with col2:
                         st.metric(
-                            "Margem Total (30%)",
+                            "Salário Líquido Base",
                             f"R$ {margem['margem_total']:,.2f}",
                             help="30% dos descontos fixos"
                         )
