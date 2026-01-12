@@ -177,7 +177,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     linhas = texto_normalizado.split('\n')
     
     cartoes_encontrados = {
-        'nossos_contratos': [],  # Nova categoria
+        'nossos_contratos': [],
         'conhecidos': [],
         'desconhecidos': []
     }
@@ -205,9 +205,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
                                   ['CARTAO', 'CART ', 'CRED', 'CREDITO', 'Emprestimo', 'EMPREST', 'CARD'])
         
         if tem_keyword_cartao:
-            # Verifica se não é nosso produto
             eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
-            # Verifica se não é de terceiros conhecido
             eh_conhecido = any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS)
             
             if not eh_nosso and not eh_conhecido and linha.strip():
@@ -258,6 +256,158 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
     return info
 
 # ============================================================================
+# FUNÇÕES DE CÁLCULO DE MARGEM
+# ============================================================================
+
+def extrair_valores_linha(linha: str) -> float:
+    """Extrai o último valor numérico de uma linha (coluna de descontos)"""
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if valores:
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
+def extrair_descontos_fixos(texto: str) -> Dict:
+    """Identifica e extrai valores de descontos fixos"""
+    texto_normalizado = normalizar_texto(texto)
+    linhas = texto.split('\n')
+    
+    descontos_fixos = {
+        'inss': 0.0,
+        'irrf': 0.0,
+        'previdencia': 0.0,
+        'pensao': 0.0,
+        'plano_saude': 0.0,
+        'vale_transporte': 0.0,
+        'outros': []
+    }
+    
+    keywords = {
+        'inss': ['INSS', 'I.N.S.S', 'INSTITUTO NACIONAL'],
+        'irrf': ['IRRF', 'I.R.R.F', 'IMPOSTO DE RENDA', 'IR FONTE', 'IMP RENDA'],
+        'previdencia': ['PREV', 'PREVIDENCIA', 'RPPS', 'UASPREV', 'IPSM', 'FUNPREV'],
+        'pensao': ['PENSAO', 'PENSÃO', 'ALIMENTICIA', 'ALIMENTÍCIA'],
+        'plano_saude': ['PLANO', 'SAUDE', 'SAÚDE', 'ASSISTENCIA MEDICA', 'UNIMED', 'AMIL'],
+        'vale_transporte': ['VALE TRANSPORTE', 'VT', 'V.TRANSPORTE', 'TRANSP']
+    }
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        for categoria, palavras in keywords.items():
+            if any(palavra in linha_norm for palavra in palavras):
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    if categoria == 'inss':
+                        descontos_fixos['inss'] += valor
+                    elif categoria == 'irrf':
+                        descontos_fixos['irrf'] += valor
+                    elif categoria == 'previdencia':
+                        descontos_fixos['previdencia'] += valor
+                    elif categoria == 'pensao':
+                        descontos_fixos['pensao'] += valor
+                    elif categoria == 'plano_saude':
+                        descontos_fixos['plano_saude'] += valor
+                    elif categoria == 'vale_transporte':
+                        descontos_fixos['vale_transporte'] += valor
+                    
+                    descontos_fixos['outros'].append({
+                        'descricao': linha.strip(),
+                        'valor': valor,
+                        'categoria': categoria
+                    })
+                    break
+    
+    return descontos_fixos
+
+def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
+    """Extrai os valores dos descontos de cartões identificados"""
+    valores_cartoes = {
+        'nossos_contratos': [],
+        'conhecidos': [],
+        'desconhecidos': [],
+        'total': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # Processa nossos contratos
+    for cartao_linha in cartoes_encontrados.get('nossos_contratos', []):
+        valor = extrair_valores_linha(cartao_linha)
+        if valor > 0:
+            valores_cartoes['nossos_contratos'].append({
+                'descricao': cartao_linha.strip(),
+                'valor': valor
+            })
+            valores_cartoes['total'] += valor
+    
+    # Processa cartões conhecidos
+    for cartao_linha in cartoes_encontrados.get('conhecidos', []):
+        valor = extrair_valores_linha(cartao_linha)
+        if valor > 0:
+            valores_cartoes['conhecidos'].append({
+                'descricao': cartao_linha.strip(),
+                'valor': valor
+            })
+            valores_cartoes['total'] += valor
+    
+    # Processa cartões desconhecidos
+    for cartao_linha in cartoes_encontrados.get('desconhecidos', []):
+        valor = extrair_valores_linha(cartao_linha)
+        if valor > 0:
+            valores_cartoes['desconhecidos'].append({
+                'descricao': cartao_linha.strip(),
+                'valor': valor
+            })
+            valores_cartoes['total'] += valor
+    
+    # Busca empréstimos não identificados
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if any(kw in linha_norm for kw in ['EMPRESTIMO', 'EMPRÉSTIMO', 'CONSIGNADO', 'REFINANCIAMENTO']):
+            ja_contado = False
+            for categoria in valores_cartoes.values():
+                if isinstance(categoria, list):
+                    if any(item.get('descricao', '').strip() == linha.strip() for item in categoria):
+                        ja_contado = True
+                        break
+            
+            if not ja_contado:
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    valores_cartoes['desconhecidos'].append({
+                        'descricao': linha.strip(),
+                        'valor': valor
+                    })
+                    valores_cartoes['total'] += valor
+    
+    return valores_cartoes
+
+def calcular_margem_disponivel(descontos_fixos: Dict, valores_cartoes: Dict) -> Dict:
+    """Calcula a margem disponível do cliente"""
+    total_descontos_fixos = (
+        descontos_fixos['inss'] +
+        descontos_fixos['irrf'] +
+        descontos_fixos['previdencia'] +
+        descontos_fixos['pensao'] +
+        descontos_fixos['plano_saude'] +
+        descontos_fixos['vale_transporte']
+    )
+    
+    margem_total = total_descontos_fixos * 0.30
+    total_cartoes = valores_cartoes['total']
+    margem_disponivel = margem_total - total_cartoes
+    
+    return {
+        'total_descontos_fixos': total_descontos_fixos,
+        'margem_total': margem_total,
+        'total_cartoes': total_cartoes,
+        'margem_disponivel': margem_disponivel,
+        'percentual_utilizado': (total_cartoes / margem_total * 100) if margem_total > 0 else 0,
+        'tem_margem': margem_disponivel > 0
+    }
+
+# ============================================================================
 # FUNÇÃO PRINCIPAL DE ANÁLISE
 # ============================================================================
 
@@ -272,13 +422,21 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
     info_financeira = extrair_informacoes_financeiras(texto)
     cartoes = identificar_cartoes_credito(texto)
     
+    # Calcula margem disponível
+    descontos_fixos = extrair_descontos_fixos(texto)
+    valores_cartoes = extrair_valores_cartoes(texto, cartoes)
+    margem = calcular_margem_disponivel(descontos_fixos, valores_cartoes)
+    
     return {
         'arquivo': nome_arquivo,
         'regime': regime,
         'info_financeira': info_financeira,
-        'nossos_contratos': cartoes['nossos_contratos'],  # Nova categoria
+        'nossos_contratos': cartoes['nossos_contratos'],
         'cartoes_conhecidos': cartoes['conhecidos'],
         'cartoes_desconhecidos': cartoes['desconhecidos'],
+        'descontos_fixos': descontos_fixos,
+        'valores_cartoes': valores_cartoes,
+        'margem': margem,
         'texto_completo': texto
     }
 
@@ -300,6 +458,7 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
             
             if resultado:
                 info = resultado['info_financeira']
+                margem = resultado['margem']
                 
                 # Adiciona oportunidades conhecidas
                 if resultado['cartoes_conhecidos']:
@@ -312,13 +471,16 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
                             'liquido': info.get('liquido', 'N/A'),
+                            'margem_disponivel': margem['margem_disponivel'],
+                            'margem_total': margem['margem_total'],
+                            'total_cartoes': margem['total_cartoes'],
+                            'percentual_utilizado': margem['percentual_utilizado'],
                             'tipo_oportunidade': 'CONHECIDA',
                             'descricao': cartao,
                             'status': '✅ OPORTUNIDADE CONFIRMADA'
                         })
 
-
-                # Adiciona nossos contrayos
+                # Adiciona nossos contratos
                 if resultado['nossos_contratos']:
                     for cartao in resultado['nossos_contratos']:
                         resultados.append({
@@ -329,6 +491,10 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
                             'liquido': info.get('liquido', 'N/A'),
+                            'margem_disponivel': margem['margem_disponivel'],
+                            'margem_total': margem['margem_total'],
+                            'total_cartoes': margem['total_cartoes'],
+                            'percentual_utilizado': margem['percentual_utilizado'],
                             'tipo_oportunidade': 'NOSSOS CONTRATOS',
                             'descricao': cartao,
                             'status': '🏆 CLIENTE NOSSO'
@@ -345,6 +511,10 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
                             'liquido': info.get('liquido', 'N/A'),
+                            'margem_disponivel': margem['margem_disponivel'],
+                            'margem_total': margem['margem_total'],
+                            'total_cartoes': margem['total_cartoes'],
+                            'percentual_utilizado': margem['percentual_utilizado'],
                             'tipo_oportunidade': 'PARA ESTUDAR',
                             'descricao': cartao,
                             'status': '⚠️ VERIFICAR'
@@ -360,6 +530,10 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                         'vencimentos': info.get('vencimentos_total', 0),
                         'descontos': info.get('descontos_total', 0),
                         'liquido': info.get('liquido', 'N/A'),
+                        'margem_disponivel': margem['margem_disponivel'],
+                        'margem_total': margem['margem_total'],
+                        'total_cartoes': margem['total_cartoes'],
+                        'percentual_utilizado': margem['percentual_utilizado'],
                         'tipo_oportunidade': 'NENHUMA',
                         'descricao': 'Sem oportunidades identificadas',
                         'status': 'ℹ️ SEM OPORTUNIDADE'
@@ -440,16 +614,122 @@ def main():
                 st.subheader("👤 Informações do Servidor")
                 info = resultado['info_financeira']
                 
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Nome", info.get('nome', 'N/A'))
                 
                 with col2:
                     st.metric("Regime", resultado['regime'])
                 
+                with col3:
+                    st.metric("Líquido", f"R$ {info.get('liquido', 0):,.2f}")
+                
                 st.markdown("---")
                 
-                # Nossos Contratos (nova seção)
+                # Análise de Margem
+                st.subheader("💰 Análise de Margem Consignável")
+                margem = resultado.get('margem', {})
+                
+                if margem.get('total_descontos_fixos', 0) > 0:
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric(
+                            "Descontos Fixos",
+                            f"R$ {margem['total_descontos_fixos']:,.2f}",
+                            help="Total de descontos fixos (INSS, IR, Previdência, etc.)"
+                        )
+                    
+                    with col2:
+                        st.metric(
+                            "Margem Total (30%)",
+                            f"R$ {margem['margem_total']:,.2f}",
+                            help="30% dos descontos fixos"
+                        )
+                    
+                    with col3:
+                        st.metric(
+                            "Comprometido",
+                            f"R$ {margem['total_cartoes']:,.2f}",
+                            help="Total de descontos com cartões/empréstimos"
+                        )
+                    
+                    with col4:
+                        margem_disp = margem['margem_disponivel']
+                        delta_color = "normal" if margem_disp >= 0 else "inverse"
+                        st.metric(
+                            "Margem Disponível",
+                            f"R$ {margem_disp:,.2f}",
+                            delta=f"{margem['percentual_utilizado']:.1f}% utilizado",
+                            delta_color=delta_color,
+                            help="Margem disponível para novos empréstimos"
+                        )
+                    
+                    # Barra de progresso
+                    st.markdown("**Utilização da Margem:**")
+                    percentual = min(margem['percentual_utilizado'], 100)
+                    
+                    if percentual <= 50:
+                        cor = "🟢"
+                        status_margem = "Ótima margem disponível"
+                    elif percentual <= 80:
+                        cor = "🟡"
+                        status_margem = "Margem moderada"
+                    elif percentual <= 100:
+                        cor = "🟠"
+                        status_margem = "Margem quase esgotada"
+                    else:
+                        cor = "🔴"
+                        status_margem = "Margem excedida"
+                    
+                    st.progress(min(percentual / 100, 1.0))
+                    st.caption(f"{cor} {status_margem} - {percentual:.1f}% da margem comprometida")
+                    
+                    # Detalhamento dos descontos fixos
+                    with st.expander("📋 Ver detalhamento dos descontos fixos"):
+                        descontos_fixos = resultado.get('descontos_fixos', {})
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if descontos_fixos.get('inss', 0) > 0:
+                                st.write(f"**INSS:** R$ {descontos_fixos['inss']:,.2f}")
+                            if descontos_fixos.get('irrf', 0) > 0:
+                                st.write(f"**IRRF:** R$ {descontos_fixos['irrf']:,.2f}")
+                            if descontos_fixos.get('previdencia', 0) > 0:
+                                st.write(f"**Previdência:** R$ {descontos_fixos['previdencia']:,.2f}")
+                        
+                        with col2:
+                            if descontos_fixos.get('pensao', 0) > 0:
+                                st.write(f"**Pensão:** R$ {descontos_fixos['pensao']:,.2f}")
+                            if descontos_fixos.get('plano_saude', 0) > 0:
+                                st.write(f"**Plano de Saúde:** R$ {descontos_fixos['plano_saude']:,.2f}")
+                            if descontos_fixos.get('vale_transporte', 0) > 0:
+                                st.write(f"**Vale Transporte:** R$ {descontos_fixos['vale_transporte']:,.2f}")
+                    
+                    # Detalhamento dos cartões
+                    valores_cartoes = resultado.get('valores_cartoes', {})
+                    if valores_cartoes.get('total', 0) > 0:
+                        with st.expander("💳 Ver detalhamento dos cartões/empréstimos"):
+                            if valores_cartoes.get('nossos_contratos'):
+                                st.write("**🏆 Nossos Contratos:**")
+                                for item in valores_cartoes['nossos_contratos']:
+                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
+                            
+                            if valores_cartoes.get('conhecidos'):
+                                st.write("**✅ Concorrentes:**")
+                                for item in valores_cartoes['conhecidos']:
+                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
+                            
+                            if valores_cartoes.get('desconhecidos'):
+                                st.write("**⚠️ Outros:**")
+                                for item in valores_cartoes['desconhecidos']:
+                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
+                else:
+                    st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações de descontos fixos.")
+                
+                st.markdown("---")
+                
+                # Nossos Contratos
                 if resultado['nossos_contratos']:
                     st.subheader("🏆 Nossos Contratos (Cliente Já É Nosso)")
                     for i, contrato in enumerate(resultado['nossos_contratos'], 1):
@@ -507,8 +787,7 @@ def main():
                     # Dashboard de Estatísticas
                     st.subheader("📊 Dashboard de Resultados")
                     
-                    col1, col2, col3, col4 = st.columns(4)
-
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     
                     with col1:
                         total_oportunidades = len(df[df['tipo_oportunidade'] == 'CONHECIDA'])
@@ -529,6 +808,17 @@ def main():
                         total_servidores = df['nome'].nunique()
                         st.metric("👥 Servidores", total_servidores,
                                 help="Total de servidores únicos")
+                    
+                    with col5:
+                        df_com_margem = df[df['margem_disponivel'].notna()]
+                        if not df_com_margem.empty:
+                            margem_por_servidor = df_com_margem.groupby('matricula')['margem_disponivel'].first()
+                            media_margem = margem_por_servidor.mean()
+                            st.metric("💰 Margem Média", f"R$ {media_margem:,.2f}",
+                                    help="Média de margem disponível por servidor")
+                        else:
+                            st.metric("💰 Margem Média", "N/A",
+                                    help="Não foi possível calcular")
                     
                     st.markdown("---")
                     
@@ -558,9 +848,104 @@ def main():
                             color_continuous_scale='Blues'
                         )
                         st.plotly_chart(fig_regime, use_container_width=True)
-
                     
-                    # Top 10 Servidores
+                    # Análise de Margem
+                    st.subheader("💰 Análise de Margem Disponível")
+                    
+                    df_margem = df.groupby('matricula').agg({
+                        'nome': 'first',
+                        'margem_disponivel': 'first',
+                        'margem_total': 'first',
+                        'total_cartoes': 'first',
+                        'percentual_utilizado': 'first'
+                    }).reset_index()
+                    
+                    df_margem = df_margem[df_margem['margem_disponivel'].notna()]
+                    
+                    if not df_margem.empty:
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            fig_hist_margem = px.histogram(
+                                df_margem,
+                                x='margem_disponivel',
+                                nbins=20,
+                                title="Distribuição de Margem Disponível",
+                                labels={'margem_disponivel': 'Margem Disponível (R$)', 'count': 'Quantidade'},
+                                color_discrete_sequence=['#1f77b4']
+                            )
+                            fig_hist_margem.add_vline(x=0, line_dash="dash", line_color="red", 
+                                                     annotation_text="Zero", annotation_position="top")
+                            st.plotly_chart(fig_hist_margem, use_container_width=True)
+                        
+                        with col2:
+                            fig_scatter = px.scatter(
+                                df_margem,
+                                x='margem_total',
+                                y='total_cartoes',
+                                size='percentual_utilizado',
+                                hover_data=['nome', 'margem_disponivel'],
+                                title="Margem Total vs Comprometimento",
+                                labels={
+                                    'margem_total': 'Margem Total (R$)',
+                                    'total_cartoes': 'Total Comprometido (R$)'
+                                },
+                                color='margem_disponivel',
+                                color_continuous_scale='RdYlGn'
+                            )
+                            max_val = max(df_margem['margem_total'].max(), df_margem['total_cartoes'].max())
+                            fig_scatter.add_trace(go.Scatter(
+                                x=[0, max_val],
+                                y=[0, max_val],
+                                mode='lines',
+                                line=dict(dash='dash', color='red'),
+                                name='100% Utilização',
+                                showlegend=True
+                            ))
+                            st.plotly_chart(fig_scatter, use_container_width=True)
+                        
+                        # Top 10 com melhor margem
+                        st.markdown("---")
+                        st.subheader("🌟 Top 10 Servidores com Melhor Margem Disponível")
+                        
+                        df_margem_positiva = df_margem[df_margem['margem_disponivel'] > 0]
+                        
+                        if not df_margem_positiva.empty:
+                            top_margem = df_margem_positiva.nlargest(10, 'margem_disponivel')[
+                                ['nome', 'matricula', 'margem_disponivel', 'margem_total', 'total_cartoes', 'percentual_utilizado']
+                            ]
+                            
+                            st.dataframe(
+                                top_margem,
+                                column_config={
+                                    "nome": "Nome",
+                                    "matricula": "Matrícula",
+                                    "margem_disponivel": st.column_config.NumberColumn(
+                                        "Margem Disponível",
+                                        format="R$ %.2f"
+                                    ),
+                                    "margem_total": st.column_config.NumberColumn(
+                                        "Margem Total",
+                                        format="R$ %.2f"
+                                    ),
+                                    "total_cartoes": st.column_config.NumberColumn(
+                                        "Comprometido",
+                                        format="R$ %.2f"
+                                    ),
+                                    "percentual_utilizado": st.column_config.NumberColumn(
+                                        "% Utilizado",
+                                        format="%.1f%%"
+                                    )
+                                },
+                                hide_index=True,
+                                use_container_width=True
+                            )
+                        else:
+                            st.info("Nenhum servidor com margem disponível positiva.")
+                    else:
+                        st.warning("⚠️ Não foi possível calcular margem para os holerites processados.")
+                    
+                    # Top 10 Oportunidades
                     st.markdown("---")
                     st.subheader("🏆 Top 10 Servidores com Mais Oportunidades")
                     oportunidades_df = df[df['tipo_oportunidade'] == 'CONHECIDA']
@@ -649,6 +1034,26 @@ def main():
                                 "Líquido",
                                 format="R$ %.2f"
                             ),
+                            "margem_disponivel": st.column_config.NumberColumn(
+                                "Margem Disponível",
+                                format="R$ %.2f",
+                                help="Margem disponível para novos empréstimos"
+                            ),
+                            "margem_total": st.column_config.NumberColumn(
+                                "Margem Total",
+                                format="R$ %.2f",
+                                help="30% dos descontos fixos"
+                            ),
+                            "total_cartoes": st.column_config.NumberColumn(
+                                "Total Cartões",
+                                format="R$ %.2f",
+                                help="Total comprometido com cartões"
+                            ),
+                            "percentual_utilizado": st.column_config.NumberColumn(
+                                "% Utilizado",
+                                format="%.1f%%",
+                                help="Percentual da margem já utilizada"
+                            ),
                             "tipo_oportunidade": "Tipo",
                             "descricao": "Descrição",
                             "status": "Status"
@@ -664,7 +1069,6 @@ def main():
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        # Excel - Todos os dados
                         buffer = io.BytesIO()
                         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                             df_filtrado.to_excel(writer, index=False, sheet_name='Oportunidades')
@@ -678,9 +1082,7 @@ def main():
                             use_container_width=True
                         )
                     
-                    
                     with col2:
-                        # CSV
                         csv = df_filtrado.to_csv(index=False, encoding='utf-8-sig')
                         st.download_button(
                             label="📥 Download CSV",
@@ -695,8 +1097,8 @@ def main():
     st.markdown(
         """
         <div style="text-align: center; color: #666; padding: 2rem;">
-            <p>💳 <strong>Analisador de Holerite</strong> v1.0</p>
-            <p>Sistema de Identificação de Oportunidades de Compra de Dívida</p>
+            <p>💳 <strong>Analisador de Holerite</strong> v2.0</p>
+            <p>Sistema de Identificação de Oportunidades de Compra de Dívida com Cálculo de Margem</p>
         </div>
         """,
         unsafe_allow_html=True
