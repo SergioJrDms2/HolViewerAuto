@@ -267,6 +267,28 @@ def extrair_valores_linha(linha: str) -> float:
         return float(valor_str)
     return 0.0
 
+def extrair_salario_bruto(texto: str) -> float:
+    """Extrai o valor do salário bruto do contracheque"""
+    texto_normalizado = normalizar_texto(texto)
+    linhas = texto.split('\n')
+    
+    keywords = [
+        'SALARIO', 'SALÁRIO', 'VENCIMENTO', 'REMUNERACAO', 
+        'REMUNERAÇÃO', 'BASE', 'BRUTO', 'SUBSÍDIO', 'SUBSIDIO'
+    ]
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        # Procura por linhas que contenham as palavras-chave de salário
+        if any(keyword in linha_norm for keyword in keywords):
+            # Evita linhas que são descontos ou bases de cálculo
+            if 'DESCONTO' not in linha_norm and 'BASE' not in linha_norm:
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    return valor
+    
+    return 0.0
+
 def extrair_descontos_fixos(texto: str) -> Dict:
     """Identifica e extrai valores de descontos fixos"""
     texto_normalizado = normalizar_texto(texto)
@@ -383,8 +405,21 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
     
     return valores_cartoes
 
-def calcular_margem_disponivel(descontos_fixos: Dict, valores_cartoes: Dict) -> Dict:
-    """Calcula a margem disponível do cliente"""
+def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict) -> Dict:
+    """
+    Calcula a margem disponível do cliente
+    
+    Fórmula: Margem = (Salário Bruto - Descontos Fixos) × 30%
+    
+    Args:
+        salario_bruto: Valor do salário bruto extraído do contracheque
+        descontos_fixos: Dicionário com os descontos fixos categorizados
+        valores_cartoes: Dicionário com os valores de cartões/empréstimos
+    
+    Returns:
+        Dicionário com informações detalhadas da margem
+    """
+    # Soma todos os descontos fixos
     total_descontos_fixos = (
         descontos_fixos['inss'] +
         descontos_fixos['irrf'] +
@@ -394,17 +429,44 @@ def calcular_margem_disponivel(descontos_fixos: Dict, valores_cartoes: Dict) -> 
         descontos_fixos['vale_transporte']
     )
     
-    margem_total = total_descontos_fixos * 0.30
+    # Calcula o salário líquido (antes dos empréstimos)
+    salario_liquido = salario_bruto - total_descontos_fixos
+    
+    # Calcula a margem total disponível (30% do salário líquido)
+    margem_total = salario_liquido * 0.30
+    
+    # Total já comprometido com cartões/empréstimos
     total_cartoes = valores_cartoes['total']
+    
+    # Margem disponível para novos empréstimos
     margem_disponivel = margem_total - total_cartoes
     
     return {
+        'salario_bruto': salario_bruto,
         'total_descontos_fixos': total_descontos_fixos,
+        'salario_liquido': salario_liquido,
         'margem_total': margem_total,
         'total_cartoes': total_cartoes,
         'margem_disponivel': margem_disponivel,
         'percentual_utilizado': (total_cartoes / margem_total * 100) if margem_total > 0 else 0,
         'tem_margem': margem_disponivel > 0
+    }
+
+# Exemplo de uso integrado:
+def analisar_contracheque(texto: str, cartoes_encontrados: Dict) -> Dict:
+    """
+    Função auxiliar que integra todas as extrações e cálculos
+    """
+    salario_bruto = extrair_salario_bruto(texto)
+    descontos_fixos = extrair_descontos_fixos(texto)
+    valores_cartoes = extrair_valores_cartoes(texto, cartoes_encontrados)
+    margem = calcular_margem_disponivel(salario_bruto, descontos_fixos, valores_cartoes)
+    
+    return {
+        'salario_bruto': salario_bruto,
+        'descontos_fixos': descontos_fixos,
+        'valores_cartoes': valores_cartoes,
+        'margem': margem
     }
 
 # ============================================================================
