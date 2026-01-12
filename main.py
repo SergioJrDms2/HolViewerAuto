@@ -277,10 +277,10 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
                 valor = match.group(1).replace('.', '').replace(',', '.')
                 info['descontos_total'] = float(valor)
         
-        if 'LIQUIDO' in normalizar_texto(linha) or 'LÍQUIDO' in linha:
-            match = re.search(r'(\d+[.,]\d{2})', linha)
+        if 'LIQUIDO' in normalizar_texto(linha):
+            match = re.search(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
             if match:
-                valor = match.group(1).replace('.', '').replace(',', '.')
+                valor = match.group().replace('.', '').replace(',', '.')
                 info['liquido'] = float(valor)
     
     return info
