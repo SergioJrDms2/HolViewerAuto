@@ -487,7 +487,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
     # Calcula margem disponível
     descontos_fixos = extrair_descontos_fixos(texto)
     valores_cartoes = extrair_valores_cartoes(texto, cartoes)
-    margem = calcular_margem_disponivel(descontos_fixos, valores_cartoes)
+    salario_bruto = extrair_salario_bruto(texto)
+    margem = calcular_margem_disponivel(salario_bruto, descontos_fixos, valores_cartoes)
     
     return {
         'arquivo': nome_arquivo,
