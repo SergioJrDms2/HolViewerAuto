@@ -172,7 +172,7 @@ def extrair_regime_contrato(texto: str) -> str:
         return "NÃO IDENTIFICADO"
 
 def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
-    """Identifica cartões de crédito no texto"""
+    """Identifica cartões de crédito no texto (IGNORA EMPRÉSTIMOS)"""
     texto_normalizado = normalizar_texto(texto)
     linhas = texto_normalizado.split('\n')
     
@@ -186,7 +186,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     for produto in NOSSOS_PRODUTOS:
         if produto in texto_normalizado:
             for linha in linhas:
-                if produto in linha and any(kw in linha for kw in ['CARTAO', 'EMPRESTIMO', 'EMPREST', 'Emprestimo', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
+                if produto in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
                     if linha.strip() not in cartoes_encontrados['nossos_contratos']:
                         cartoes_encontrados['nossos_contratos'].append(linha.strip())
     
@@ -194,7 +194,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     for cartao in CARTOES_CONHECIDOS:
         if cartao in texto_normalizado:
             for linha in linhas:
-                if cartao in linha and any(kw in linha for kw in ['CARTAO', 'EMPRESTIMO', 'EMPREST', 'Emprestimo', 'CRED']):
+                if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED']):
                     if linha.strip() not in cartoes_encontrados['conhecidos']:
                         cartoes_encontrados['conhecidos'].append(linha.strip())
     
@@ -202,7 +202,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         tem_keyword_cartao = any(kw in linha_norm for kw in 
-                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO', 'Emprestimo', 'EMPREST', 'CARD'])
+                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO', 'CARD'])
         
         if tem_keyword_cartao:
             eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
@@ -420,26 +420,6 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
                 'valor': valor
             })
             valores_cartoes['total'] += valor
-    
-    # Busca empréstimos não identificados
-    for linha in linhas:
-        linha_norm = normalizar_texto(linha)
-        if any(kw in linha_norm for kw in ['EMPRESTIMO', 'EMPRÉSTIMO', 'CONSIGNADO', 'REFINANCIAMENTO']):
-            ja_contado = False
-            for categoria in valores_cartoes.values():
-                if isinstance(categoria, list):
-                    if any(item.get('descricao', '').strip() == linha.strip() for item in categoria):
-                        ja_contado = True
-                        break
-            
-            if not ja_contado:
-                valor = extrair_valores_linha(linha)
-                if valor > 0:
-                    valores_cartoes['desconhecidos'].append({
-                        'descricao': linha.strip(),
-                        'valor': valor
-                    })
-                    valores_cartoes['total'] += valor
     
     return valores_cartoes
 
