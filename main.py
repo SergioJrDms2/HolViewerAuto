@@ -321,6 +321,24 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'descricao': cartao,
                             'status': '✅ OPORTUNIDADE CONFIRMADA'
                         })
+
+
+                # Adiciona nossos contrayos
+                if resultado['nossos_contratos']:
+                    for cartao in resultado['nossos_contratos']:
+                        resultados.append({
+                            'arquivo': resultado['arquivo'],
+                            'nome': info.get('nome', 'N/A'),
+                            'matricula': info.get('matricula', 'N/A'),
+                            'cargo': info.get('cargo', 'N/A'),
+                            'regime': resultado['regime'],
+                            'vencimentos': info.get('vencimentos_total', 0),
+                            'descontos': info.get('descontos_total', 0),
+                            'liquido': info.get('liquido', 0),
+                            'tipo_oportunidade': 'NOSSOS CONTRATOS',
+                            'descricao': cartao,
+                            'status': '🏆 CLIENTE NOSSO'
+                        })
                 
                 # Adiciona cartões para estudar
                 if resultado['cartoes_desconhecidos']:
