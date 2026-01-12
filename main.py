@@ -1,3 +1,10 @@
+"""
+Analisador de Holerite - Aplicação Streamlit
+Sistema de Identificação de Oportunidades de Compra de Dívida
+
+Para executar:
+streamlit run app.py
+"""
 
 import streamlit as st
 import re
@@ -15,7 +22,7 @@ import plotly.graph_objects as go
 # ============================================================================
 
 st.set_page_config(
-    page_title="Oportunidades de Portabilidade",
+    page_title="Analisador de Holerite",
     page_icon="💳",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -68,6 +75,14 @@ st.markdown("""
 # BASE DE DADOS DE CARTÕES CONHECIDOS
 # ============================================================================
 
+# Nossos produtos/contratos
+NOSSOS_PRODUTOS = [
+    "STARCARD",
+    "ANTICIPAY",
+    "STARBANK"
+]
+
+# Cartões de terceiros (concorrentes)
 CARTOES_CONHECIDOS = [
     "NIO",
     "DAYCOVAL",
@@ -79,6 +94,9 @@ CARTOES_CONHECIDOS = [
     "PINE",
     "BRADESCO"
 ]
+
+# Lista completa para busca
+TODOS_CARTOES = NOSSOS_PRODUTOS + CARTOES_CONHECIDOS
 
 # ============================================================================
 # FUNÇÕES DE EXTRAÇÃO DE TEXTO
@@ -159,10 +177,20 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     linhas = texto_normalizado.split('\n')
     
     cartoes_encontrados = {
+        'nossos_contratos': [],  # Nova categoria
         'conhecidos': [],
         'desconhecidos': []
     }
     
+    # Primeiro identifica nossos contratos
+    for produto in NOSSOS_PRODUTOS:
+        if produto in texto_normalizado:
+            for linha in linhas:
+                if produto in linha and any(kw in linha for kw in ['CARTAO', 'EMPRESTIMO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
+                    if linha.strip() not in cartoes_encontrados['nossos_contratos']:
+                        cartoes_encontrados['nossos_contratos'].append(linha.strip())
+    
+    # Depois identifica cartões de terceiros conhecidos
     for cartao in CARTOES_CONHECIDOS:
         if cartao in texto_normalizado:
             for linha in linhas:
@@ -170,15 +198,19 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
                     if linha.strip() not in cartoes_encontrados['conhecidos']:
                         cartoes_encontrados['conhecidos'].append(linha.strip())
     
+    # Por último, identifica cartões desconhecidos
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         tem_keyword_cartao = any(kw in linha_norm for kw in 
                                   ['CARTAO', 'CART ', 'CRED', 'CREDITO', 'CARD'])
         
         if tem_keyword_cartao:
+            # Verifica se não é nosso produto
+            eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
+            # Verifica se não é de terceiros conhecido
             eh_conhecido = any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS)
             
-            if not eh_conhecido and linha.strip():
+            if not eh_nosso and not eh_conhecido and linha.strip():
                 if linha.strip() not in cartoes_encontrados['desconhecidos']:
                     cartoes_encontrados['desconhecidos'].append(linha.strip())
     
@@ -189,6 +221,7 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
     info = {
         'nome': '',
         'matricula': '',
+        'cargo': '',
         'vencimentos_total': 0.0,
         'descontos_total': 0.0,
         'liquido': 0.0
@@ -204,6 +237,9 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
             match = re.search(r'(\d{6})', linha)
             if match:
                 info['matricula'] = match.group(1)
+        
+        if 'FUNCAO' in normalizar_texto(linha) or 'TIPO' in linha:
+            info['cargo'] = linha.split()[-1] if linha.split() else ''
         
         if 'VENCIMENTOS' in linha and 'DESCONTOS' not in linha:
             match = re.search(r'(\d+[.,]\d{2})', linha)
@@ -244,6 +280,7 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
         'arquivo': nome_arquivo,
         'regime': regime,
         'info_financeira': info_financeira,
+        'nossos_contratos': cartoes['nossos_contratos'],  # Nova categoria
         'cartoes_conhecidos': cartoes['conhecidos'],
         'cartoes_desconhecidos': cartoes['desconhecidos'],
         'texto_completo': texto
@@ -275,6 +312,7 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
                             'matricula': info.get('matricula', 'N/A'),
+                            'cargo': info.get('cargo', 'N/A'),
                             'regime': resultado['regime'],
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
@@ -291,6 +329,7 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
                             'matricula': info.get('matricula', 'N/A'),
+                            'cargo': info.get('cargo', 'N/A'),
                             'regime': resultado['regime'],
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
@@ -306,6 +345,7 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                         'arquivo': resultado['arquivo'],
                         'nome': info.get('nome', 'N/A'),
                         'matricula': info.get('matricula', 'N/A'),
+                        'cargo': info.get('cargo', 'N/A'),
                         'regime': resultado['regime'],
                         'vencimentos': info.get('vencimentos_total', 0),
                         'descontos': info.get('descontos_total', 0),
@@ -345,7 +385,12 @@ def main():
         
         st.markdown("---")
         
-        st.subheader("📋 Cartões Conhecidos")
+        st.subheader("🏆 Nossos Produtos")
+        with st.expander("Ver lista"):
+            for produto in NOSSOS_PRODUTOS:
+                st.text(f"⭐ {produto}")
+        
+        st.subheader("📋 Cartões Concorrentes")
         with st.expander("Ver lista"):
             for cartao in CARTOES_CONHECIDOS:
                 st.text(f"✓ {cartao}")
@@ -391,6 +436,7 @@ def main():
                     st.metric("Matrícula", info.get('matricula', 'N/A'))
                 
                 with col2:
+                    st.metric("Cargo", info.get('cargo', 'N/A'))
                     st.metric("Regime", resultado['regime'])
                 
                 with col3:
@@ -398,6 +444,14 @@ def main():
                     st.metric("Líquido", f"R$ {info.get('liquido', 0):,.2f}")
                 
                 st.markdown("---")
+                
+                # Nossos Contratos (nova seção)
+                if resultado['nossos_contratos']:
+                    st.subheader("🏆 Nossos Contratos (Cliente Já É Nosso)")
+                    for i, contrato in enumerate(resultado['nossos_contratos'], 1):
+                        st.markdown(f"**{i}.** {contrato}")
+                    st.info(f"✨ Este cliente já possui {len(resultado['nossos_contratos'])} contrato(s) conosco!")
+                    st.markdown("---")
                 
                 # Oportunidades
                 col1, col2 = st.columns(2)
@@ -449,24 +503,29 @@ def main():
                     # Dashboard de Estatísticas
                     st.subheader("📊 Dashboard de Resultados")
                     
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     
                     with col1:
+                        total_nossos = len(df[df['tipo_oportunidade'] == 'NOSSO CONTRATO'])
+                        st.metric("🏆 Nossos Contratos", total_nossos, 
+                                help="Clientes que já possuem contrato conosco")
+                    
+                    with col2:
                         total_oportunidades = len(df[df['tipo_oportunidade'] == 'CONHECIDA'])
                         st.metric("✅ Oportunidades", total_oportunidades, 
                                 help="Total de oportunidades confirmadas")
                     
-                    with col2:
+                    with col3:
                         total_estudar = len(df[df['tipo_oportunidade'] == 'PARA ESTUDAR'])
                         st.metric("⚠️ Para Estudar", total_estudar,
                                 help="Cartões fora da lista conhecida")
                     
-                    with col3:
+                    with col4:
                         total_sem = len(df[df['tipo_oportunidade'] == 'NENHUMA'])
                         st.metric("ℹ️ Sem Oportunidade", total_sem,
                                 help="Servidores sem oportunidades")
                     
-                    with col4:
+                    with col5:
                         total_servidores = df['nome'].nunique()
                         st.metric("👥 Servidores", total_servidores,
                                 help="Total de servidores únicos")
@@ -500,7 +559,44 @@ def main():
                         )
                         st.plotly_chart(fig_regime, use_container_width=True)
                     
+                    # Lista de Nossos Clientes
+                    st.markdown("---")
+                    st.subheader("🏆 Nossos Clientes Identificados")
+                    nossos_clientes_df = df[df['tipo_oportunidade'] == 'NOSSO CONTRATO']
+                    
+                    if not nossos_clientes_df.empty:
+                        # Agrupa por cliente
+                        clientes_agrupados = nossos_clientes_df.groupby(['nome', 'matricula']).agg({
+                            'descricao': lambda x: '<br>'.join(x),
+                            'liquido': 'first',
+                            'regime': 'first'
+                        }).reset_index()
+                        
+                        st.dataframe(
+                            clientes_agrupados,
+                            column_config={
+                                "nome": "Nome",
+                                "matricula": "Matrícula",
+                                "descricao": st.column_config.TextColumn(
+                                    "Contratos",
+                                    width="large"
+                                ),
+                                "liquido": st.column_config.NumberColumn(
+                                    "Líquido",
+                                    format="R$ %.2f"
+                                ),
+                                "regime": "Regime"
+                            },
+                            hide_index=True,
+                            use_container_width=True
+                        )
+                        
+                        st.success(f"✨ Total de {len(clientes_agrupados)} cliente(s) nosso(s) identificado(s)!")
+                    else:
+                        st.info("Nenhum cliente nosso identificado neste lote.")
+                    
                     # Top 10 Servidores
+                    st.markdown("---")
                     st.subheader("🏆 Top 10 Servidores com Mais Oportunidades")
                     oportunidades_df = df[df['tipo_oportunidade'] == 'CONHECIDA']
                     
@@ -575,6 +671,7 @@ def main():
                             "arquivo": "Arquivo",
                             "nome": "Nome",
                             "matricula": "Matrícula",
+                            "cargo": "Cargo",
                             "regime": "Regime",
                             "vencimentos": st.column_config.NumberColumn(
                                 "Vencimentos",
@@ -596,6 +693,67 @@ def main():
                         use_container_width=True
                     )
                     
+                    # Exportar
+                    st.markdown("---")
+                    st.subheader("💾 Exportar Resultados")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        # Excel - Todos os dados
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                            df_filtrado.to_excel(writer, index=False, sheet_name='Oportunidades')
+                        buffer.seek(0)
+                        
+                        st.download_button(
+                            label="📥 Download Excel (Todos)",
+                            data=buffer,
+                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                    
+                    with col2:
+                        # Excel - Apenas nossos clientes
+                        nossos_df = df[df['tipo_oportunidade'] == 'NOSSO CONTRATO']
+                        if not nossos_df.empty:
+                            buffer_nossos = io.BytesIO()
+                            with pd.ExcelWriter(buffer_nossos, engine='openpyxl') as writer:
+                                nossos_df.to_excel(writer, index=False, sheet_name='Nossos Clientes')
+                            buffer_nossos.seek(0)
+                            
+                            st.download_button(
+                                label="🏆 Download Nossos Clientes",
+                                data=buffer_nossos,
+                                file_name=f"nossos_clientes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True
+                            )
+                        else:
+                            st.button("🏆 Sem Clientes Nossos", disabled=True, use_container_width=True)
+                    
+                    with col3:
+                        # CSV
+                        csv = df_filtrado.to_csv(index=False, encoding='utf-8-sig')
+                        st.download_button(
+                            label="📥 Download CSV",
+                            data=csv,
+                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                    
+                    with col4:
+                        # JSON
+                        json_data = df_filtrado.to_json(orient='records', indent=2)
+                        st.download_button(
+                            label="📥 Download JSON",
+                            data=json_data,
+                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json",
+                            use_container_width=True
+                        )
 
     # Footer
     st.markdown("---")
