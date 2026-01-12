@@ -16,6 +16,7 @@ import pandas as pd
 from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
+from typing import Dict, List
 
 # ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -172,36 +173,64 @@ def extrair_regime_contrato(texto: str) -> str:
         return "NÃO IDENTIFICADO"
 
 def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
-    """Identifica cartões de crédito no texto (IGNORA EMPRÉSTIMOS)"""
+    """Identifica cartões de crédito no texto (FILTRA RIGOROSAMENTE EMPRÉSTIMOS)"""
     texto_normalizado = normalizar_texto(texto)
     linhas = texto_normalizado.split('\n')
     
+    # Lista de termos que, se encontrados, invalidam a linha imediatamente
+    # Adicionei espaços em " EMP " e "EMP " para evitar confundir com "EMPRESARIAL"
+    TERMOS_EXCLUSAO = [
+        'EMPRESTIMO', 'EMP ', ' EMP', 'CONSIGNADO', 
+        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP '
+    ]
+
     cartoes_encontrados = {
         'nossos_contratos': [],
         'conhecidos': [],
         'desconhecidos': []
     }
     
-    # Primeiro identifica nossos contratos (TODOS - cartões e empréstimos)
+    # ---------------------------------------------------------
+    # 1. Nossos Produtos (Com filtro de exclusão)
+    # ---------------------------------------------------------
     for produto in NOSSOS_PRODUTOS:
         if produto in texto_normalizado:
             for linha in linhas:
-                # Identifica qualquer linha com nossos produtos
+                # Verifica se é produto nosso E se tem palavras de cartão
                 if produto in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
+                    
+                    # LOGICA NOVA: Se tiver termo de empréstimo, PULA esta linha
+                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
+                        continue
+
                     if linha.strip() not in cartoes_encontrados['nossos_contratos']:
                         cartoes_encontrados['nossos_contratos'].append(linha.strip())
     
-    # Depois identifica cartões de terceiros conhecidos (APENAS CARTÕES)
+    # ---------------------------------------------------------
+    # 2. Cartões Conhecidos (Com filtro de exclusão)
+    # ---------------------------------------------------------
     for cartao in CARTOES_CONHECIDOS:
         if cartao in texto_normalizado:
             for linha in linhas:
                 if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED']):
+                    
+                    # LOGICA NOVA: Bloqueia empréstimos
+                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
+                        continue
+
                     if linha.strip() not in cartoes_encontrados['conhecidos']:
                         cartoes_encontrados['conhecidos'].append(linha.strip())
     
-    # Por último, identifica cartões desconhecidos (APENAS CARTÕES)
+    # ---------------------------------------------------------
+    # 3. Desconhecidos (Com filtro de exclusão)
+    # ---------------------------------------------------------
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
+        
+        # Verifica se parece emprestimo ANTES de qualquer coisa
+        if any(termo in linha_norm for termo in TERMOS_EXCLUSAO):
+            continue
+
         tem_keyword_cartao = any(kw in linha_norm for kw in 
                                   ['CARTAO', 'CART ', 'CRED', 'CREDITO'])
         
