@@ -223,7 +223,7 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
         'matricula': '',
         'vencimentos_total': 0.0,
         'descontos_total': 0.0,
-        'liquido': 0.0
+        'liquido': ''
     }
     
     linhas = texto.split('\n')
@@ -311,7 +311,7 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'regime': resultado['regime'],
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
-                            'liquido': info.get('liquido', 0),
+                            'liquido': info.get('liquido', 'N/A'),
                             'tipo_oportunidade': 'CONHECIDA',
                             'descricao': cartao,
                             'status': '✅ OPORTUNIDADE CONFIRMADA'
@@ -328,7 +328,7 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'regime': resultado['regime'],
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
-                            'liquido': info.get('liquido', 0),
+                            'liquido': info.get('liquido', 'N/A'),
                             'tipo_oportunidade': 'NOSSOS CONTRATOS',
                             'descricao': cartao,
                             'status': '🏆 CLIENTE NOSSO'
@@ -344,7 +344,7 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'regime': resultado['regime'],
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
-                            'liquido': info.get('liquido', 0),
+                            'liquido': info.get('liquido', 'N/A'),
                             'tipo_oportunidade': 'PARA ESTUDAR',
                             'descricao': cartao,
                             'status': '⚠️ VERIFICAR'
@@ -359,7 +359,7 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                         'regime': resultado['regime'],
                         'vencimentos': info.get('vencimentos_total', 0),
                         'descontos': info.get('descontos_total', 0),
-                        'liquido': info.get('liquido', 0),
+                        'liquido': info.get('liquido', 'N/A'),
                         'tipo_oportunidade': 'NENHUMA',
                         'descricao': 'Sem oportunidades identificadas',
                         'status': 'ℹ️ SEM OPORTUNIDADE'
