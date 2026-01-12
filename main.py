@@ -268,26 +268,64 @@ def extrair_valores_linha(linha: str) -> float:
     return 0.0
 
 def extrair_salario_bruto(texto: str) -> float:
-    """Extrai o valor do salário bruto do contracheque"""
+    """
+    Extrai o valor do salário bruto do contracheque
+    Versão melhorada que busca especificamente por totais de vencimentos
+    """
     texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
-    keywords = [
-        'SALARIO', 'SALÁRIO', 'VENCIMENTO', 'REMUNERACAO', 
-        'REMUNERAÇÃO', 'BASE', 'BRUTO', 'SUBSÍDIO', 'SUBSIDIO'
-    ]
+    # Prioridade 1: Buscar por "TOTAL DE VENCIMENTOS" ou "TOTAL VENCIMENTOS"
+    # Esta é geralmente a linha mais confiável
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'TOTAL' in linha_norm and ('VENCIMENTO' in linha_norm or 'VENC' in linha_norm):
+            # Evita linhas de desconto
+            if 'DESCONTO' not in linha_norm and 'DESC' not in linha_norm:
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    return valor
+    
+    # Prioridade 2: Buscar por linha com múltiplas palavras-chave específicas
+    keywords_primarias = ['SALARIO BASE', 'SALÁRIO BASE', 'VENCIMENTO BASE', 'REMUNERACAO']
     
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        # Procura por linhas que contenham as palavras-chave de salário
-        if any(keyword in linha_norm for keyword in keywords):
-            # Evita linhas que são descontos ou bases de cálculo
-            if 'DESCONTO' not in linha_norm and 'BASE' not in linha_norm:
+        for keyword in keywords_primarias:
+            if keyword in linha_norm:
+                # Não filtra "BASE" aqui, pois "SALARIO BASE" é válido
+                if 'DESCONTO' not in linha_norm:
+                    valor = extrair_valores_linha(linha)
+                    if valor > 0:
+                        return valor
+    
+    # Prioridade 3: Buscar por SUBSÍDIO (comum em cargos públicos)
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SUBSIDIO' in linha_norm or 'SUBSÍDIO' in linha_norm:
+            valor = extrair_valores_linha(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 4: Buscar na função extrair_informacoes_financeiras
+    # que já tem a lógica de pegar vencimentos_total
+    info = extrair_informacoes_financeiras(texto)
+    if info.get('vencimentos_total', 0) > 0:
+        return info['vencimentos_total']
+    
+    # Prioridade 5: Fallback - buscar qualquer linha com palavras-chave
+    keywords_fallback = ['SALARIO', 'VENCIMENTO', 'REMUNERACAO']
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if any(keyword in linha_norm for keyword in keywords_fallback):
+            if 'DESCONTO' not in linha_norm and 'TOTAL' not in linha_norm:
                 valor = extrair_valores_linha(linha)
                 if valor > 0:
                     return valor
     
     return 0.0
+    
 
 def extrair_descontos_fixos(texto: str) -> Dict:
     """Identifica e extrai valores de descontos fixos"""
@@ -474,7 +512,7 @@ def analisar_contracheque(texto: str, cartoes_encontrados: Dict) -> Dict:
 # ============================================================================
 
 def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict:
-    """Analisa um holerite e retorna os resultados"""
+    """Analisa um holerite e retorna os resultados com validação adicional"""
     texto = extrair_texto_pdf(arquivo_bytes)
     
     if not texto.strip():
@@ -488,6 +526,12 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
     descontos_fixos = extrair_descontos_fixos(texto)
     valores_cartoes = extrair_valores_cartoes(texto, cartoes)
     salario_bruto = extrair_salario_bruto(texto)
+    
+    # VALIDAÇÃO: Se não conseguiu extrair salário bruto,
+    # tenta usar vencimentos_total como fallback
+    if salario_bruto == 0.0 and info_financeira.get('vencimentos_total', 0) > 0:
+        salario_bruto = info_financeira['vencimentos_total']
+    
     margem = calcular_margem_disponivel(salario_bruto, descontos_fixos, valores_cartoes)
     
     return {
