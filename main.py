@@ -212,7 +212,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     for cartao in CARTOES_CONHECIDOS:
         if cartao in texto_normalizado:
             for linha in linhas:
-                if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED']):
+                if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'CART.', 'CART']):
                     
                     # LOGICA NOVA: Bloqueia empréstimos
                     if any(termo in linha for termo in TERMOS_EXCLUSAO):
@@ -232,7 +232,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
             continue
 
         tem_keyword_cartao = any(kw in linha_norm for kw in 
-                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO'])
+                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO','CART.'])
         
         if tem_keyword_cartao:
             eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
