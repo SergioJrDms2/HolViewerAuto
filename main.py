@@ -478,7 +478,7 @@ def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valo
     )
     
     # Calcula o salário líquido (antes dos empréstimos)
-    salario_liquido = salario_bruto
+    salario_liquido = salario_bruto - total_descontos_fixos
     
     # Calcula a margem total disponível (30% do salário líquido)
     margem_total = salario_liquido * 0.30
