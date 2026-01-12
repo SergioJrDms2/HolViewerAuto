@@ -580,11 +580,11 @@ def main():
                     # Lista de Nossos Clientes
                     st.markdown("---")
                     st.subheader("🏆 Nossos Clientes Identificados")
-                    nossos_clientes_df = df[df['tipo_oportunidade'] == 'NOSSO CONTRATO']
+                    nossos_df = df[df['tipo_oportunidade'] == 'NOSSO CONTRATO']
                     
-                    if not nossos_clientes_df.empty:
+                    if not nossos_df.empty:
                         # Agrupa por cliente
-                        clientes_agrupados = nossos_clientes_df.groupby(['nome', 'matricula']).agg({
+                        clientes_agrupados = nossos_df.groupby(['nome', 'matricula']).agg({
                             'descricao': lambda x: '<br>'.join(x),
                             'liquido': 'first',
                             'regime': 'first'
