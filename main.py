@@ -440,17 +440,12 @@ def main():
                 st.subheader("👤 Informações do Servidor")
                 info = resultado['info_financeira']
                 
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
                 with col1:
                     st.metric("Nome", info.get('nome', 'N/A'))
-                    st.metric("Matrícula", info.get('matricula', 'N/A'))
                 
                 with col2:
                     st.metric("Regime", resultado['regime'])
-                
-                with col3:
-                    st.metric("Vencimentos", f"R$ {info.get('vencimentos_total', 0):,.2f}")
-                    st.metric("Líquido", f"R$ {info.get('liquido', 0):,.2f}")
                 
                 st.markdown("---")
                 
