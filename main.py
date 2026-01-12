@@ -676,7 +676,7 @@ def main():
                     st.markdown("---")
                     st.subheader("💾 Exportar Resultados")
                     
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2 = st.columns(2)
                     
                     with col1:
                         # Excel - Todos os dados
@@ -693,26 +693,8 @@ def main():
                             use_container_width=True
                         )
                     
-                    with col2:
-                        # Excel - Apenas nossos clientes
-                        nossos_df = df[df['tipo_oportunidade'] == 'NOSSO CONTRATO']
-                        if not nossos_df.empty:
-                            buffer_nossos = io.BytesIO()
-                            with pd.ExcelWriter(buffer_nossos, engine='openpyxl') as writer:
-                                nossos_df.to_excel(writer, index=False, sheet_name='Nossos Clientes')
-                            buffer_nossos.seek(0)
-                            
-                            st.download_button(
-                                label="🏆 Download Nossos Clientes",
-                                data=buffer_nossos,
-                                file_name=f"nossos_clientes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True
-                            )
-                        else:
-                            st.button("🏆 Sem Clientes Nossos", disabled=True, use_container_width=True)
                     
-                    with col3:
+                    with col2:
                         # CSV
                         csv = df_filtrado.to_csv(index=False, encoding='utf-8-sig')
                         st.download_button(
@@ -720,17 +702,6 @@ def main():
                             data=csv,
                             file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                             mime="text/csv",
-                            use_container_width=True
-                        )
-                    
-                    with col4:
-                        # JSON
-                        json_data = df_filtrado.to_json(orient='records', indent=2)
-                        st.download_button(
-                            label="📥 Download JSON",
-                            data=json_data,
-                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                            mime="application/json",
                             use_container_width=True
                         )
 
