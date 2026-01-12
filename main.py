@@ -584,7 +584,7 @@ def main():
                     
                     if not nossos_df.empty:
                         # Agrupa por cliente
-                        clientes_agrupados = nossos_df.groupby(['nome', 'matricula']).agg({
+                        clientes_agrupados = nossos_df.groupby(['nome']).agg({
                             'descricao': lambda x: '<br>'.join(x),
                             'liquido': 'first',
                             'regime': 'first'
@@ -594,7 +594,6 @@ def main():
                             clientes_agrupados,
                             column_config={
                                 "nome": "Nome",
-                                "matricula": "Matrícula",
                                 "descricao": st.column_config.TextColumn(
                                     "Contratos",
                                     width="large"
