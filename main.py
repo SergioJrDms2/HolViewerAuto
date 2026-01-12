@@ -203,7 +203,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         tem_keyword_cartao = any(kw in linha_norm for kw in 
-                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO', 'CARD'])
+                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO'])
         
         if tem_keyword_cartao:
             eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
