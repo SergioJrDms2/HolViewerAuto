@@ -187,7 +187,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         if produto in texto_normalizado:
             for linha in linhas:
                 # Identifica qualquer linha com nossos produtos
-                if produto in linha and any(kw in linha for kw in ['CARTAO', 'EMPRESTIMO', 'EMPREST', 'Emprestimo', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
+                if produto in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
                     if linha.strip() not in cartoes_encontrados['nossos_contratos']:
                         cartoes_encontrados['nossos_contratos'].append(linha.strip())
     
