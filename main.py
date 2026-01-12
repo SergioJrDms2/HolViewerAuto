@@ -521,29 +521,25 @@ def main():
                     # Dashboard de Estatísticas
                     st.subheader("📊 Dashboard de Resultados")
                     
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    col1, col2, col3, col4 = st.columns(4)
+
                     
                     with col1:
-                        total_nossos = len(df[df['tipo_oportunidade'] == 'NOSSO CONTRATO'])
-                        st.metric("🏆 Nossos Contratos", total_nossos, 
-                                help="Clientes que já possuem contrato conosco")
-                    
-                    with col2:
                         total_oportunidades = len(df[df['tipo_oportunidade'] == 'CONHECIDA'])
                         st.metric("✅ Oportunidades", total_oportunidades, 
                                 help="Total de oportunidades confirmadas")
                     
-                    with col3:
+                    with col2:
                         total_estudar = len(df[df['tipo_oportunidade'] == 'PARA ESTUDAR'])
                         st.metric("⚠️ Para Estudar", total_estudar,
                                 help="Cartões fora da lista conhecida")
                     
-                    with col4:
+                    with col3:
                         total_sem = len(df[df['tipo_oportunidade'] == 'NENHUMA'])
                         st.metric("ℹ️ Sem Oportunidade", total_sem,
                                 help="Servidores sem oportunidades")
                     
-                    with col5:
+                    with col4:
                         total_servidores = df['nome'].nunique()
                         st.metric("👥 Servidores", total_servidores,
                                 help="Total de servidores únicos")
@@ -576,41 +572,7 @@ def main():
                             color_continuous_scale='Blues'
                         )
                         st.plotly_chart(fig_regime, use_container_width=True)
-                    
-                    # Lista de Nossos Clientes
-                    st.markdown("---")
-                    st.subheader("🏆 Nossos Clientes Identificados")
-                    nossos_df = df[df['tipo_oportunidade'] == 'NOSSO CONTRATO']
-                    
-                    if not nossos_df.empty:
-                        # Agrupa por cliente
-                        clientes_agrupados = nossos_df.groupby(['nome']).agg({
-                            'descricao': lambda x: '<br>'.join(x),
-                            'liquido': 'first',
-                            'regime': 'first'
-                        }).reset_index()
-                        
-                        st.dataframe(
-                            clientes_agrupados,
-                            column_config={
-                                "nome": "Nome",
-                                "descricao": st.column_config.TextColumn(
-                                    "Contratos",
-                                    width="large"
-                                ),
-                                "liquido": st.column_config.NumberColumn(
-                                    "Líquido",
-                                    format="R$ %.2f"
-                                ),
-                                "regime": "Regime"
-                            },
-                            hide_index=True,
-                            use_container_width=True
-                        )
-                        
-                        st.success(f"✨ Total de {len(clientes_agrupados)} cliente(s) nosso(s) identificado(s)!")
-                    else:
-                        st.info("Nenhum cliente nosso identificado neste lote.")
+
                     
                     # Top 10 Servidores
                     st.markdown("---")
