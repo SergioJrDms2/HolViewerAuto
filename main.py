@@ -245,13 +245,13 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     return cartoes_encontrados
 
 def extrair_informacoes_financeiras(texto: str) -> Dict:
-    """Extrai informações financeiras do holerite com Regex aprimorada"""
+    """Extrai informações financeiras do holerite"""
     info = {
         'nome': '',
         'matricula': '',
         'vencimentos_total': 0.0,
         'descontos_total': 0.0,
-        'liquido': 0.0
+        'liquido': ''
     }
     
     linhas = texto.split('\n')
@@ -271,22 +271,17 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
                 valor = match.group(1).replace('.', '').replace(',', '.')
                 info['vencimentos_total'] = float(valor)
         
-        if 'LIQUIDO' in linha_norm or 'LÍQUIDO' in linha:
-            valor = extrair_valores_linha(linha)
-            if valor > 0:
-                info['liquido'] = valor
-
-        # Busca Total de Vencimentos
-        if 'VENCIMENTOS' in linha_norm and 'TOTAL' in linha_norm:
-            valor = extrair_valores_linha(linha)
-            if valor > 0:
-                info['vencimentos_total'] = valor
-
-        # Busca Total de Descontos
-        if 'DESCONTOS' in linha_norm and 'TOTAL' in linha_norm:
-            valor = extrair_valores_linha(linha)
-            if valor > 0:
-                info['descontos_total'] = valor
+        if 'DESCONTOS' in linha and 'VENCIMENTOS' not in linha:
+            match = re.search(r'(\d+[.,]\d{2})', linha)
+            if match:
+                valor = match.group(1).replace('.', '').replace(',', '.')
+                info['descontos_total'] = float(valor)
+        
+        if 'LIQUIDO' in normalizar_texto(linha) or 'LÍQUIDO' in linha:
+            match = re.search(r'(\d+[.,]\d{2})', linha)
+            if match:
+                valor = match.group(1).replace('.', '').replace(',', '.')
+                info['liquido'] = float(valor)
     
     return info
 
@@ -295,17 +290,11 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
 # ============================================================================
 
 def extrair_valores_linha(linha: str) -> float:
-    """Extrai o último valor numérico de uma linha, tratando separadores de milhar e decimal"""
-    # Regex atualizada para pegar formatos como 6.306,68 ou 630,68
-    # Ela busca sequências de números que terminam com ,XX
-    valores = re.findall(r'\d+(?:\.\d{3})*,\d{2}', linha)
-    
+    """Extrai o último valor numérico de uma linha (coluna de descontos)"""
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
     if valores:
-        # Pega o último valor da linha (geralmente onde fica o valor líquido/desconto)
-        valor_str = valores[-1]
-        # Remove o ponto de milhar e substitui a vírgula decimal por ponto
-        valor_final = valor_str.replace('.', '').replace(',', '.')
-        return float(valor_final)
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
     return 0.0
 
 def extrair_salario_bruto(texto: str) -> float:
