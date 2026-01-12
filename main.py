@@ -182,15 +182,16 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'desconhecidos': []
     }
     
-    # Primeiro identifica nossos contratos
+    # Primeiro identifica nossos contratos (TODOS - cartões e empréstimos)
     for produto in NOSSOS_PRODUTOS:
         if produto in texto_normalizado:
             for linha in linhas:
-                if produto in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
+                # Identifica qualquer linha com nossos produtos
+                if produto in linha and any(kw in linha for kw in ['CARTAO', 'EMPRESTIMO', 'EMPREST', 'Emprestimo', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
                     if linha.strip() not in cartoes_encontrados['nossos_contratos']:
                         cartoes_encontrados['nossos_contratos'].append(linha.strip())
     
-    # Depois identifica cartões de terceiros conhecidos
+    # Depois identifica cartões de terceiros conhecidos (APENAS CARTÕES)
     for cartao in CARTOES_CONHECIDOS:
         if cartao in texto_normalizado:
             for linha in linhas:
@@ -198,7 +199,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
                     if linha.strip() not in cartoes_encontrados['conhecidos']:
                         cartoes_encontrados['conhecidos'].append(linha.strip())
     
-    # Por último, identifica cartões desconhecidos
+    # Por último, identifica cartões desconhecidos (APENAS CARTÕES)
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         tem_keyword_cartao = any(kw in linha_norm for kw in 
