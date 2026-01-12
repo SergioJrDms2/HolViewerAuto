@@ -221,7 +221,6 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
     info = {
         'nome': '',
         'matricula': '',
-        'cargo': '',
         'vencimentos_total': 0.0,
         'descontos_total': 0.0,
         'liquido': 0.0
@@ -237,9 +236,6 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
             match = re.search(r'(\d{6})', linha)
             if match:
                 info['matricula'] = match.group(1)
-        
-        if 'FUNCAO' in normalizar_texto(linha) or 'TIPO' in linha:
-            info['cargo'] = linha.split()[-1] if linha.split() else ''
         
         if 'VENCIMENTOS' in linha and 'DESCONTOS' not in linha:
             match = re.search(r'(\d+[.,]\d{2})', linha)
@@ -312,7 +308,6 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
                             'matricula': info.get('matricula', 'N/A'),
-                            'cargo': info.get('cargo', 'N/A'),
                             'regime': resultado['regime'],
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
@@ -330,7 +325,6 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
                             'matricula': info.get('matricula', 'N/A'),
-                            'cargo': info.get('cargo', 'N/A'),
                             'regime': resultado['regime'],
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
@@ -347,7 +341,6 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
                             'matricula': info.get('matricula', 'N/A'),
-                            'cargo': info.get('cargo', 'N/A'),
                             'regime': resultado['regime'],
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
@@ -363,7 +356,6 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
                         'arquivo': resultado['arquivo'],
                         'nome': info.get('nome', 'N/A'),
                         'matricula': info.get('matricula', 'N/A'),
-                        'cargo': info.get('cargo', 'N/A'),
                         'regime': resultado['regime'],
                         'vencimentos': info.get('vencimentos_total', 0),
                         'descontos': info.get('descontos_total', 0),
@@ -454,7 +446,6 @@ def main():
                     st.metric("Matrícula", info.get('matricula', 'N/A'))
                 
                 with col2:
-                    st.metric("Cargo", info.get('cargo', 'N/A'))
                     st.metric("Regime", resultado['regime'])
                 
                 with col3:
@@ -650,7 +641,6 @@ def main():
                             "arquivo": "Arquivo",
                             "nome": "Nome",
                             "matricula": "Matrícula",
-                            "cargo": "Cargo",
                             "regime": "Regime",
                             "vencimentos": st.column_config.NumberColumn(
                                 "Vencimentos",
