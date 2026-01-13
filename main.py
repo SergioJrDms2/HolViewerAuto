@@ -1,6 +1,7 @@
 """
 Analisador de Holerite - Aplicação Streamlit
 Sistema de Identificação de Oportunidades de Compra de Dívida
+Versão 3.0 - Foco em Margem de Cartão
 
 Para executar:
 streamlit run app.py
@@ -16,7 +17,6 @@ import pandas as pd
 from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
-from typing import Dict, List
 
 # ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -55,20 +55,6 @@ st.markdown("""
         padding: 1rem;
         margin: 1rem 0;
     }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeeba;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
-    .info-box {
-        background-color: #d1ecf1;
-        border: 1px solid #bee5eb;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -76,14 +62,12 @@ st.markdown("""
 # BASE DE DADOS DE CARTÕES CONHECIDOS
 # ============================================================================
 
-# Nossos produtos/contratos
 NOSSOS_PRODUTOS = [
     "STARCARD",
     "ANTICIPAY",
     "STARBANK"
 ]
 
-# Cartões de terceiros (concorrentes)
 CARTOES_CONHECIDOS = [
     "NIO",
     "DAYCOVAL",
@@ -95,9 +79,6 @@ CARTOES_CONHECIDOS = [
     "PINE",
     "BRADESCO"
 ]
-
-# Lista completa para busca
-TODOS_CARTOES = NOSSOS_PRODUTOS + CARTOES_CONHECIDOS
 
 # ============================================================================
 # FUNÇÕES DE EXTRAÇÃO DE TEXTO
@@ -157,6 +138,14 @@ def normalizar_texto(texto: str) -> str:
         texto = texto.replace(acentuado, sem_acento)
     return texto
 
+def extrair_valores_linha(linha: str) -> float:
+    """Extrai o último valor numérico de uma linha"""
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if valores:
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
 def extrair_regime_contrato(texto: str) -> str:
     """Identifica o regime de contrato do servidor"""
     texto_normalizado = normalizar_texto(texto)
@@ -172,78 +161,6 @@ def extrair_regime_contrato(texto: str) -> str:
     else:
         return "NÃO IDENTIFICADO"
 
-def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
-    """Identifica cartões de crédito no texto (FILTRA RIGOROSAMENTE EMPRÉSTIMOS)"""
-    texto_normalizado = normalizar_texto(texto)
-    linhas = texto_normalizado.split('\n')
-    
-    # Lista de termos que, se encontrados, invalidam a linha imediatamente
-    # Adicionei espaços em " EMP " e "EMP " para evitar confundir com "EMPRESARIAL"
-    TERMOS_EXCLUSAO = [
-        'EMPRESTIMO', 'EMP ', ' EMP', 'CONSIGNADO', 
-        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP '
-    ]
-
-    cartoes_encontrados = {
-        'nossos_contratos': [],
-        'conhecidos': [],
-        'desconhecidos': []
-    }
-    
-    # ---------------------------------------------------------
-    # 1. Nossos Produtos (Com filtro de exclusão)
-    # ---------------------------------------------------------
-    for produto in NOSSOS_PRODUTOS:
-        if produto in texto_normalizado:
-            for linha in linhas:
-                # Verifica se é produto nosso E se tem palavras de cartão
-                if produto in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
-                    
-                    # LOGICA NOVA: Se tiver termo de empréstimo, PULA esta linha
-                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
-                        continue
-
-                    if linha.strip() not in cartoes_encontrados['nossos_contratos']:
-                        cartoes_encontrados['nossos_contratos'].append(linha.strip())
-    
-    # ---------------------------------------------------------
-    # 2. Cartões Conhecidos (Com filtro de exclusão)
-    # ---------------------------------------------------------
-    for cartao in CARTOES_CONHECIDOS:
-        if cartao in texto_normalizado:
-            for linha in linhas:
-                if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'CART.', 'CART']):
-                    
-                    # LOGICA NOVA: Bloqueia empréstimos
-                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
-                        continue
-
-                    if linha.strip() not in cartoes_encontrados['conhecidos']:
-                        cartoes_encontrados['conhecidos'].append(linha.strip())
-    
-    # ---------------------------------------------------------
-    # 3. Desconhecidos (Com filtro de exclusão)
-    # ---------------------------------------------------------
-    for linha in linhas:
-        linha_norm = normalizar_texto(linha)
-        
-        # Verifica se parece emprestimo ANTES de qualquer coisa
-        if any(termo in linha_norm for termo in TERMOS_EXCLUSAO):
-            continue
-
-        tem_keyword_cartao = any(kw in linha_norm for kw in 
-                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO','CART.'])
-        
-        if tem_keyword_cartao:
-            eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
-            eh_conhecido = any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS)
-            
-            if not eh_nosso and not eh_conhecido and linha.strip():
-                if linha.strip() not in cartoes_encontrados['desconhecidos']:
-                    cartoes_encontrados['desconhecidos'].append(linha.strip())
-    
-    return cartoes_encontrados
-
 def extrair_informacoes_financeiras(texto: str) -> Dict:
     """Extrai informações financeiras do holerite"""
     info = {
@@ -251,7 +168,7 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
         'matricula': '',
         'vencimentos_total': 0.0,
         'descontos_total': 0.0,
-        'liquido': ''
+        'liquido': 0.0
     }
     
     linhas = texto.split('\n')
@@ -285,51 +202,33 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
     
     return info
 
-# ============================================================================
-# FUNÇÕES DE CÁLCULO DE MARGEM
-# ============================================================================
-
-def extrair_valores_linha(linha: str) -> float:
-    """Extrai o último valor numérico de uma linha (coluna de descontos)"""
-    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
-    if valores:
-        valor_str = valores[-1].replace('.', '').replace(',', '.')
-        return float(valor_str)
-    return 0.0
-
 def extrair_salario_bruto(texto: str) -> float:
-    """
-    Extrai o valor do salário bruto do contracheque
-    Versão melhorada que busca especificamente por totais de vencimentos
-    """
+    """Extrai o valor do salário bruto do contracheque"""
     texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
-    # Prioridade 1: Buscar por "TOTAL DE VENCIMENTOS" ou "TOTAL VENCIMENTOS"
-    # Esta é geralmente a linha mais confiável
+    # Prioridade 1: TOTAL DE VENCIMENTOS
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         if 'TOTAL' in linha_norm and ('VENCIMENTO' in linha_norm or 'VENC' in linha_norm):
-            # Evita linhas de desconto
             if 'DESCONTO' not in linha_norm and 'DESC' not in linha_norm:
                 valor = extrair_valores_linha(linha)
                 if valor > 0:
                     return valor
     
-    # Prioridade 2: Buscar por linha com múltiplas palavras-chave específicas
+    # Prioridade 2: Buscar por palavra-chave específica
     keywords_primarias = ['SALARIO BASE', 'SALÁRIO BASE', 'VENCIMENTO BASE', 'REMUNERACAO']
     
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         for keyword in keywords_primarias:
             if keyword in linha_norm:
-                # Não filtra "BASE" aqui, pois "SALARIO BASE" é válido
                 if 'DESCONTO' not in linha_norm:
                     valor = extrair_valores_linha(linha)
                     if valor > 0:
                         return valor
     
-    # Prioridade 3: Buscar por SUBSÍDIO (comum em cargos públicos)
+    # Prioridade 3: SUBSÍDIO
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         if 'SUBSIDIO' in linha_norm or 'SUBSÍDIO' in linha_norm:
@@ -337,28 +236,15 @@ def extrair_salario_bruto(texto: str) -> float:
             if valor > 0:
                 return valor
     
-    # Prioridade 4: Buscar na função extrair_informacoes_financeiras
-    # que já tem a lógica de pegar vencimentos_total
+    # Prioridade 4: Usar vencimentos_total
     info = extrair_informacoes_financeiras(texto)
     if info.get('vencimentos_total', 0) > 0:
         return info['vencimentos_total']
     
-    # Prioridade 5: Fallback - buscar qualquer linha com palavras-chave
-    keywords_fallback = ['SALARIO', 'VENCIMENTO', 'REMUNERACAO']
-    
-    for linha in linhas:
-        linha_norm = normalizar_texto(linha)
-        if any(keyword in linha_norm for keyword in keywords_fallback):
-            if 'DESCONTO' not in linha_norm and 'TOTAL' not in linha_norm:
-                valor = extrair_valores_linha(linha)
-                if valor > 0:
-                    return valor
-    
     return 0.0
-    
 
 def extrair_descontos_fixos(texto: str) -> Dict:
-    """Identifica e extrai valores de descontos fixos"""
+    """Identifica e extrai valores de descontos fixos obrigatórios"""
     texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
@@ -410,60 +296,116 @@ def extrair_descontos_fixos(texto: str) -> Dict:
     
     return descontos_fixos
 
-def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
-    """Extrai os valores dos descontos de cartões identificados"""
-    valores_cartoes = {
-        'nossos_contratos': [],
-        'conhecidos': [],
-        'desconhecidos': [],
-        'total': 0.0
+def identificar_cartoes_e_emprestimos(texto: str) -> Dict:
+    """
+    Identifica e SEPARA cartões de empréstimos
+    Retorna dois grupos: cartões e empréstimos
+    """
+    texto_normalizado = normalizar_texto(texto)
+    linhas = texto_normalizado.split('\n')
+    
+    # Termos que identificam EMPRÉSTIMOS (não cartões)
+    TERMOS_EMPRESTIMO = [
+        'EMPRESTIMO', 'EMP ', ' EMP', 'CONSIGNADO', 
+        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP '
+    ]
+    
+    resultado = {
+        'cartoes': [],  # Apenas cartões
+        'emprestimos': [],  # Apenas empréstimos
+        'nossos_contratos': []
     }
     
-    linhas = texto.split('\n')
+    # Processar todas as linhas
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # Verifica se é empréstimo
+        eh_emprestimo = any(termo in linha_norm for termo in TERMOS_EMPRESTIMO)
+        
+        # Verifica se tem palavras de cartão
+        tem_palavra_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CART ', 'CRED', 'CART.'])
+        
+        # Verifica se é nosso produto
+        eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
+        
+        # Verifica se é concorrente conhecido
+        eh_concorrente = any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS)
+        
+        # Classificação
+        if eh_nosso:
+            if not eh_emprestimo and tem_palavra_cartao:
+                if linha.strip() not in resultado['nossos_contratos']:
+                    resultado['nossos_contratos'].append(linha.strip())
+        
+        elif eh_emprestimo:
+            # É empréstimo consignado
+            if linha.strip() not in resultado['emprestimos']:
+                resultado['emprestimos'].append(linha.strip())
+        
+        elif tem_palavra_cartao:
+            # É cartão (nosso, concorrente ou desconhecido)
+            if linha.strip() not in resultado['cartoes']:
+                resultado['cartoes'].append(linha.strip())
+    
+    return resultado
+
+def extrair_valores_consignaveis(texto: str, itens_identificados: Dict) -> Dict:
+    """
+    Extrai valores dos itens consignáveis identificados
+    Separa em cartões e empréstimos
+    """
+    valores = {
+        'cartoes': [],
+        'emprestimos': [],
+        'nossos_contratos': [],
+        'total_cartoes': 0.0,
+        'total_emprestimos': 0.0
+    }
     
     # Processa nossos contratos
-    for cartao_linha in cartoes_encontrados.get('nossos_contratos', []):
-        valor = extrair_valores_linha(cartao_linha)
+    for item in itens_identificados.get('nossos_contratos', []):
+        valor = extrair_valores_linha(item)
         if valor > 0:
-            valores_cartoes['nossos_contratos'].append({
-                'descricao': cartao_linha.strip(),
+            valores['nossos_contratos'].append({
+                'descricao': item.strip(),
                 'valor': valor
             })
-            valores_cartoes['total'] += valor
+            valores['total_cartoes'] += valor
     
-    # Processa cartões conhecidos
-    for cartao_linha in cartoes_encontrados.get('conhecidos', []):
-        valor = extrair_valores_linha(cartao_linha)
+    # Processa cartões
+    for item in itens_identificados.get('cartoes', []):
+        valor = extrair_valores_linha(item)
         if valor > 0:
-            valores_cartoes['conhecidos'].append({
-                'descricao': cartao_linha.strip(),
+            valores['cartoes'].append({
+                'descricao': item.strip(),
                 'valor': valor
             })
-            valores_cartoes['total'] += valor
+            valores['total_cartoes'] += valor
     
-    # Processa cartões desconhecidos
-    for cartao_linha in cartoes_encontrados.get('desconhecidos', []):
-        valor = extrair_valores_linha(cartao_linha)
+    # Processa empréstimos
+    for item in itens_identificados.get('emprestimos', []):
+        valor = extrair_valores_linha(item)
         if valor > 0:
-            valores_cartoes['desconhecidos'].append({
-                'descricao': cartao_linha.strip(),
+            valores['emprestimos'].append({
+                'descricao': item.strip(),
                 'valor': valor
             })
-            valores_cartoes['total'] += valor
+            valores['total_emprestimos'] += valor
     
-    return valores_cartoes
+    return valores
 
-def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict, salario_liquido_real: float = 0.0) -> Dict:
+def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_consignaveis: Dict, salario_liquido_real: float = 0.0) -> Dict:
     """
-    Calcula a margem disponível baseada na regra correta:
+    Calcula a margem disponível separando cartões de empréstimos
     
-    Base de Cálculo = Vencimentos/Proventos - Descontos Obrigatórios
-    Margem Total = 45% da Base de Cálculo
-    Sendo: 35% para empréstimos + 5% cartão crédito + 5% cartão benefício
-    Margem Disponível = Margem Total - Descontos Consignáveis já comprometidos
+    Regra:
+    - Base de Cálculo = Vencimentos - Descontos Obrigatórios
+    - Margem Total = 45% da Base
+    - Subdivisão: 35% empréstimo + 5% cartão crédito + 5% cartão benefício
     """
     
-    # Soma descontos fixos obrigatórios
+    # Soma descontos fixos
     total_descontos_fixos = (
         descontos_fixos['inss'] +
         descontos_fixos['irrf'] +
@@ -473,59 +415,54 @@ def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valo
         descontos_fixos['vale_transporte']
     )
     
-    # Total já comprometido com cartões/empréstimos consignáveis
-    total_cartoes = valores_cartoes['total']
+    # Valores comprometidos
+    total_cartoes_comprometido = valores_consignaveis['total_cartoes']
+    total_emprestimos_comprometido = valores_consignaveis['total_emprestimos']
     
-    # Base de cálculo: Salário Bruto - Descontos Obrigatórios
-    # Se temos o líquido real do PDF, usamos ele. Senão, calculamos.
+    # Base de cálculo
     if salario_liquido_real > 0:
-        # O líquido real já considera os descontos obrigatórios + os consignáveis
-        # Precisamos "voltar" e pegar apenas sem os consignáveis
-        base_calculo = salario_liquido_real + total_cartoes
+        base_calculo = salario_liquido_real + total_cartoes_comprometido + total_emprestimos_comprometido
     else:
         base_calculo = salario_bruto - total_descontos_fixos
     
-    # REGRA: Margem consignável total é 45% da base de cálculo
+    # Margem Total = 45% da base
     margem_total = base_calculo * 0.45
     
-    # Subdivisão (informativo):
-    margem_emprestimo = base_calculo * 0.35  # 35% para empréstimos
-    margem_cartao_credito = base_calculo * 0.05  # 5% para cartão crédito
-    margem_cartao_beneficio = base_calculo * 0.05  # 5% para cartão benefício
+    # Subdivisões
+    margem_emprestimo_total = base_calculo * 0.35  # 35%
+    margem_cartao_total = base_calculo * 0.10  # 10% (5% crédito + 5% benefício)
+    margem_cartao_credito_total = base_calculo * 0.05  # 5%
+    margem_cartao_beneficio_total = base_calculo * 0.05  # 5%
     
-    # Margem Disponível = Margem Total (45%) - Já Comprometido
-    margem_disponivel = margem_total - total_cartoes
+    # Margens disponíveis
+    margem_emprestimo_disponivel = margem_emprestimo_total - total_emprestimos_comprometido
+    margem_cartao_disponivel = margem_cartao_total - total_cartoes_comprometido
     
     return {
         'salario_bruto': salario_bruto,
         'total_descontos_fixos': total_descontos_fixos,
-        'salario_liquido': salario_liquido_real if salario_liquido_real > 0 else salario_bruto - total_descontos_fixos - total_cartoes,
         'base_calculo': base_calculo,
-        'margem_emprestimo': margem_emprestimo,
-        'margem_cartao_credito': margem_cartao_credito,
-        'margem_cartao_beneficio': margem_cartao_beneficio,
+        'salario_liquido': salario_liquido_real if salario_liquido_real > 0 else base_calculo - total_cartoes_comprometido - total_emprestimos_comprometido,
+        
+        # Margem de Empréstimo (35%)
+        'margem_emprestimo_total': margem_emprestimo_total,
+        'margem_emprestimo_comprometida': total_emprestimos_comprometido,
+        'margem_emprestimo_disponivel': margem_emprestimo_disponivel,
+        'percentual_emprestimo_utilizado': (total_emprestimos_comprometido / margem_emprestimo_total * 100) if margem_emprestimo_total > 0 else 0,
+        
+        # Margem de Cartão (10% = 5% + 5%)
+        'margem_cartao_total': margem_cartao_total,
+        'margem_cartao_credito_total': margem_cartao_credito_total,
+        'margem_cartao_beneficio_total': margem_cartao_beneficio_total,
+        'margem_cartao_comprometida': total_cartoes_comprometido,
+        'margem_cartao_disponivel': margem_cartao_disponivel,
+        'percentual_cartao_utilizado': (total_cartoes_comprometido / margem_cartao_total * 100) if margem_cartao_total > 0 else 0,
+        
+        # Total
         'margem_total': margem_total,
-        'total_cartoes': total_cartoes,
-        'margem_disponivel': margem_disponivel,
-        'percentual_utilizado': (total_cartoes / margem_total * 100) if margem_total > 0 else 0,
-        'tem_margem': margem_disponivel > 0
-    }
-
-# Exemplo de uso integrado:
-def analisar_contracheque(texto: str, cartoes_encontrados: Dict) -> Dict:
-    """
-    Função auxiliar que integra todas as extrações e cálculos
-    """
-    salario_bruto = extrair_salario_bruto(texto)
-    descontos_fixos = extrair_descontos_fixos(texto)
-    valores_cartoes = extrair_valores_cartoes(texto, cartoes_encontrados)
-    margem = calcular_margem_disponivel(salario_bruto, descontos_fixos, valores_cartoes)
-    
-    return {
-        'salario_bruto': salario_bruto,
-        'descontos_fixos': descontos_fixos,
-        'valores_cartoes': valores_cartoes,
-        'margem': margem
+        'total_comprometido': total_cartoes_comprometido + total_emprestimos_comprometido,
+        'margem_total_disponivel': margem_total - (total_cartoes_comprometido + total_emprestimos_comprometido),
+        'percentual_total_utilizado': ((total_cartoes_comprometido + total_emprestimos_comprometido) / margem_total * 100) if margem_total > 0 else 0
     }
 
 # ============================================================================
@@ -533,7 +470,7 @@ def analisar_contracheque(texto: str, cartoes_encontrados: Dict) -> Dict:
 # ============================================================================
 
 def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict:
-    """Analisa um holerite e retorna os resultados com validação adicional"""
+    """Analisa um holerite e retorna os resultados"""
     texto = extrair_texto_pdf(arquivo_bytes)
     
     if not texto.strip():
@@ -541,27 +478,20 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
     
     regime = extrair_regime_contrato(texto)
     info_financeira = extrair_informacoes_financeiras(texto)
-    cartoes = identificar_cartoes_credito(texto)
-    
-    # Calcula margem disponível
+    cartoes_emprestimos = identificar_cartoes_e_emprestimos(texto)
     descontos_fixos = extrair_descontos_fixos(texto)
-    valores_cartoes = extrair_valores_cartoes(texto, cartoes)
+    valores_consignaveis = extrair_valores_consignaveis(texto, cartoes_emprestimos)
     salario_bruto = extrair_salario_bruto(texto)
     
-    # Obtém o salário líquido extraído (trata se vier vazio/string)
     salario_liquido_real = info_financeira.get('liquido', 0.0)
-    if isinstance(salario_liquido_real, str):
-        salario_liquido_real = 0.0
     
-    # VALIDAÇÃO: Se não conseguiu extrair salário bruto, tenta fallback
     if salario_bruto == 0.0 and info_financeira.get('vencimentos_total', 0) > 0:
         salario_bruto = info_financeira['vencimentos_total']
     
-    # === AQUI ESTÁ A MUDANÇA NA CHAMADA ===
     margem = calcular_margem_disponivel(
         salario_bruto, 
         descontos_fixos, 
-        valores_cartoes, 
+        valores_consignaveis,
         salario_liquido_real=salario_liquido_real
     )
     
@@ -569,143 +499,27 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
         'arquivo': nome_arquivo,
         'regime': regime,
         'info_financeira': info_financeira,
-        'nossos_contratos': cartoes['nossos_contratos'],
-        'cartoes_conhecidos': cartoes['conhecidos'],
-        'cartoes_desconhecidos': cartoes['desconhecidos'],
+        'cartoes': cartoes_emprestimos['cartoes'],
+        'emprestimos': cartoes_emprestimos['emprestimos'],
+        'nossos_contratos': cartoes_emprestimos['nossos_contratos'],
         'descontos_fixos': descontos_fixos,
-        'valores_cartoes': valores_cartoes,
+        'valores_consignaveis': valores_consignaveis,
         'margem': margem,
         'texto_completo': texto
     }
-
-def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
-    """Processa múltiplos PDFs e retorna DataFrame"""
-    resultados = []
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for idx, arquivo_uploaded in enumerate(arquivos_uploaded):
-        progress = (idx + 1) / len(arquivos_uploaded)
-        progress_bar.progress(progress)
-        status_text.text(f"Processando {idx + 1}/{len(arquivos_uploaded)}: {arquivo_uploaded.name}")
-        
-        try:
-            arquivo_bytes = arquivo_uploaded.read()
-            resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_uploaded.name)
-            
-            if resultado:
-                info = resultado['info_financeira']
-                margem = resultado['margem']
-                
-                # Adiciona oportunidades conhecidas
-                if resultado['cartoes_conhecidos']:
-                    for cartao in resultado['cartoes_conhecidos']:
-                        resultados.append({
-                            'arquivo': resultado['arquivo'],
-                            'nome': info.get('nome', 'N/A'),
-                            'matricula': info.get('matricula', 'N/A'),
-                            'regime': resultado['regime'],
-                            'vencimentos': info.get('vencimentos_total', 0),
-                            'descontos': info.get('descontos_total', 0),
-                            'liquido': info.get('liquido', 'N/A'),
-                            'margem_disponivel': margem['margem_disponivel'],
-                            'margem_total': margem['margem_total'],
-                            'total_cartoes': margem['total_cartoes'],
-                            'percentual_utilizado': margem['percentual_utilizado'],
-                            'tipo_oportunidade': 'CONHECIDA',
-                            'descricao': cartao,
-                            'status': '✅ OPORTUNIDADE CONFIRMADA'
-                        })
-
-                # Adiciona nossos contratos
-                if resultado['nossos_contratos']:
-                    for cartao in resultado['nossos_contratos']:
-                        resultados.append({
-                            'arquivo': resultado['arquivo'],
-                            'nome': info.get('nome', 'N/A'),
-                            'matricula': info.get('matricula', 'N/A'),
-                            'regime': resultado['regime'],
-                            'vencimentos': info.get('vencimentos_total', 0),
-                            'descontos': info.get('descontos_total', 0),
-                            'liquido': info.get('liquido', 'N/A'),
-                            'margem_disponivel': margem['margem_disponivel'],
-                            'margem_total': margem['margem_total'],
-                            'total_cartoes': margem['total_cartoes'],
-                            'percentual_utilizado': margem['percentual_utilizado'],
-                            'tipo_oportunidade': 'NOSSOS CONTRATOS',
-                            'descricao': cartao,
-                            'status': '🏆 CLIENTE NOSSO'
-                        })
-                
-                # Adiciona cartões para estudar
-                if resultado['cartoes_desconhecidos']:
-                    for cartao in resultado['cartoes_desconhecidos']:
-                        resultados.append({
-                            'arquivo': resultado['arquivo'],
-                            'nome': info.get('nome', 'N/A'),
-                            'matricula': info.get('matricula', 'N/A'),
-                            'regime': resultado['regime'],
-                            'vencimentos': info.get('vencimentos_total', 0),
-                            'descontos': info.get('descontos_total', 0),
-                            'liquido': info.get('liquido', 'N/A'),
-                            'margem_disponivel': margem['margem_disponivel'],
-                            'margem_total': margem['margem_total'],
-                            'total_cartoes': margem['total_cartoes'],
-                            'percentual_utilizado': margem['percentual_utilizado'],
-                            'tipo_oportunidade': 'PARA ESTUDAR',
-                            'descricao': cartao,
-                            'status': '⚠️ VERIFICAR'
-                        })
-                
-                # Se não tem oportunidades
-                if not resultado['cartoes_conhecidos'] and not resultado['cartoes_desconhecidos']:
-                    resultados.append({
-                        'arquivo': resultado['arquivo'],
-                        'nome': info.get('nome', 'N/A'),
-                        'matricula': info.get('matricula', 'N/A'),
-                        'regime': resultado['regime'],
-                        'vencimentos': info.get('vencimentos_total', 0),
-                        'descontos': info.get('descontos_total', 0),
-                        'liquido': info.get('liquido', 'N/A'),
-                        'margem_disponivel': margem['margem_disponivel'],
-                        'margem_total': margem['margem_total'],
-                        'total_cartoes': margem['total_cartoes'],
-                        'percentual_utilizado': margem['percentual_utilizado'],
-                        'tipo_oportunidade': 'NENHUMA',
-                        'descricao': 'Sem oportunidades identificadas',
-                        'status': 'ℹ️ SEM OPORTUNIDADE'
-                    })
-        
-        except Exception as e:
-            st.error(f"Erro ao processar {arquivo_uploaded.name}: {e}")
-    
-    progress_bar.empty()
-    status_text.empty()
-    
-    return pd.DataFrame(resultados)
 
 # ============================================================================
 # INTERFACE STREAMLIT
 # ============================================================================
 
 def main():
-    # Header
     st.markdown('<h1 class="main-header">💳 Analisador de Holerite</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Sistema de Identificação de Oportunidades de Compra de Dívida</p>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Análise de Margem Consignável - Foco em Cartões</p>', unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
         st.image("https://img.icons8.com/fluency/96/000000/bank-card-back-side.png", width=80)
         st.title("⚙️ Configurações")
-        
-        modo = st.radio(
-            "Modo de Análise",
-            ["📄 Análise Individual", "📊 Análise em Lote"],
-            help="Escolha entre analisar um único PDF ou múltiplos PDFs"
-        )
-        
-        st.markdown("---")
         
         st.subheader("🏆 Nossos Produtos")
         with st.expander("Ver lista"):
@@ -716,527 +530,136 @@ def main():
         with st.expander("Ver lista"):
             for cartao in CARTOES_CONHECIDOS:
                 st.text(f"✓ {cartao}")
-        
-        st.markdown("---")
-        
-        st.info("💡 **Dica:** Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote!")
     
-    # Conteúdo principal
-    if modo == "📄 Análise Individual":
-        st.header("📄 Análise Individual de Holerite")
+    # Upload
+    st.header("📄 Análise de Holerite")
+    
+    arquivo_upload = st.file_uploader(
+        "Faça upload do PDF do holerite",
+        type=['pdf'],
+        help="Selecione um arquivo PDF para análise"
+    )
+    
+    if arquivo_upload:
+        if st.button("🔍 Analisar", type="primary", use_container_width=True):
+            with st.spinner("Analisando holerite..."):
+                arquivo_bytes = arquivo_upload.read()
+                resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_upload.name)
+                
+                if resultado:
+                    st.session_state['resultado_individual'] = resultado
         
-        arquivo_upload = st.file_uploader(
-            "Faça upload do PDF do holerite",
-            type=['pdf'],
-            help="Selecione um arquivo PDF para análise"
-        )
-        
-        if arquivo_upload:
-            col1, col2 = st.columns([3, 1])
+        if 'resultado_individual' in st.session_state:
+            resultado = st.session_state['resultado_individual']
             
+            st.success("✅ Análise concluída com sucesso!")
+            
+            # Informações do servidor
+            st.subheader("👤 Informações do Servidor")
+            info = resultado['info_financeira']
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Nome", info.get('nome', 'N/A'))
             with col2:
-                if st.button("🔍 Analisar", type="primary", use_container_width=True):
-                    with st.spinner("Analisando holerite..."):
-                        arquivo_bytes = arquivo_upload.read()
-                        resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_upload.name)
-                        
-                        if resultado:
-                            st.session_state['resultado_individual'] = resultado
+                st.metric("Regime", resultado['regime'])
+            with col3:
+                st.metric("Líquido", f"R$ {info.get('liquido', 0):,.2f}")
             
-            if 'resultado_individual' in st.session_state:
-                resultado = st.session_state['resultado_individual']
-                
-                st.success("✅ Análise concluída com sucesso!")
-                
-                # Informações do servidor
-                st.subheader("👤 Informações do Servidor")
-                info = resultado['info_financeira']
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Nome", info.get('nome', 'N/A'))
-                
-                with col2:
-                    st.metric("Regime", resultado['regime'])
-                
-                with col3:
-                    st.metric("Líquido", f"R$ {info.get('liquido', 0):,.2f}")
-                
-                st.markdown("---")
-                
-                # Análise de Margem
-                st.subheader("💰 Análise de Margem Consignável")
-                margem = resultado.get('margem', {})
-                
-                if margem.get('total_descontos_fixos', 0) > 0:
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric(
-                            "Descontos Fixos",
-                            f"R$ {margem['total_descontos_fixos']:,.2f}",
-                            help="Total de descontos fixos (INSS, IR, Previdência, etc.)"
-                        )
-                    
-                    with col2:
-                        st.metric(
-                            "Salário Líquido Base",
-                            f"R$ {margem['margem_total']:,.2f}",
-                            help="30% dos descontos fixos"
-                        )
-                    
-                    with col3:
-                        st.metric(
-                            "Comprometido",
-                            f"R$ {margem['total_cartoes']:,.2f}",
-                            help="Total de descontos com cartões/empréstimos"
-                        )
-                    
-                    with col4:
-                        margem_disp = margem['margem_disponivel']
-                        delta_color = "normal" if margem_disp >= 0 else "inverse"
-                        st.metric(
-                            "Margem Disponível",
-                            f"R$ {margem_disp:,.2f}",
-                            delta=f"{margem['percentual_utilizado']:.1f}% utilizado",
-                            delta_color=delta_color,
-                            help="Margem disponível para novos empréstimos"
-                        )
-                    
-                    # Barra de progresso
-                    st.markdown("**Utilização da Margem:**")
-                    percentual = min(margem['percentual_utilizado'], 100)
-                    
-                    if percentual <= 50:
-                        cor = "🟢"
-                        status_margem = "Ótima margem disponível"
-                    elif percentual <= 80:
-                        cor = "🟡"
-                        status_margem = "Margem moderada"
-                    elif percentual <= 100:
-                        cor = "🟠"
-                        status_margem = "Margem quase esgotada"
-                    else:
-                        cor = "🔴"
-                        status_margem = "Margem excedida"
-                    
-                    st.progress(min(percentual / 100, 1.0))
-                    st.caption(f"{cor} {status_margem} - {percentual:.1f}% da margem comprometida")
-                    
-                    # Detalhamento dos descontos fixos
-                    with st.expander("📋 Ver detalhamento dos descontos fixos"):
-                        descontos_fixos = resultado.get('descontos_fixos', {})
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if descontos_fixos.get('inss', 0) > 0:
-                                st.write(f"**INSS:** R$ {descontos_fixos['inss']:,.2f}")
-                            if descontos_fixos.get('irrf', 0) > 0:
-                                st.write(f"**IRRF:** R$ {descontos_fixos['irrf']:,.2f}")
-                            if descontos_fixos.get('previdencia', 0) > 0:
-                                st.write(f"**Previdência:** R$ {descontos_fixos['previdencia']:,.2f}")
-                        
-                        with col2:
-                            if descontos_fixos.get('pensao', 0) > 0:
-                                st.write(f"**Pensão:** R$ {descontos_fixos['pensao']:,.2f}")
-                            if descontos_fixos.get('plano_saude', 0) > 0:
-                                st.write(f"**Plano de Saúde:** R$ {descontos_fixos['plano_saude']:,.2f}")
-                            if descontos_fixos.get('vale_transporte', 0) > 0:
-                                st.write(f"**Vale Transporte:** R$ {descontos_fixos['vale_transporte']:,.2f}")
-                    
-                    # Detalhamento dos cartões
-                    valores_cartoes = resultado.get('valores_cartoes', {})
-                    if valores_cartoes.get('total', 0) > 0:
-                        with st.expander("💳 Ver detalhamento dos cartões/empréstimos"):
-                            if valores_cartoes.get('nossos_contratos'):
-                                st.write("**🏆 Nossos Contratos:**")
-                                for item in valores_cartoes['nossos_contratos']:
-                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                            
-                            if valores_cartoes.get('conhecidos'):
-                                st.write("**✅ Concorrentes:**")
-                                for item in valores_cartoes['conhecidos']:
-                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                            
-                            if valores_cartoes.get('desconhecidos'):
-                                st.write("**⚠️ Outros:**")
-                                for item in valores_cartoes['desconhecidos']:
-                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                else:
-                    st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações de descontos fixos.")
-                
-                st.markdown("---")
-                
-                # Nossos Contratos
-                if resultado['nossos_contratos']:
-                    st.subheader("🏆 Nossos Contratos (Cliente Já É Nosso)")
-                    for i, contrato in enumerate(resultado['nossos_contratos'], 1):
-                        st.markdown(f"**{i}.** {contrato}")
-                    st.info(f"✨ Este cliente já possui {len(resultado['nossos_contratos'])} contrato(s) conosco!")
-                    st.markdown("---")
-                
-                # Oportunidades
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader("✅ Oportunidades Confirmadas")
-                    if resultado['cartoes_conhecidos']:
-                        for i, cartao in enumerate(resultado['cartoes_conhecidos'], 1):
-                            st.markdown(f"**{i}.** {cartao}")
-                        st.success(f"Total: {len(resultado['cartoes_conhecidos'])} oportunidade(s)")
-                    else:
-                        st.info("Nenhuma oportunidade confirmada encontrada.")
-                
-                with col2:
-                    st.subheader("⚠️ Itens para Estudar")
-                    if resultado['cartoes_desconhecidos']:
-                        for i, cartao in enumerate(resultado['cartoes_desconhecidos'], 1):
-                            st.markdown(f"**{i}.** {cartao}")
-                        st.warning(f"Total: {len(resultado['cartoes_desconhecidos'])} item(ns) para análise")
-                    else:
-                        st.success("Todos os cartões estão na lista conhecida.")
-    
-    else:  # Análise em Lote
-        st.header("📊 Análise em Lote de Holerites")
-        
-        arquivos_upload = st.file_uploader(
-            "Faça upload dos PDFs dos holerites",
-            type=['pdf'],
-            accept_multiple_files=True,
-            help="Selecione múltiplos arquivos PDF para análise em lote"
-        )
-        
-        if arquivos_upload:
-            st.info(f"📁 {len(arquivos_upload)} arquivo(s) carregado(s)")
+            st.markdown("---")
             
-            col1, col2, col3 = st.columns([2, 2, 1])
+            # Análise de Margem - SIMPLIFICADA
+            st.subheader("💰 Análise de Margem Consignável")
+            margem = resultado.get('margem', {})
+            
+            # Box com resumo
+            st.markdown("""
+                <div style="background-color: #28a745; color: white; padding: 1.5rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+                    <h3 style="margin: 0; color: white;">📊 Resumo da Margem</h3>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            col1, col2 = st.columns(2)
             
             with col1:
-                if st.button("🚀 Processar Todos", type="primary", use_container_width=True):
-                    with st.spinner("Processando arquivos..."):
-                        df = processar_multiplos_pdfs(arquivos_upload)
-                        st.session_state['df_resultados'] = df
-                        st.success(f"✅ {len(arquivos_upload)} arquivo(s) processado(s) com sucesso!")
-            
-            if 'df_resultados' in st.session_state:
-                df = st.session_state['df_resultados']
+                st.markdown("### 💳 Margem de Cartão")
+                st.metric(
+                    "Margem Total (10%)",
+                    f"R$ {margem.get('margem_cartao_total', 0):,.2f}",
+                    help="5% cartão crédito + 5% cartão benefício"
+                )
+                st.metric(
+                    "Já Comprometido",
+                    f"R$ {margem.get('margem_cartao_comprometida', 0):,.2f}",
+                    delta=f"-{margem.get('percentual_cartao_utilizado', 0):.1f}% usado",
+                    delta_color="inverse"
+                )
+                st.metric(
+                    "✨ MARGEM DISPONÍVEL",
+                    f"R$ {margem.get('margem_cartao_disponivel', 0):,.2f}",
+                    help="Margem que ainda pode ser utilizada para cartões"
+                )
                 
-                if not df.empty:
-                    # Dashboard de Estatísticas
-                    st.subheader("📊 Dashboard de Resultados")
+                # Detalhamento
+                st.caption(f"└─ Cartão Crédito (5%): R$ {margem.get('margem_cartao_credito_total', 0):,.2f}")
+                st.caption(f"└─ Cartão Benefício (5%): R$ {margem.get('margem_cartao_beneficio_total', 0):,.2f}")
+            
+            with col2:
+                st.markdown("### 💵 Margem de Empréstimo")
+                st.metric(
+                    "Margem Total (35%)",
+                    f"R$ {margem.get('margem_emprestimo_total', 0):,.2f}"
+                )
+                st.metric(
+                    "Já Comprometido",
+                    f"R$ {margem.get('margem_emprestimo_comprometida', 0):,.2f}",
+                    delta=f"-{margem.get('percentual_emprestimo_utilizado', 0):.1f}% usado",
+                    delta_color="inverse"
+                )
+                st.metric(
+                    "✨ MARGEM DISPONÍVEL",
+                    f"R$ {margem.get('margem_emprestimo_disponivel', 0):,.2f}"
+                )
+            
+            # Barra de progresso para cartões
+            st.markdown("---")
+            st.markdown("**Utilização da Margem de Cartão:**")
+            perc_cartao = min(margem.get('percentual_cartao_utilizado', 0), 100)
+            st.progress(perc_cartao / 100)
+            
+            if perc_cartao <= 50:
+                st.success(f"🟢 Ótima margem disponível - {perc_cartao:.1f}% utilizado")
+            elif perc_cartao <= 80:
+                st.warning(f"🟡 Margem moderada - {perc_cartao:.1f}% utilizado")
+            else:
+                st.error(f"🔴 Margem quase esgotada - {perc_cartao:.1f}% utilizado")
+            
+            # Detalhamento dos cartões identificados
+            if resultado['valores_consignaveis']['cartoes'] or resultado['valores_consignaveis']['nossos_contratos']:
+                with st.expander("💳 Ver cartões identificados"):
+                    if resultado['valores_consignaveis']['nossos_contratos']:
+                        st.markdown("**🏆 Nossos Contratos:**")
+                        for item in resultado['valores_consignaveis']['nossos_contratos']:
+                            st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
                     
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    
-                    with col1:
-                        total_oportunidades = len(df[df['tipo_oportunidade'] == 'CONHECIDA'])
-                        st.metric("✅ Oportunidades", total_oportunidades, 
-                                help="Total de oportunidades confirmadas")
-                    
-                    with col2:
-                        total_estudar = len(df[df['tipo_oportunidade'] == 'PARA ESTUDAR'])
-                        st.metric("⚠️ Para Estudar", total_estudar,
-                                help="Cartões fora da lista conhecida")
-                    
-                    with col3:
-                        total_sem = len(df[df['tipo_oportunidade'] == 'NENHUMA'])
-                        st.metric("ℹ️ Sem Oportunidade", total_sem,
-                                help="Servidores sem oportunidades")
-                    
-                    with col4:
-                        total_servidores = df['nome'].nunique()
-                        st.metric("👥 Servidores", total_servidores,
-                                help="Total de servidores únicos")
-                    
-                    with col5:
-                        df_com_margem = df[df['margem_disponivel'].notna()]
-                        if not df_com_margem.empty:
-                            margem_por_servidor = df_com_margem.groupby('matricula')['margem_disponivel'].first()
-                            media_margem = margem_por_servidor.mean()
-                            st.metric("💰 Margem Média", f"R$ {media_margem:,.2f}",
-                                    help="Média de margem disponível por servidor")
-                        else:
-                            st.metric("💰 Margem Média", "N/A",
-                                    help="Não foi possível calcular")
-                    
-                    st.markdown("---")
-                    
-                    # Gráficos
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.subheader("📈 Distribuição por Tipo")
-                        tipo_counts = df['tipo_oportunidade'].value_counts()
-                        fig_tipo = px.pie(
-                            values=tipo_counts.values,
-                            names=tipo_counts.index,
-                            title="Tipos de Oportunidade",
-                            color_discrete_sequence=px.colors.qualitative.Set3
-                        )
-                        st.plotly_chart(fig_tipo, use_container_width=True)
-                    
-                    with col2:
-                        st.subheader("📊 Distribuição por Regime")
-                        regime_counts = df['regime'].value_counts()
-                        fig_regime = px.bar(
-                            x=regime_counts.index,
-                            y=regime_counts.values,
-                            title="Servidores por Regime",
-                            labels={'x': 'Regime', 'y': 'Quantidade'},
-                            color=regime_counts.values,
-                            color_continuous_scale='Blues'
-                        )
-                        st.plotly_chart(fig_regime, use_container_width=True)
-                    
-                    # Análise de Margem
-                    st.subheader("💰 Análise de Margem Disponível")
-                    
-                    df_margem = df.groupby('matricula').agg({
-                        'nome': 'first',
-                        'margem_disponivel': 'first',
-                        'margem_total': 'first',
-                        'total_cartoes': 'first',
-                        'percentual_utilizado': 'first'
-                    }).reset_index()
-                    
-                    df_margem = df_margem[df_margem['margem_disponivel'].notna()]
-                    
-                    if not df_margem.empty:
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            fig_hist_margem = px.histogram(
-                                df_margem,
-                                x='margem_disponivel',
-                                nbins=20,
-                                title="Distribuição de Margem Disponível",
-                                labels={'margem_disponivel': 'Margem Disponível (R$)', 'count': 'Quantidade'},
-                                color_discrete_sequence=['#1f77b4']
-                            )
-                            fig_hist_margem.add_vline(x=0, line_dash="dash", line_color="red", 
-                                                     annotation_text="Zero", annotation_position="top")
-                            st.plotly_chart(fig_hist_margem, use_container_width=True)
-                        
-                        with col2:
-                            fig_scatter = px.scatter(
-                                df_margem,
-                                x='margem_total',
-                                y='total_cartoes',
-                                size='percentual_utilizado',
-                                hover_data=['nome', 'margem_disponivel'],
-                                title="Margem Total vs Comprometimento",
-                                labels={
-                                    'margem_total': 'Margem Total (R$)',
-                                    'total_cartoes': 'Total Comprometido (R$)'
-                                },
-                                color='margem_disponivel',
-                                color_continuous_scale='RdYlGn'
-                            )
-                            max_val = max(df_margem['margem_total'].max(), df_margem['total_cartoes'].max())
-                            fig_scatter.add_trace(go.Scatter(
-                                x=[0, max_val],
-                                y=[0, max_val],
-                                mode='lines',
-                                line=dict(dash='dash', color='red'),
-                                name='100% Utilização',
-                                showlegend=True
-                            ))
-                            st.plotly_chart(fig_scatter, use_container_width=True)
-                        
-                        # Top 10 com melhor margem
-                        st.markdown("---")
-                        st.subheader("🌟 Top 10 Servidores com Melhor Margem Disponível")
-                        
-                        df_margem_positiva = df_margem[df_margem['margem_disponivel'] > 0]
-                        
-                        if not df_margem_positiva.empty:
-                            top_margem = df_margem_positiva.nlargest(10, 'margem_disponivel')[
-                                ['nome', 'matricula', 'margem_disponivel', 'margem_total', 'total_cartoes', 'percentual_utilizado']
-                            ]
-                            
-                            st.dataframe(
-                                top_margem,
-                                column_config={
-                                    "nome": "Nome",
-                                    "matricula": "Matrícula",
-                                    "margem_disponivel": st.column_config.NumberColumn(
-                                        "Margem Disponível",
-                                        format="R$ %.2f"
-                                    ),
-                                    "margem_total": st.column_config.NumberColumn(
-                                        "Margem Total",
-                                        format="R$ %.2f"
-                                    ),
-                                    "total_cartoes": st.column_config.NumberColumn(
-                                        "Comprometido",
-                                        format="R$ %.2f"
-                                    ),
-                                    "percentual_utilizado": st.column_config.NumberColumn(
-                                        "% Utilizado",
-                                        format="%.1f%%"
-                                    )
-                                },
-                                hide_index=True,
-                                use_container_width=True
-                            )
-                        else:
-                            st.info("Nenhum servidor com margem disponível positiva.")
-                    else:
-                        st.warning("⚠️ Não foi possível calcular margem para os holerites processados.")
-                    
-                    # Top 10 Oportunidades
-                    st.markdown("---")
-                    st.subheader("🏆 Top 10 Servidores com Mais Oportunidades")
-                    oportunidades_df = df[df['tipo_oportunidade'] == 'CONHECIDA']
-                    
-                    if not oportunidades_df.empty:
-                        top_servidores = oportunidades_df.groupby(['nome', 'matricula']).agg({
-                            'descricao': 'count',
-                            'liquido': 'first',
-                            'regime': 'first'
-                        }).rename(columns={'descricao': 'qtd_oportunidades'})
-                        
-                        top_servidores = top_servidores.sort_values('qtd_oportunidades', ascending=False).head(10)
-                        top_servidores = top_servidores.reset_index()
-                        
-                        st.dataframe(
-                            top_servidores,
-                            column_config={
-                                "nome": "Nome",
-                                "matricula": "Matrícula",
-                                "qtd_oportunidades": st.column_config.NumberColumn(
-                                    "Oportunidades",
-                                    format="%d 💳"
-                                ),
-                                "liquido": st.column_config.NumberColumn(
-                                    "Líquido",
-                                    format="R$ %.2f"
-                                ),
-                                "regime": "Regime"
-                            },
-                            hide_index=True,
-                            use_container_width=True
-                        )
-                    
-                    st.markdown("---")
-                    
-                    # Tabela completa
-                    st.subheader("📋 Resultados Completos")
-                    
-                    # Filtros
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        filtro_tipo = st.multiselect(
-                            "Filtrar por Tipo",
-                            options=df['tipo_oportunidade'].unique(),
-                            default=df['tipo_oportunidade'].unique()
-                        )
-                    
-                    with col2:
-                        filtro_regime = st.multiselect(
-                            "Filtrar por Regime",
-                            options=df['regime'].unique(),
-                            default=df['regime'].unique()
-                        )
-                    
-                    with col3:
-                        busca = st.text_input("🔍 Buscar por nome")
-                    
-                    # Aplicar filtros
-                    df_filtrado = df[
-                        (df['tipo_oportunidade'].isin(filtro_tipo)) &
-                        (df['regime'].isin(filtro_regime))
-                    ]
-                    
-                    if busca:
-                        df_filtrado = df_filtrado[
-                            df_filtrado['nome'].str.contains(busca, case=False, na=False)
-                        ]
-                    
-                    st.dataframe(
-                        df_filtrado,
-                        column_config={
-                            "arquivo": "Arquivo",
-                            "nome": "Nome",
-                            "matricula": "Matrícula",
-                            "regime": "Regime",
-                            "vencimentos": st.column_config.NumberColumn(
-                                "Vencimentos",
-                                format="R$ %.2f"
-                            ),
-                            "descontos": st.column_config.NumberColumn(
-                                "Descontos",
-                                format="R$ %.2f"
-                            ),
-                            "liquido": st.column_config.NumberColumn(
-                                "Líquido",
-                                format="R$ %.2f"
-                            ),
-                            "margem_disponivel": st.column_config.NumberColumn(
-                                "Margem Disponível",
-                                format="R$ %.2f",
-                                help="Margem disponível para novos empréstimos"
-                            ),
-                            "margem_total": st.column_config.NumberColumn(
-                                "Margem Total",
-                                format="R$ %.2f",
-                                help="30% dos descontos fixos"
-                            ),
-                            "total_cartoes": st.column_config.NumberColumn(
-                                "Total Cartões",
-                                format="R$ %.2f",
-                                help="Total comprometido com cartões"
-                            ),
-                            "percentual_utilizado": st.column_config.NumberColumn(
-                                "% Utilizado",
-                                format="%.1f%%",
-                                help="Percentual da margem já utilizada"
-                            ),
-                            "tipo_oportunidade": "Tipo",
-                            "descricao": "Descrição",
-                            "status": "Status"
-                        },
-                        hide_index=True,
-                        use_container_width=True
-                    )
-                    
-                    # Exportar
-                    st.markdown("---")
-                    st.subheader("💾 Exportar Resultados")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        buffer = io.BytesIO()
-                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                            df_filtrado.to_excel(writer, index=False, sheet_name='Oportunidades')
-                        buffer.seek(0)
-                        
-                        st.download_button(
-                            label="📥 Download Excel (Todos)",
-                            data=buffer,
-                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
-                        )
-                    
-                    with col2:
-                        csv = df_filtrado.to_csv(index=False, encoding='utf-8-sig')
-                        st.download_button(
-                            label="📥 Download CSV",
-                            data=csv,
-                            file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
+                    if resultado['valores_consignaveis']['cartoes']:
+                        st.markdown("**💳 Outros Cartões:**")
+                        for item in resultado['valores_consignaveis']['cartoes']:
+                            st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
+            
+            # Detalhamento dos empréstimos
+            if resultado['valores_consignaveis']['emprestimos']:
+                with st.expander("💵 Ver empréstimos identificados"):
+                    for item in resultado['valores_consignaveis']['emprestimos']:
+                        st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
 
     # Footer
     st.markdown("---")
     st.markdown(
         """
         <div style="text-align: center; color: #666; padding: 2rem;">
-            <p>💳 <strong>Analisador de Holerite</strong> v2.0</p>
-            <p>Sistema de Identificação de Oportunidades de Compra de Dívida com Cálculo de Margem</p>
+            <p>💳 <strong>Analisador de Holerite</strong> v3.0</p>
+            <p>Foco em Margem de Cartão Disponível</p>
         </div>
         """,
         unsafe_allow_html=True
