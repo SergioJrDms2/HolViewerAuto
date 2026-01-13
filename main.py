@@ -455,14 +455,15 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
 
 def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict, salario_liquido_real: float = 0.0) -> Dict:
     """
-    Calcula a margem disponível baseada na regra:
-    Margem Total = 45% da totalidade dos vencimentos e proventos
-    Margem Disponível = Margem Total - Descontos Consignáveis (Cartões)
+    Calcula a margem disponível baseada na regra correta:
     
-    Descontos obrigatórios (INSS, IRPF, pensões, etc.) não entram no cálculo
+    Base de Cálculo = Vencimentos/Proventos - Descontos Obrigatórios
+    Margem Total = 45% da Base de Cálculo
+    Sendo: 35% para empréstimos + 5% cartão crédito + 5% cartão benefício
+    Margem Disponível = Margem Total - Descontos Consignáveis já comprometidos
     """
     
-    # Soma descontos fixos (apenas para registro/exibição)
+    # Soma descontos fixos obrigatórios
     total_descontos_fixos = (
         descontos_fixos['inss'] +
         descontos_fixos['irrf'] +
@@ -472,19 +473,37 @@ def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valo
         descontos_fixos['vale_transporte']
     )
     
-    # Total já comprometido com cartões identificados
+    # Total já comprometido com cartões/empréstimos consignáveis
     total_cartoes = valores_cartoes['total']
     
-    # REGRA: Margem consignável é 45% dos vencimentos
-    margem_total = salario_bruto * 0.45
+    # Base de cálculo: Salário Bruto - Descontos Obrigatórios
+    # Se temos o líquido real do PDF, usamos ele. Senão, calculamos.
+    if salario_liquido_real > 0:
+        # O líquido real já considera os descontos obrigatórios + os consignáveis
+        # Precisamos "voltar" e pegar apenas sem os consignáveis
+        base_calculo = salario_liquido_real + total_cartoes
+    else:
+        base_calculo = salario_bruto - total_descontos_fixos
     
-    # Cálculo da Margem Disponível (45% dos vencimentos - Comprometido)
+    # REGRA: Margem consignável total é 45% da base de cálculo
+    margem_total = base_calculo * 0.45
+    
+    # Subdivisão (informativo):
+    margem_emprestimo = base_calculo * 0.35  # 35% para empréstimos
+    margem_cartao_credito = base_calculo * 0.05  # 5% para cartão crédito
+    margem_cartao_beneficio = base_calculo * 0.05  # 5% para cartão benefício
+    
+    # Margem Disponível = Margem Total (45%) - Já Comprometido
     margem_disponivel = margem_total - total_cartoes
     
     return {
         'salario_bruto': salario_bruto,
         'total_descontos_fixos': total_descontos_fixos,
-        'salario_liquido': salario_liquido_real if salario_liquido_real > 0 else salario_bruto - total_descontos_fixos,
+        'salario_liquido': salario_liquido_real if salario_liquido_real > 0 else salario_bruto - total_descontos_fixos - total_cartoes,
+        'base_calculo': base_calculo,
+        'margem_emprestimo': margem_emprestimo,
+        'margem_cartao_credito': margem_cartao_credito,
+        'margem_cartao_beneficio': margem_cartao_beneficio,
         'margem_total': margem_total,
         'total_cartoes': total_cartoes,
         'margem_disponivel': margem_disponivel,
