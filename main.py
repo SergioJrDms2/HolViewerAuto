@@ -173,15 +173,14 @@ def extrair_regime_contrato(texto: str) -> str:
         return "NÃO IDENTIFICADO"
 
 def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
-    """Identifica cartões de crédito no texto (FILTRA RIGOROSAMENTE EMPRÉSTIMOS)"""
+    """Identifica cartões E EMPRÉSTIMOS (Pois ambos consomem margem)"""
     texto_normalizado = normalizar_texto(texto)
     linhas = texto_normalizado.split('\n')
     
-    # Lista de termos que, se encontrados, invalidam a linha imediatamente
-    # Adicionei espaços em " EMP " e "EMP " para evitar confundir com "EMPRESARIAL"
+    # AJUSTE CIRÚRGICO: Removido 'EMPRESTIMO' e 'CONSIGNADO' da exclusão.
+    # Se excluirmos os empréstimos, o cálculo da margem disponível fica errado (falso positivo).
     TERMOS_EXCLUSAO = [
-        'EMPRESTIMO', 'EMP ', ' EMP', 'CONSIGNADO', 
-        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP '
+        'CREDITO PESSOAL', 'CP ' # Mantém exclusão apenas de crédito pessoal não consignado se houver
     ]
 
     cartoes_encontrados = {
@@ -190,57 +189,42 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'desconhecidos': []
     }
     
-    # ---------------------------------------------------------
-    # 1. Nossos Produtos (Com filtro de exclusão)
-    # ---------------------------------------------------------
+    # 1. Nossos Produtos
     for produto in NOSSOS_PRODUTOS:
         if produto in texto_normalizado:
             for linha in linhas:
-                # Verifica se é produto nosso E se tem palavras de cartão
-                if produto in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
-                    
-                    # LOGICA NOVA: Se tiver termo de empréstimo, PULA esta linha
-                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
-                        continue
-
+                if produto in linha:
+                    if any(termo in linha for termo in TERMOS_EXCLUSAO): continue
                     if linha.strip() not in cartoes_encontrados['nossos_contratos']:
                         cartoes_encontrados['nossos_contratos'].append(linha.strip())
     
-    # ---------------------------------------------------------
-    # 2. Cartões Conhecidos (Com filtro de exclusão)
-    # ---------------------------------------------------------
+    # 2. Cartões Conhecidos
     for cartao in CARTOES_CONHECIDOS:
         if cartao in texto_normalizado:
             for linha in linhas:
-                if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'CART.', 'CART']):
-                    
-                    # LOGICA NOVA: Bloqueia empréstimos
-                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
-                        continue
-
+                if cartao in linha:
+                    if any(termo in linha for termo in TERMOS_EXCLUSAO): continue
                     if linha.strip() not in cartoes_encontrados['conhecidos']:
                         cartoes_encontrados['conhecidos'].append(linha.strip())
     
-    # ---------------------------------------------------------
-    # 3. Desconhecidos (Com filtro de exclusão)
-    # ---------------------------------------------------------
+    # 3. Desconhecidos e EMPRÉSTIMOS GERAIS (Necessário para abater da margem)
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        
-        # Verifica se parece emprestimo ANTES de qualquer coisa
-        if any(termo in linha_norm for termo in TERMOS_EXCLUSAO):
-            continue
+        if any(termo in linha_norm for termo in TERMOS_EXCLUSAO): continue
 
-        tem_keyword_cartao = any(kw in linha_norm for kw in 
-                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO','CART.'])
+        # Agora aceita termos de empréstimo para o cálculo correto da margem
+        tem_keyword = any(kw in linha_norm for kw in 
+                          ['CARTAO', 'CART.', 'EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'COMPRA DE DIVIDA'])
         
-        if tem_keyword_cartao:
+        if tem_keyword:
             eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
             eh_conhecido = any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS)
             
             if not eh_nosso and not eh_conhecido and linha.strip():
-                if linha.strip() not in cartoes_encontrados['desconhecidos']:
-                    cartoes_encontrados['desconhecidos'].append(linha.strip())
+                # Valida se tem valor na linha para evitar pegar apenas texto
+                if extrair_valores_linha(linha) > 0:
+                    if linha.strip() not in cartoes_encontrados['desconhecidos']:
+                        cartoes_encontrados['desconhecidos'].append(linha.strip())
     
     return cartoes_encontrados
 
@@ -299,61 +283,34 @@ def extrair_valores_linha(linha: str) -> float:
 
 def extrair_salario_bruto(texto: str) -> float:
     """
-    Extrai o valor do salário bruto do contracheque
-    Versão melhorada que busca especificamente por totais de vencimentos
+    Extrai o valor do salário bruto do contracheque.
+    Ajustado para ler formatos onde o valor está na linha seguinte ao cabeçalho.
     """
+    # Tenta encontrar padrões onde o valor pode estar na linha seguinte (re.DOTALL)
+    # Procura por TOTAL DE VENCIMENTOS ou apenas VENCIMENTOS no final do arquivo
+    match_total = re.search(r'(?:TOTAL\s+DE\s+)?VENCIMENTOS\s*\n?\s*(\d{1,3}(?:\.\d{3})*,\d{2})', texto, re.IGNORECASE)
+    
+    if match_total:
+        valor_str = match_total.group(1).replace('.', '').replace(',', '.')
+        return float(valor_str)
+
+    # Fallback: Lógica linha a linha (mantida para compatibilidade)
     texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
-    # Prioridade 1: Buscar por "TOTAL DE VENCIMENTOS" ou "TOTAL VENCIMENTOS"
-    # Esta é geralmente a linha mais confiável
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        if 'TOTAL' in linha_norm and ('VENCIMENTO' in linha_norm or 'VENC' in linha_norm):
-            # Evita linhas de desconto
-            if 'DESCONTO' not in linha_norm and 'DESC' not in linha_norm:
+        if 'SALARIO BASE' in linha_norm or 'VENCIMENTO BASE' in linha_norm or 'SUBSIDIO' in linha_norm:
+             if 'DESCONTO' not in linha_norm:
                 valor = extrair_valores_linha(linha)
                 if valor > 0:
                     return valor
     
-    # Prioridade 2: Buscar por linha com múltiplas palavras-chave específicas
-    keywords_primarias = ['SALARIO BASE', 'SALÁRIO BASE', 'VENCIMENTO BASE', 'REMUNERACAO']
-    
-    for linha in linhas:
-        linha_norm = normalizar_texto(linha)
-        for keyword in keywords_primarias:
-            if keyword in linha_norm:
-                # Não filtra "BASE" aqui, pois "SALARIO BASE" é válido
-                if 'DESCONTO' not in linha_norm:
-                    valor = extrair_valores_linha(linha)
-                    if valor > 0:
-                        return valor
-    
-    # Prioridade 3: Buscar por SUBSÍDIO (comum em cargos públicos)
-    for linha in linhas:
-        linha_norm = normalizar_texto(linha)
-        if 'SUBSIDIO' in linha_norm or 'SUBSÍDIO' in linha_norm:
-            valor = extrair_valores_linha(linha)
-            if valor > 0:
-                return valor
-    
-    # Prioridade 4: Buscar na função extrair_informacoes_financeiras
-    # que já tem a lógica de pegar vencimentos_total
+    # Se ainda não achou, tenta pegar o maior valor associado a palavra Vencimentos na tabela
     info = extrair_informacoes_financeiras(texto)
     if info.get('vencimentos_total', 0) > 0:
         return info['vencimentos_total']
-    
-    # Prioridade 5: Fallback - buscar qualquer linha com palavras-chave
-    keywords_fallback = ['SALARIO', 'VENCIMENTO', 'REMUNERACAO']
-    
-    for linha in linhas:
-        linha_norm = normalizar_texto(linha)
-        if any(keyword in linha_norm for keyword in keywords_fallback):
-            if 'DESCONTO' not in linha_norm and 'TOTAL' not in linha_norm:
-                valor = extrair_valores_linha(linha)
-                if valor > 0:
-                    return valor
-    
+
     return 0.0
     
 
