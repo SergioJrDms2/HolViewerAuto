@@ -456,7 +456,10 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
 def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict, salario_liquido_real: float = 0.0) -> Dict:
     """
     Calcula a margem disponível baseada na regra:
-    Margem = Líquido do Holerite - Comprometido (Cartões)
+    Margem Total = 45% da totalidade dos vencimentos e proventos
+    Margem Disponível = Margem Total - Descontos Consignáveis (Cartões)
+    
+    Descontos obrigatórios (INSS, IRPF, pensões, etc.) não entram no cálculo
     """
     
     # Soma descontos fixos (apenas para registro/exibição)
@@ -472,26 +475,20 @@ def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valo
     # Total já comprometido com cartões identificados
     total_cartoes = valores_cartoes['total']
     
-    # LÓGICA NOVA:
-    # A base agora é o VALOR LÍQUIDO extraído do PDF.
-    # Se por algum motivo o código não achou o líquido (0.0), 
-    # usamos (Bruto - Descontos Fixos) como fallback.
-    if salario_liquido_real > 0:
-        base_calculo = salario_liquido_real
-    else:
-        base_calculo = salario_bruto - total_descontos_fixos
-
-    # Cálculo da Margem Disponível (Líquido - Comprometido)
-    margem_disponivel = base_calculo - total_cartoes
+    # REGRA: Margem consignável é 45% dos vencimentos
+    margem_total = salario_bruto * 0.45
+    
+    # Cálculo da Margem Disponível (45% dos vencimentos - Comprometido)
+    margem_disponivel = margem_total - total_cartoes
     
     return {
         'salario_bruto': salario_bruto,
         'total_descontos_fixos': total_descontos_fixos,
-        'salario_liquido': base_calculo, # Agora reflete a base usada
-        'margem_total': base_calculo,    # Para o gráfico, o "Total" agora é o Líquido
+        'salario_liquido': salario_liquido_real if salario_liquido_real > 0 else salario_bruto - total_descontos_fixos,
+        'margem_total': margem_total,
         'total_cartoes': total_cartoes,
         'margem_disponivel': margem_disponivel,
-        'percentual_utilizado': (total_cartoes / base_calculo * 100) if base_calculo > 0 else 0,
+        'percentual_utilizado': (total_cartoes / margem_total * 100) if margem_total > 0 else 0,
         'tem_margem': margem_disponivel > 0
     }
 
