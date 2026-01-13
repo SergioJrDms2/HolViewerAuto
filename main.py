@@ -455,43 +455,28 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
 
 def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict, salario_liquido_real: float = 0.0) -> Dict:
     """
-    Calcula a margem disponível baseada na regra:
-    Margem = Líquido do Holerite - Comprometido (Cartões)
+    Calcula a margem disponível baseada na regra (Conforme imagem):
+    Margem Total = 45% da Totalidade dos Vencimentos
+    Margem Disponível = Margem Total (45%) - Descontos Consignáveis Existentes
     """
     
-    # Soma descontos fixos (apenas para registro/exibição)
-    total_descontos_fixos = (
-        descontos_fixos['inss'] +
-        descontos_fixos['irrf'] +
-        descontos_fixos['previdencia'] +
-        descontos_fixos['pensao'] +
-        descontos_fixos['plano_saude'] +
-        descontos_fixos['vale_transporte']
-    )
+    # REGRA DA IMAGEM: 45% da totalidade dos vencimentos
+    margem_total_45 = salario_bruto * 0.45
     
-    # Total já comprometido com cartões identificados
+    # Total já comprometido com cartões/consignados identificados
     total_cartoes = valores_cartoes['total']
     
-    # LÓGICA NOVA:
-    # A base agora é o VALOR LÍQUIDO extraído do PDF.
-    # Se por algum motivo o código não achou o líquido (0.0), 
-    # usamos (Bruto - Descontos Fixos) como fallback.
-    if salario_liquido_real > 0:
-        base_calculo = salario_liquido_real
-    else:
-        base_calculo = salario_bruto - total_descontos_fixos
-
-    # Cálculo da Margem Disponível (Líquido - Comprometido)
-    margem_disponivel = base_calculo - total_cartoes
+    # REGRA DA IMAGEM: 45% dos vencimentos - descontos consignáveis
+    margem_disponivel = margem_total_45 - total_cartoes
     
     return {
         'salario_bruto': salario_bruto,
-        'total_descontos_fixos': total_descontos_fixos,
-        'salario_liquido': base_calculo, # Agora reflete a base usada
-        'margem_total': base_calculo,    # Para o gráfico, o "Total" agora é o Líquido
+        'total_descontos_fixos': 0.0,        # Não afeta mais o cálculo da margem
+        'salario_liquido': salario_bruto,    # Base visual passa a ser o Bruto
+        'margem_total': margem_total_45,     # A margem cheia é 45% do bruto
         'total_cartoes': total_cartoes,
         'margem_disponivel': margem_disponivel,
-        'percentual_utilizado': (total_cartoes / base_calculo * 100) if base_calculo > 0 else 0,
+        'percentual_utilizado': (total_cartoes / margem_total_45 * 100) if margem_total_45 > 0 else 0,
         'tem_margem': margem_disponivel > 0
     }
 
