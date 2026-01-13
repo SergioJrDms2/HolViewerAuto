@@ -173,14 +173,15 @@ def extrair_regime_contrato(texto: str) -> str:
         return "NÃO IDENTIFICADO"
 
 def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
-    """Identifica cartões E EMPRÉSTIMOS (Pois ambos consomem margem)"""
+    """Identifica cartões de crédito no texto (FILTRA RIGOROSAMENTE EMPRÉSTIMOS)"""
     texto_normalizado = normalizar_texto(texto)
     linhas = texto_normalizado.split('\n')
     
-    # AJUSTE CIRÚRGICO: Removido 'EMPRESTIMO' e 'CONSIGNADO' da exclusão.
-    # Se excluirmos os empréstimos, o cálculo da margem disponível fica errado (falso positivo).
+    # Lista de termos que, se encontrados, invalidam a linha imediatamente
+    # Adicionei espaços em " EMP " e "EMP " para evitar confundir com "EMPRESARIAL"
     TERMOS_EXCLUSAO = [
-        'CREDITO PESSOAL', 'CP ' # Mantém exclusão apenas de crédito pessoal não consignado se houver
+        'EMPRESTIMO', 'EMP ', ' EMP', 'CONSIGNADO', 
+        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP '
     ]
 
     cartoes_encontrados = {
@@ -189,42 +190,57 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'desconhecidos': []
     }
     
-    # 1. Nossos Produtos
+    # ---------------------------------------------------------
+    # 1. Nossos Produtos (Com filtro de exclusão)
+    # ---------------------------------------------------------
     for produto in NOSSOS_PRODUTOS:
         if produto in texto_normalizado:
             for linha in linhas:
-                if produto in linha:
-                    if any(termo in linha for termo in TERMOS_EXCLUSAO): continue
+                # Verifica se é produto nosso E se tem palavras de cartão
+                if produto in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
+                    
+                    # LOGICA NOVA: Se tiver termo de empréstimo, PULA esta linha
+                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
+                        continue
+
                     if linha.strip() not in cartoes_encontrados['nossos_contratos']:
                         cartoes_encontrados['nossos_contratos'].append(linha.strip())
     
-    # 2. Cartões Conhecidos
+    # ---------------------------------------------------------
+    # 2. Cartões Conhecidos (Com filtro de exclusão)
+    # ---------------------------------------------------------
     for cartao in CARTOES_CONHECIDOS:
         if cartao in texto_normalizado:
             for linha in linhas:
-                if cartao in linha:
-                    if any(termo in linha for termo in TERMOS_EXCLUSAO): continue
+                if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'CART.', 'CART']):
+                    
+                    # LOGICA NOVA: Bloqueia empréstimos
+                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
+                        continue
+
                     if linha.strip() not in cartoes_encontrados['conhecidos']:
                         cartoes_encontrados['conhecidos'].append(linha.strip())
     
-    # 3. Desconhecidos e EMPRÉSTIMOS GERAIS (Necessário para abater da margem)
+    # ---------------------------------------------------------
+    # 3. Desconhecidos (Com filtro de exclusão)
+    # ---------------------------------------------------------
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        if any(termo in linha_norm for termo in TERMOS_EXCLUSAO): continue
-
-        # Agora aceita termos de empréstimo para o cálculo correto da margem
-        tem_keyword = any(kw in linha_norm for kw in 
-                          ['CARTAO', 'CART.', 'EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'COMPRA DE DIVIDA'])
         
-        if tem_keyword:
+        # Verifica se parece emprestimo ANTES de qualquer coisa
+        if any(termo in linha_norm for termo in TERMOS_EXCLUSAO):
+            continue
+
+        tem_keyword_cartao = any(kw in linha_norm for kw in 
+                                  ['CARTAO', 'CART ', 'CRED', 'CREDITO','CART.'])
+        
+        if tem_keyword_cartao:
             eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
             eh_conhecido = any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS)
             
             if not eh_nosso and not eh_conhecido and linha.strip():
-                # Valida se tem valor na linha para evitar pegar apenas texto
-                if extrair_valores_linha(linha) > 0:
-                    if linha.strip() not in cartoes_encontrados['desconhecidos']:
-                        cartoes_encontrados['desconhecidos'].append(linha.strip())
+                if linha.strip() not in cartoes_encontrados['desconhecidos']:
+                    cartoes_encontrados['desconhecidos'].append(linha.strip())
     
     return cartoes_encontrados
 
@@ -283,34 +299,61 @@ def extrair_valores_linha(linha: str) -> float:
 
 def extrair_salario_bruto(texto: str) -> float:
     """
-    Extrai o valor do salário bruto do contracheque.
-    Ajustado para ler formatos onde o valor está na linha seguinte ao cabeçalho.
+    Extrai o valor do salário bruto do contracheque
+    Versão melhorada que busca especificamente por totais de vencimentos
     """
-    # Tenta encontrar padrões onde o valor pode estar na linha seguinte (re.DOTALL)
-    # Procura por TOTAL DE VENCIMENTOS ou apenas VENCIMENTOS no final do arquivo
-    match_total = re.search(r'(?:TOTAL\s+DE\s+)?VENCIMENTOS\s*\n?\s*(\d{1,3}(?:\.\d{3})*,\d{2})', texto, re.IGNORECASE)
-    
-    if match_total:
-        valor_str = match_total.group(1).replace('.', '').replace(',', '.')
-        return float(valor_str)
-
-    # Fallback: Lógica linha a linha (mantida para compatibilidade)
     texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
+    # Prioridade 1: Buscar por "TOTAL DE VENCIMENTOS" ou "TOTAL VENCIMENTOS"
+    # Esta é geralmente a linha mais confiável
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        if 'SALARIO BASE' in linha_norm or 'VENCIMENTO BASE' in linha_norm or 'SUBSIDIO' in linha_norm:
-             if 'DESCONTO' not in linha_norm:
+        if 'TOTAL' in linha_norm and ('VENCIMENTO' in linha_norm or 'VENC' in linha_norm):
+            # Evita linhas de desconto
+            if 'DESCONTO' not in linha_norm and 'DESC' not in linha_norm:
                 valor = extrair_valores_linha(linha)
                 if valor > 0:
                     return valor
     
-    # Se ainda não achou, tenta pegar o maior valor associado a palavra Vencimentos na tabela
+    # Prioridade 2: Buscar por linha com múltiplas palavras-chave específicas
+    keywords_primarias = ['SALARIO BASE', 'SALÁRIO BASE', 'VENCIMENTO BASE', 'REMUNERACAO']
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        for keyword in keywords_primarias:
+            if keyword in linha_norm:
+                # Não filtra "BASE" aqui, pois "SALARIO BASE" é válido
+                if 'DESCONTO' not in linha_norm:
+                    valor = extrair_valores_linha(linha)
+                    if valor > 0:
+                        return valor
+    
+    # Prioridade 3: Buscar por SUBSÍDIO (comum em cargos públicos)
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SUBSIDIO' in linha_norm or 'SUBSÍDIO' in linha_norm:
+            valor = extrair_valores_linha(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 4: Buscar na função extrair_informacoes_financeiras
+    # que já tem a lógica de pegar vencimentos_total
     info = extrair_informacoes_financeiras(texto)
     if info.get('vencimentos_total', 0) > 0:
         return info['vencimentos_total']
-
+    
+    # Prioridade 5: Fallback - buscar qualquer linha com palavras-chave
+    keywords_fallback = ['SALARIO', 'VENCIMENTO', 'REMUNERACAO']
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if any(keyword in linha_norm for keyword in keywords_fallback):
+            if 'DESCONTO' not in linha_norm and 'TOTAL' not in linha_norm:
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    return valor
+    
     return 0.0
     
 
@@ -412,28 +455,43 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
 
 def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict, salario_liquido_real: float = 0.0) -> Dict:
     """
-    Calcula a margem disponível baseada na regra (Conforme imagem):
-    Margem Total = 45% da Totalidade dos Vencimentos
-    Margem Disponível = Margem Total (45%) - Descontos Consignáveis Existentes
+    Calcula a margem disponível baseada na regra:
+    Margem = Líquido do Holerite - Comprometido (Cartões)
     """
     
-    # REGRA DA IMAGEM: 45% da totalidade dos vencimentos
-    margem_total_45 = salario_bruto * 0.45
+    # Soma descontos fixos (apenas para registro/exibição)
+    total_descontos_fixos = (
+        descontos_fixos['inss'] +
+        descontos_fixos['irrf'] +
+        descontos_fixos['previdencia'] +
+        descontos_fixos['pensao'] +
+        descontos_fixos['plano_saude'] +
+        descontos_fixos['vale_transporte']
+    )
     
-    # Total já comprometido com cartões/consignados identificados
+    # Total já comprometido com cartões identificados
     total_cartoes = valores_cartoes['total']
     
-    # REGRA DA IMAGEM: 45% dos vencimentos - descontos consignáveis
-    margem_disponivel = margem_total_45 - total_cartoes
+    # LÓGICA NOVA:
+    # A base agora é o VALOR LÍQUIDO extraído do PDF.
+    # Se por algum motivo o código não achou o líquido (0.0), 
+    # usamos (Bruto - Descontos Fixos) como fallback.
+    if salario_liquido_real > 0:
+        base_calculo = salario_liquido_real
+    else:
+        base_calculo = salario_bruto - total_descontos_fixos
+
+    # Cálculo da Margem Disponível (Líquido - Comprometido)
+    margem_disponivel = base_calculo - total_cartoes
     
     return {
         'salario_bruto': salario_bruto,
-        'total_descontos_fixos': 0.0,        # Não afeta mais o cálculo da margem
-        'salario_liquido': salario_bruto,    # Base visual passa a ser o Bruto
-        'margem_total': margem_total_45,     # A margem cheia é 45% do bruto
+        'total_descontos_fixos': total_descontos_fixos,
+        'salario_liquido': base_calculo, # Agora reflete a base usada
+        'margem_total': base_calculo,    # Para o gráfico, o "Total" agora é o Líquido
         'total_cartoes': total_cartoes,
         'margem_disponivel': margem_disponivel,
-        'percentual_utilizado': (total_cartoes / margem_total_45 * 100) if margem_total_45 > 0 else 0,
+        'percentual_utilizado': (total_cartoes / base_calculo * 100) if base_calculo > 0 else 0,
         'tem_margem': margem_disponivel > 0
     }
 
@@ -694,22 +752,21 @@ def main():
                 st.subheader("💰 Análise de Margem Consignável")
                 margem = resultado.get('margem', {})
                 
-                # CORREÇÃO: Verifica se existe margem calculada (Bruto > 0) em vez de descontos fixos
-                if margem.get('margem_total', 0) > 0:
+                if margem.get('total_descontos_fixos', 0) > 0:
                     col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
                         st.metric(
-                            "Salário Bruto", # Ajustado para mostrar a base real
-                            f"R$ {margem['salario_bruto']:,.2f}",
-                            help="Total de Vencimentos (Base de Cálculo)"
+                            "Descontos Fixos",
+                            f"R$ {margem['total_descontos_fixos']:,.2f}",
+                            help="Total de descontos fixos (INSS, IR, Previdência, etc.)"
                         )
                     
                     with col2:
                         st.metric(
-                            "Margem Total (45%)", # Ajustado para a regra nova
+                            "Salário Líquido Base",
                             f"R$ {margem['margem_total']:,.2f}",
-                            help="45% da totalidade dos vencimentos"
+                            help="30% dos descontos fixos"
                         )
                     
                     with col3:
@@ -750,7 +807,28 @@ def main():
                     st.progress(min(percentual / 100, 1.0))
                     st.caption(f"{cor} {status_margem} - {percentual:.1f}% da margem comprometida")
                     
-                    # Detalhamento dos cartões (mantido igual)
+                    # Detalhamento dos descontos fixos
+                    with st.expander("📋 Ver detalhamento dos descontos fixos"):
+                        descontos_fixos = resultado.get('descontos_fixos', {})
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if descontos_fixos.get('inss', 0) > 0:
+                                st.write(f"**INSS:** R$ {descontos_fixos['inss']:,.2f}")
+                            if descontos_fixos.get('irrf', 0) > 0:
+                                st.write(f"**IRRF:** R$ {descontos_fixos['irrf']:,.2f}")
+                            if descontos_fixos.get('previdencia', 0) > 0:
+                                st.write(f"**Previdência:** R$ {descontos_fixos['previdencia']:,.2f}")
+                        
+                        with col2:
+                            if descontos_fixos.get('pensao', 0) > 0:
+                                st.write(f"**Pensão:** R$ {descontos_fixos['pensao']:,.2f}")
+                            if descontos_fixos.get('plano_saude', 0) > 0:
+                                st.write(f"**Plano de Saúde:** R$ {descontos_fixos['plano_saude']:,.2f}")
+                            if descontos_fixos.get('vale_transporte', 0) > 0:
+                                st.write(f"**Vale Transporte:** R$ {descontos_fixos['vale_transporte']:,.2f}")
+                    
+                    # Detalhamento dos cartões
                     valores_cartoes = resultado.get('valores_cartoes', {})
                     if valores_cartoes.get('total', 0) > 0:
                         with st.expander("💳 Ver detalhamento dos cartões/empréstimos"):
@@ -769,7 +847,7 @@ def main():
                                 for item in valores_cartoes['desconhecidos']:
                                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
                 else:
-                    st.warning("⚠️ Não foi possível calcular a margem. Verifique se o PDF contém o valor 'Total de Vencimentos' ou 'Salário Base'.")
+                    st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações de descontos fixos.")
                 
                 st.markdown("---")
                 
