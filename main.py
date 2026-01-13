@@ -737,21 +737,22 @@ def main():
                 st.subheader("💰 Análise de Margem Consignável")
                 margem = resultado.get('margem', {})
                 
-                if margem.get('total_descontos_fixos', 0) > 0:
+                # CORREÇÃO: Verifica se existe margem calculada (Bruto > 0) em vez de descontos fixos
+                if margem.get('margem_total', 0) > 0:
                     col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
                         st.metric(
-                            "Descontos Fixos",
-                            f"R$ {margem['total_descontos_fixos']:,.2f}",
-                            help="Total de descontos fixos (INSS, IR, Previdência, etc.)"
+                            "Salário Bruto", # Ajustado para mostrar a base real
+                            f"R$ {margem['salario_bruto']:,.2f}",
+                            help="Total de Vencimentos (Base de Cálculo)"
                         )
                     
                     with col2:
                         st.metric(
-                            "Salário Líquido Base",
+                            "Margem Total (45%)", # Ajustado para a regra nova
                             f"R$ {margem['margem_total']:,.2f}",
-                            help="30% dos descontos fixos"
+                            help="45% da totalidade dos vencimentos"
                         )
                     
                     with col3:
@@ -792,28 +793,7 @@ def main():
                     st.progress(min(percentual / 100, 1.0))
                     st.caption(f"{cor} {status_margem} - {percentual:.1f}% da margem comprometida")
                     
-                    # Detalhamento dos descontos fixos
-                    with st.expander("📋 Ver detalhamento dos descontos fixos"):
-                        descontos_fixos = resultado.get('descontos_fixos', {})
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if descontos_fixos.get('inss', 0) > 0:
-                                st.write(f"**INSS:** R$ {descontos_fixos['inss']:,.2f}")
-                            if descontos_fixos.get('irrf', 0) > 0:
-                                st.write(f"**IRRF:** R$ {descontos_fixos['irrf']:,.2f}")
-                            if descontos_fixos.get('previdencia', 0) > 0:
-                                st.write(f"**Previdência:** R$ {descontos_fixos['previdencia']:,.2f}")
-                        
-                        with col2:
-                            if descontos_fixos.get('pensao', 0) > 0:
-                                st.write(f"**Pensão:** R$ {descontos_fixos['pensao']:,.2f}")
-                            if descontos_fixos.get('plano_saude', 0) > 0:
-                                st.write(f"**Plano de Saúde:** R$ {descontos_fixos['plano_saude']:,.2f}")
-                            if descontos_fixos.get('vale_transporte', 0) > 0:
-                                st.write(f"**Vale Transporte:** R$ {descontos_fixos['vale_transporte']:,.2f}")
-                    
-                    # Detalhamento dos cartões
+                    # Detalhamento dos cartões (mantido igual)
                     valores_cartoes = resultado.get('valores_cartoes', {})
                     if valores_cartoes.get('total', 0) > 0:
                         with st.expander("💳 Ver detalhamento dos cartões/empréstimos"):
@@ -832,7 +812,7 @@ def main():
                                 for item in valores_cartoes['desconhecidos']:
                                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
                 else:
-                    st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações de descontos fixos.")
+                    st.warning("⚠️ Não foi possível calcular a margem. Verifique se o PDF contém o valor 'Total de Vencimentos' ou 'Salário Base'.")
                 
                 st.markdown("---")
                 
