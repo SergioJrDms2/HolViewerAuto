@@ -35,40 +35,137 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    .main-header {
-        font-size: 3rem;
-        font-weight: bold;
-        color: #470b6d;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #470b6d;
-    }
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeeba;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
-    .info-box {
-        background-color: #d1ecf1;
-        border: 1px solid #bee5eb;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .main-header {
+            font-size: 2.8rem;
+            font-weight: 700;
+            color: #1a3a52;
+            text-align: center;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.5px;
+        }
+        
+        .main-subtitle {
+            text-align: center;
+            font-size: 1rem;
+            color: #555;
+            margin-bottom: 2.5rem;
+            font-weight: 400;
+            letter-spacing: 0.3px;
+        }
+        
+        .metric-card {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 0.8rem;
+            border-left: 4px solid #1a3a52;
+            box-shadow: 0 2px 8px rgba(26, 58, 82, 0.08);
+            transition: all 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            box-shadow: 0 4px 12px rgba(26, 58, 82, 0.12);
+        }
+        
+        .success-box {
+            background: linear-gradient(135deg, #e8f5e9 0%, #d4edda 100%);
+            border: 1px solid #81c784;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.1);
+        }
+        
+        .warning-box {
+            background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+            border: 1px solid #ffc107;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.1);
+        }
+        
+        .info-box {
+            background: linear-gradient(135deg, #e3f2fd 0%, #d1ecf1 100%);
+            border: 1px solid #2196f3;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.1);
+        }
+        
+        .error-box {
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border: 1px solid #f44336;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.1);
+        }
+        
+        .section-header {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #1a3a52;
+            margin-top: 2rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .divider {
+            height: 1px;
+            background: #ddd;
+            margin: 2rem 0;
+            border: none;
+        }
+        
+        .footer-text {
+            text-align: center;
+            color: #999;
+            padding: 2rem;
+            font-size: 0.95rem;
+        }
+        
+        .stButton > button {
+            background: #1a3a52;
+            color: white;
+            border: none;
+            border-radius: 0.6rem;
+            padding: 0.65rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(26, 58, 82, 0.2);
+        }
+        
+        .stButton > button:hover {
+            background: #0f2436;
+            box-shadow: 0 4px 12px rgba(26, 58, 82, 0.3);
+        }
+        
+        .stExpander {
+            border: 1px solid #e0e0e0;
+            border-radius: 0.8rem;
+            background: #fafafa;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            color: #666;
+            border-radius: 0.8rem;
+        }
+        
+        .stTabs [aria-selected="true"] {
+            color: #667eea;
+            border-color: #667eea;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -782,39 +879,41 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
 
 def main():
     # Header
-    st.markdown('<h1 class="main-header">💳 Analisador de Holerite</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Sistema de Identificação de Oportunidades de Compra de Dívida</p>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">Analisador de Holerite</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="main-subtitle">Sistema de Análise de Oportunidades de Crédito</p>', unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
+        st.markdown("---")
         st.image("https://img.icons8.com/fluency/96/000000/bank-card-back-side.png", width=80)
-        st.title("⚙️ Configurações")
+        st.markdown("<h2 style='text-align: center; color: #1a3a52; margin-top: 1rem;'>Menu Principal</h2>", unsafe_allow_html=True)
+        st.markdown("---")
         
         modo = st.radio(
-            "Modo de Análise",
-            ["📄 Análise Individual", "📊 Análise em Lote"],
+            "Selecione o Modo",
+            ["Análise Individual", "Análise em Lote"],
             help="Escolha entre analisar um único PDF ou múltiplos PDFs"
         )
         
         st.markdown("---")
-        
-        st.subheader("🏆 Nossos Produtos")
-        with st.expander("Ver lista"):
+        st.markdown("<h3 style='color: #1a3a52;'>Nossos Produtos</h3>", unsafe_allow_html=True)
+        with st.expander("Ver lista completa", expanded=False):
             for produto in NOSSOS_PRODUTOS:
-                st.text(f"⭐ {produto}")
+                st.markdown(f"<div style='padding: 0.5rem; color: #1a3a52;'><strong>{produto}</strong></div>", unsafe_allow_html=True)
         
-        st.subheader("📋 Cartões Concorrentes")
-        with st.expander("Ver lista"):
-            for cartao in CARTOES_CONHECIDOS:
-                st.text(f"✓ {cartao}")
+        st.markdown("<h3 style='color: #1a3a52; margin-top: 1.5rem;'>Cartões Concorrentes</h3>", unsafe_allow_html=True)
+        with st.expander("Ver lista completa", expanded=False):
+            cols = st.columns(2)
+            for idx, cartao in enumerate(CARTOES_CONHECIDOS):
+                with cols[idx % 2]:
+                    st.markdown(f"<div style='padding: 0.25rem;'>{cartao}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
-        
-        st.info("💡 **Dica:** Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote!")
+        st.info("Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote.", icon="ℹ️")
     
     # Conteúdo principal
-    if modo == "📄 Análise Individual":
-        st.header("📄 Análise Individual de Holerite")
+    if modo == "Análise Individual":
+        st.markdown("<h2 class='section-header'>Análise Individual de Holerite</h2>", unsafe_allow_html=True)
         
         arquivo_upload = st.file_uploader(
             "Faça upload do PDF do holerite",
@@ -823,44 +922,44 @@ def main():
         )
         
         if arquivo_upload:
-            col1, col2 = st.columns([3, 1])
-            
-            with col2:
-                if st.button("🔍 Analisar", type="primary", use_container_width=True):
-                    with st.spinner("Analisando holerite..."):
-                        arquivo_bytes = arquivo_upload.read()
-                        resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_upload.name)
-                        
-                        if resultado:
-                            st.session_state['resultado_individual'] = resultado
+            if st.button("Analisar", type="primary", use_container_width=False):
+                with st.spinner("Analisando holerite..."):
+                    arquivo_bytes = arquivo_upload.read()
+                    resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_upload.name)
+                    
+                    if resultado:
+                        st.session_state['resultado_individual'] = resultado
             
             if 'resultado_individual' in st.session_state:
                 resultado = st.session_state['resultado_individual']
                 
                 st.success("✅ Análise concluída com sucesso!")
                 
-                # Informações do servidor
-                st.subheader("👤 Informações do Servidor")
+                # Informações do servidor em cards modernos
+                st.markdown("<h3 class='section-header'>👤 Informações do Servidor</h3>", unsafe_allow_html=True)
                 info = resultado['info_financeira']
                 
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4, gap="medium")
                 with col1:
-                    st.metric("Nome", info.get('nome', 'N/A'))
+                    st.metric("👤 Nome", info.get('nome', 'N/A')[:20] + "..." if len(info.get('nome', 'N/A')) > 20 else info.get('nome', 'N/A'))
                 
                 with col2:
-                    st.metric("Regime", resultado['regime'])
+                    st.metric("🏛️ Regime", resultado['regime'])
                 
                 with col3:
-                    st.metric("Líquido", f"R$ {info.get('liquido', 0):,.2f}")
+                    st.metric("🆔 Matrícula", info.get('matricula', 'N/A'))
                 
-                st.markdown("---")
+                with col4:
+                    st.metric("💵 Líquido", f"R$ {info.get('liquido', 0):,.2f}")
+                
+                st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
                 # Analise de margem - EM MANUTENÇÃO
-                st.subheader("💰 Análise de Margem para Cartão de Crédito")
+                st.markdown("<h3 class='section-header'>💰 Análise de Margem para Cartão</h3>", unsafe_allow_html=True)
                 
-                st.warning("🔧 **Manutenção - Em Breve**\n\nEste módulo está em manutenção e será disponibilizado em breve.", icon="⚠️")
+                st.info("🔧 **Manutenção - Em Breve**\n\nEste módulo está em manutenção e será disponibilizado em breve.", icon="⚙️")
                 
-                # margem = resultado.get('margem', {})
+                st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                 # 
                 # # CORREÇÃO: Verificar se há margem calculada usando as chaves corretas
                 # if margem.get('base_calculo', 0) > 0:
@@ -989,39 +1088,121 @@ def main():
                 #     st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações completas de salário e descontos.")
                 
                 
-                st.markdown("---")
+                st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                 
                 # Nossos Contratos
                 if resultado['nossos_contratos']:
-                    st.subheader("🏆 Nossos Contratos (Cliente Já É Nosso)")
+                    st.markdown("<h3 class='section-header'>Nossos Contratos</h3>", unsafe_allow_html=True)
+                    st.success(f"Este cliente já possui {len(resultado['nossos_contratos'])} contrato(s) conosco!")
+                    
                     for i, contrato in enumerate(resultado['nossos_contratos'], 1):
-                        st.markdown(f"**{i}.** {contrato}")
-                    st.info(f"✨ Este cliente já possui {len(resultado['nossos_contratos'])} contrato(s) conosco!")
-                    st.markdown("---")
+                        st.markdown(f"""
+                        <div style='
+                            padding: 1rem;
+                            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+                            border-left: 5px solid #2e7d32;
+                            border-radius: 0.6rem;
+                            margin: 0.75rem 0;
+                            box-shadow: 0 2px 6px rgba(46, 125, 50, 0.1);
+                        '>
+                            <div style='display: flex; align-items: flex-start; gap: 1rem;'>
+                                <div style='
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    width: 32px;
+                                    height: 32px;
+                                    background: #2e7d32;
+                                    color: white;
+                                    border-radius: 50%;
+                                    font-weight: 600;
+                                    flex-shrink: 0;
+                                '>{i}</div>
+                                <div style='flex: 1;'>
+                                    <p style='margin: 0; color: #1a3a52; font-weight: 600;'>{contrato}</p>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                 
                 # Oportunidades
-                col1, col2 = st.columns(2)
+                st.markdown("<h3 class='section-header'>Oportunidades Confirmadas</h3>", unsafe_allow_html=True)
+                if resultado['cartoes_conhecidos']:
+                    for i, cartao in enumerate(resultado['cartoes_conhecidos'], 1):
+                        st.markdown(f"""
+                        <div style='
+                            padding: 1rem;
+                            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+                            border-left: 5px solid #1565c0;
+                            border-radius: 0.6rem;
+                            margin: 0.75rem 0;
+                            box-shadow: 0 2px 6px rgba(21, 101, 192, 0.1);
+                        '>
+                            <div style='display: flex; align-items: flex-start; gap: 1rem;'>
+                                <div style='
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    width: 32px;
+                                    height: 32px;
+                                    background: #1565c0;
+                                    color: white;
+                                    border-radius: 50%;
+                                    font-weight: 600;
+                                    flex-shrink: 0;
+                                '>{i}</div>
+                                <div style='flex: 1;'>
+                                    <p style='margin: 0; color: #1a3a52; font-weight: 600;'>{cartao}</p>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    st.success(f"Total: {len(resultado['cartoes_conhecidos'])} oportunidade(s) identificada(s)")
+                else:
+                    st.info("Nenhuma oportunidade confirmada encontrada.")
                 
-                with col1:
-                    st.subheader("✅ Oportunidades Confirmadas")
-                    if resultado['cartoes_conhecidos']:
-                        for i, cartao in enumerate(resultado['cartoes_conhecidos'], 1):
-                            st.markdown(f"**{i}.** {cartao}")
-                        st.success(f"Total: {len(resultado['cartoes_conhecidos'])} oportunidade(s)")
-                    else:
-                        st.info("Nenhuma oportunidade confirmada encontrada.")
+                st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                 
-                with col2:
-                    st.subheader("⚠️ Itens para Estudar")
-                    if resultado['cartoes_desconhecidos']:
-                        for i, cartao in enumerate(resultado['cartoes_desconhecidos'], 1):
-                            st.markdown(f"**{i}.** {cartao}")
-                        st.warning(f"Total: {len(resultado['cartoes_desconhecidos'])} item(ns) para análise")
-                    else:
-                        st.success("Todos os cartões estão na lista conhecida.")
+                st.markdown("<h3 class='section-header'>Itens para Estudar</h3>", unsafe_allow_html=True)
+                if resultado['cartoes_desconhecidos']:
+                    for i, cartao in enumerate(resultado['cartoes_desconhecidos'], 1):
+                        st.markdown(f"""
+                        <div style='
+                            padding: 1rem;
+                            background: linear-gradient(135deg, #fff8e1 0%, #ffe0b2 100%);
+                            border-left: 5px solid #f57f17;
+                            border-radius: 0.6rem;
+                            margin: 0.75rem 0;
+                            box-shadow: 0 2px 6px rgba(245, 127, 23, 0.1);
+                        '>
+                            <div style='display: flex; align-items: flex-start; gap: 1rem;'>
+                                <div style='
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    width: 32px;
+                                    height: 32px;
+                                    background: #f57f17;
+                                    color: white;
+                                    border-radius: 50%;
+                                    font-weight: 600;
+                                    flex-shrink: 0;
+                                '>{i}</div>
+                                <div style='flex: 1;'>
+                                    <p style='margin: 0; color: #1a3a52; font-weight: 600;'>{cartao}</p>
+                                    <p style='margin: 0.25rem 0 0 0; color: #666; font-size: 0.85rem;'>Requer análise para confirmação</p>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    st.warning(f"Total: {len(resultado['cartoes_desconhecidos'])} item(ns) aguardando análise")
+                else:
+                    st.success("Todos os cartões estão na lista conhecida.")
     
     else:  # Análise em Lote
-        st.header("📊 Análise em Lote de Holerites")
+        st.markdown("<h2 class='section-header'>Análise em Lote de Holerites</h2>", unsafe_allow_html=True)
         
         arquivos_upload = st.file_uploader(
             "Faça upload dos PDFs dos holerites",
@@ -1031,44 +1212,43 @@ def main():
         )
         
         if arquivos_upload:
-            st.info(f"📁 {len(arquivos_upload)} arquivo(s) carregado(s)")
+            st.markdown(f"<div style='background: #f8f9fa; padding: 1rem; border-radius: 0.8rem; margin: 1rem 0; border-left: 4px solid #1a3a52;'><strong>{len(arquivos_upload)} arquivo(s) carregado(s)</strong></div>", unsafe_allow_html=True)
             
-            col1, col2, col3 = st.columns([2, 2, 1])
-            
-            with col1:
-                if st.button("🚀 Processar Todos", type="primary", use_container_width=True):
-                    with st.spinner("Processando arquivos..."):
-                        df = processar_multiplos_pdfs(arquivos_upload)
-                        st.session_state['df_resultados'] = df
-                        st.success(f"✅ {len(arquivos_upload)} arquivo(s) processado(s) com sucesso!")
+            if st.button("Processar Todos", type="primary", use_container_width=False):
+                with st.spinner("Processando arquivos..."):
+                    df = processar_multiplos_pdfs(arquivos_upload)
+                    st.session_state['df_resultados'] = df
+                    st.success(f"{len(arquivos_upload)} arquivo(s) processado(s) com sucesso!")
             
             if 'df_resultados' in st.session_state:
                 df = st.session_state['df_resultados']
                 
                 if not df.empty:
-                    # Dashboard de Estatísticas
-                    st.subheader("📊 Dashboard de Resultados")
+                    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                     
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    # Dashboard de Estatísticas
+                    st.markdown("<h3 class='section-header'>Dashboard de Resultados</h3>", unsafe_allow_html=True)
+                    
+                    col1, col2, col3, col4, col5 = st.columns(5, gap="small")
                     
                     with col1:
                         total_oportunidades = len(df[df['tipo_oportunidade'] == 'CONHECIDA'])
-                        st.metric("✅ Oportunidades", total_oportunidades, 
+                        st.metric("Oportunidades", f"{total_oportunidades}", 
                                 help="Total de oportunidades confirmadas")
                     
                     with col2:
                         total_estudar = len(df[df['tipo_oportunidade'] == 'PARA ESTUDAR'])
-                        st.metric("⚠️ Para Estudar", total_estudar,
+                        st.metric("Para Estudar", f"{total_estudar}",
                                 help="Cartões fora da lista conhecida")
                     
                     with col3:
                         total_sem = len(df[df['tipo_oportunidade'] == 'NENHUMA'])
-                        st.metric("ℹ️ Sem Oportunidade", total_sem,
+                        st.metric("Sem Oportunidade", f"{total_sem}",
                                 help="Servidores sem oportunidades")
                     
                     with col4:
                         total_servidores = df['nome'].nunique()
-                        st.metric("👥 Servidores", total_servidores,
+                        st.metric("Servidores", f"{total_servidores}",
                                 help="Total de servidores únicos")
                     
                     with col5:
@@ -1076,39 +1256,41 @@ def main():
                         if not df_com_margem.empty:
                             margem_por_servidor = df_com_margem.groupby('matricula')['margem_disponivel'].first()
                             media_margem = margem_por_servidor.mean()
-                            st.metric("💰 Margem Média", f"R$ {media_margem:,.2f}",
-                                    help="Média de margem disponível por servidor")
+                            st.metric("Margem Média", f"R$ {media_margem:,.0f}",
+                                    help="Média de margem disponível")
                         else:
-                            st.metric("💰 Margem Média", "N/A",
+                            st.metric("Margem Média", "N/A",
                                     help="Não foi possível calcular")
                     
-                    st.markdown("---")
+                    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                     
                     # Gráficos
-                    col1, col2 = st.columns(2)
+                    col1, col2 = st.columns(2, gap="large")
                     
                     with col1:
-                        st.subheader("📈 Distribuição por Tipo")
+                        st.markdown("<h4 style='color: #1a3a52; margin-bottom: 1rem;'>Distribuição por Tipo</h4>", unsafe_allow_html=True)
                         tipo_counts = df['tipo_oportunidade'].value_counts()
                         fig_tipo = px.pie(
                             values=tipo_counts.values,
                             names=tipo_counts.index,
-                            title="Tipos de Oportunidade",
-                            color_discrete_sequence=px.colors.qualitative.Set3
+                            title="",
+                            color_discrete_sequence=["#1a3a52", "#ffc107", "#4caf50", "#f44336"]
                         )
+                        fig_tipo.update_layout(height=400, showlegend=True, font=dict(size=12))
                         st.plotly_chart(fig_tipo, use_container_width=True)
                     
                     with col2:
-                        st.subheader("📊 Distribuição por Regime")
+                        st.markdown("<h4 style='color: #1a3a52; margin-bottom: 1rem;'>Distribuição por Regime</h4>", unsafe_allow_html=True)
                         regime_counts = df['regime'].value_counts()
                         fig_regime = px.bar(
                             x=regime_counts.index,
                             y=regime_counts.values,
-                            title="Servidores por Regime",
+                            title="",
                             labels={'x': 'Regime', 'y': 'Quantidade'},
                             color=regime_counts.values,
-                            color_continuous_scale='Blues'
+                            color_continuous_scale='Viridis'
                         )
+                        fig_regime.update_layout(height=400, font=dict(size=12), showlegend=False)
                         st.plotly_chart(fig_regime, use_container_width=True)
 
                     
@@ -1126,11 +1308,11 @@ def main():
    
                         
                         # Top 10 com melhor margem
-                        st.markdown("---")
+                        st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-                        st.subheader("🌟 Top 10 Servidores com Melhor Margem Disponível")
+                        st.markdown("<h3 class='section-header'>Top 10 Servidores com Melhor Margem</h3>", unsafe_allow_html=True)
 
-                        st.warning("🔧 **Manutenção - Em Breve**\n\nEste módulo está em manutenção e será disponibilizado em breve.", icon="⚠️")
+                        st.info("Manutenção - Em Breve\n\nEste módulo está em manutenção e será disponibilizado em breve.", icon="⚙️")
                         
                     #     df_margem_positiva = df_margem[df_margem['margem_disponivel'] > 0]
                         
@@ -1170,8 +1352,8 @@ def main():
                     #     st.warning("⚠️ Não foi possível calcular margem para os holerites processados.")
                     
                     # Top 10 Oportunidades
-                    st.markdown("---")
-                    st.subheader("🏆 Top 10 Servidores com Mais Oportunidades")
+                    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+                    st.markdown("<h3 class='section-header'>Top 10 Servidores com Mais Oportunidades</h3>", unsafe_allow_html=True)
                     oportunidades_df = df[df['tipo_oportunidade'] == 'CONHECIDA']
                     
                     if not oportunidades_df.empty:
@@ -1187,29 +1369,29 @@ def main():
                         st.dataframe(
                             top_servidores,
                             column_config={
-                                "nome": "Nome",
-                                "matricula": "Matrícula",
+                                "nome": st.column_config.TextColumn("Nome", width="medium"),
+                                "matricula": st.column_config.TextColumn("Matrícula", width="small"),
                                 "qtd_oportunidades": st.column_config.NumberColumn(
                                     "Oportunidades",
-                                    format="%d 💳"
+                                    format="%d"
                                 ),
                                 "liquido": st.column_config.NumberColumn(
                                     "Líquido",
                                     format="R$ %.2f"
                                 ),
-                                "regime": "Regime"
+                                "regime": st.column_config.TextColumn("Regime", width="small")
                             },
                             hide_index=True,
                             use_container_width=True
                         )
                     
-                    st.markdown("---")
+                    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                     
                     # Tabela completa
-                    st.subheader("📋 Resultados Completos")
+                    st.markdown("<h3 class='section-header'>Resultados Completos</h3>", unsafe_allow_html=True)
                     
                     # Filtros
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3 = st.columns(3, gap="medium")
                     
                     with col1:
                         filtro_tipo = st.multiselect(
@@ -1226,7 +1408,7 @@ def main():
                         )
                     
                     with col3:
-                        busca = st.text_input("🔍 Buscar por nome")
+                        busca = st.text_input("Buscar por nome")
                     
                     # Aplicar filtros
                     df_filtrado = df[
@@ -1238,6 +1420,8 @@ def main():
                         df_filtrado = df_filtrado[
                             df_filtrado['nome'].str.contains(busca, case=False, na=False)
                         ]
+                    
+                    st.markdown(f"<p style='color: #666; font-size: 0.9rem; margin: 1rem 0;'><strong>Exibindo {len(df_filtrado)} resultado(s)</strong></p>", unsafe_allow_html=True)
                     
                     st.dataframe(
                         df_filtrado,
@@ -1259,7 +1443,7 @@ def main():
                                 format="R$ %.2f"
                             ),
                             "margem_disponivel": st.column_config.NumberColumn(
-                                "Margem Disponível",
+                                "Margem Disp.",
                                 format="R$ %.2f",
                                 help="Margem disponível para novos empréstimos"
                             ),
@@ -1287,10 +1471,10 @@ def main():
                     )
                     
                     # Exportar
-                    st.markdown("---")
-                    st.subheader("💾 Exportar Resultados")
+                    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+                    st.markdown("<h3 class='section-header'>Exportar Resultados</h3>", unsafe_allow_html=True)
                     
-                    col1, col2 = st.columns(2)
+                    col1, col2 = st.columns(2, gap="medium")
                     
                     with col1:
                         buffer = io.BytesIO()
@@ -1299,7 +1483,7 @@ def main():
                         buffer.seek(0)
                         
                         st.download_button(
-                            label="📥 Download Excel (Todos)",
+                            label="Baixar Excel",
                             data=buffer,
                             file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1309,7 +1493,7 @@ def main():
                     with col2:
                         csv = df_filtrado.to_csv(index=False, encoding='utf-8-sig')
                         st.download_button(
-                            label="📥 Download CSV",
+                            label="Baixar CSV",
                             data=csv,
                             file_name=f"oportunidades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                             mime="text/csv",
@@ -1317,16 +1501,14 @@ def main():
                         )
 
     # Footer
-    st.markdown("---")
-    st.markdown(
-        """
-        <div style="text-align: center; color: #666; padding: 2rem;">
-            <p>💳 <strong>Analisador de Holerite</strong> v2.0</p>
-            <p>Sistema de Identificação de Oportunidades de Compra de Dívida com Cálculo de Margem</p>
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+    st.markdown("""
+        <div class='footer-text'>
+            <p style='font-size: 1.1rem; font-weight: 600; color: #1a3a52; margin-bottom: 0.5rem;'>Analisador de Holerite</p>
+            <p style='color: #999;'>v2.0 | Sistema de Análise de Oportunidades de Crédito</p>
+            <p style='color: #bbb; font-size: 0.85rem; margin-top: 1rem;'>Desenvolvido para maximizar suas oportunidades</p>
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
