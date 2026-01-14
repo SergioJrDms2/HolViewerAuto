@@ -948,6 +948,8 @@ def main():
                             st.write(f"2. Adicional Tempo Serviço: + R$ {vencimentos_fixos['adicional_tempo_servico']:,.2f}")
                         if vencimentos_fixos.get('sexta_parte', 0) > 0:
                             st.write(f"3. 6ª Parte: + R$ {vencimentos_fixos['sexta_parte']:,.2f}")
+                        if vencimentos_fixos.get('gratificacao', 0) > 0:
+                            st.write(f"3. 6ª Parte: + R$ {vencimentos_fixos['gratificacao']:,.2f}")
                         
                         descontos_obrig = resultado.get('descontos_obrigatorios', {})
                         if descontos_obrig.get('inss', 0) > 0:
