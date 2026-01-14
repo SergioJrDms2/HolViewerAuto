@@ -361,6 +361,14 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
 
+        # Vencimento Base / Vencimentos Estatutarios
+        if any(p in linha_norm for p in ['VENCIMENTO BASE', 'VENCIMENTOS ESTATUTARIOS', 'VENCIMENTO ESTATUTARIO']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
         # Adicional de Tempo de Serviço
         if 'ADICIONAL TEMPO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO SERVI' in linha_norm:
             valor = extrair_valores_vencimento(linha)
