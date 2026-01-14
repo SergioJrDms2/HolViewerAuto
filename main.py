@@ -363,7 +363,7 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
 
 
         # Adicional de Tempo de Serviço
-        if 'ADICIONAL TEMPO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO SERVI' in linha_norm:
+        if 'ADICIONAL TEMPO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO SERVI' in linha_norm or 'Adicional Tempo Servico' in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['adicional_tempo_servico'] = valor
@@ -574,7 +574,7 @@ def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict,
     """
     
     # Base de cálculo
-    total_vencimentos_fixos = vencimentos_fixos.get('total', 0.0)
+    total_vencimentos_fixos = vencimentos_fixos.get('total', 0.0) + salario_base
     total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
     
     # Fórmula: (Salário Base + Vencimentos Fixos - Descontos Obrigatórios)
@@ -879,7 +879,7 @@ def main():
                     
                     with col3:
                         st.metric(
-                            "Margem Total (10%)",
+                            "Margem Total (15%)",
                             f"R$ {margem['margem_total']:,.2f}",
                             help="10% da base de cálculo para cartão"
                         )
