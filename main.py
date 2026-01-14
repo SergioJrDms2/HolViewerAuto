@@ -574,7 +574,7 @@ def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict,
     """
     
     # Base de cálculo
-    total_vencimentos_fixos = vencimentos_fixos.get('total', 0.0) + salario_base
+    total_vencimentos_fixos = vencimentos_fixos.get('total', 0.0)
     total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
     
     # Fórmula: (Salário Base + Vencimentos Fixos - Descontos Obrigatórios)
