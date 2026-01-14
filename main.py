@@ -442,7 +442,7 @@ def extrair_descontos_obrigatorios(texto: str) -> Dict:
                 descontos_obrigatorios['total'] += valor
         
         # Previdência
-        elif any(palavra in linha_norm for palavra in ['PREV', 'PREVIDENCIA', 'RPPS', 'UASPREV', 'IPSM', 'FUNPREV']):
+        elif any(palavra in linha_norm for palavra in ['PREVIDENCIA', 'RPPS', 'IPSM', 'FUNPREV']):
             valor = extrair_valores_desconto(linha)
             if valor > 0:
                 descontos_obrigatorios['previdencia'] = valor
