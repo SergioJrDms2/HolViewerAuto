@@ -367,15 +367,6 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
                 vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
 
-        elif 'AULA SUPLEMENTAR' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['outros_fixos'].append({
-                    'descricao': linha.strip(),
-                    'valor': valor
-                })
-                vencimentos_fixos['total'] += valor
-
 
         elif 'GRAT' in linha_norm and 'INCORPORADA' in linha_norm:
             valor = extrair_valores_vencimento(linha)
@@ -388,7 +379,7 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
 
         
         # Outros vencimentos fixos comuns
-        elif any(palavra in linha_norm for palavra in ['HORA ATIV', 'EXTRA CLASSE', 'ATIV.EXTRA' 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
+        elif any(palavra in linha_norm for palavra in ['INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
             # Garante que não é desconto
             if 'DESCONTO' not in linha_norm:
                 valor = extrair_valores_vencimento(linha)
@@ -571,7 +562,7 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
 
 def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict, 
                                descontos_obrigatorios: Dict, valores_cartoes: Dict, 
-                               percentual_permitido: float = 0.075) -> Dict:
+                               percentual_permitido: float = 0.10) -> Dict:
     """
     Calcula a margem disponível para CARTÃO usando a fórmula:
     Margem = (Salário Base + Vencimentos Fixos - Descontos Obrigatórios) × Percentual Permitido
@@ -659,7 +650,7 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
         vencimentos_fixos,
         descontos_obrigatorios,
         valores_cartoes,
-        percentual_permitido=0.075  # 10% para cartão
+        percentual_permitido=0.10  # 10% para cartão
     )
     
     # Mantém os descontos fixos originais para exibição (se necessário)
