@@ -855,227 +855,136 @@ def main():
                 
                 st.markdown("---")
 
-                # # Analise de margem
-                # st.subheader("💰 Análise de Margem para Cartão de Crédito")
-                # margem = resultado.get('margem', {})
+                # Analise de margem
+                st.subheader("💰 Análise de Margem para Cartão de Crédito")
+                margem = resultado.get('margem', {})
                 
-                # # CORREÇÃO: Verificar se há margem calculada usando as chaves corretas
-                # if margem.get('base_calculo', 0) > 0:
-                #     col1, col2, col3, col4 = st.columns(4)
+                # CORREÇÃO: Verificar se há margem calculada usando as chaves corretas
+                if margem.get('base_calculo', 0) > 0:
+                    col1, col2, col3, col4 = st.columns(4)
                     
-                #     with col1:
-                #         st.metric(
-                #             "Salário Base",
-                #             f"R$ {margem['salario_base']:,.2f}",
-                #             help="Vencimentos Estatutários"
-                #         )
+                    with col1:
+                        st.metric(
+                            "Salário Base",
+                            f"R$ {margem['salario_base']:,.2f}",
+                            help="Vencimentos Estatutários"
+                        )
                     
-                #     with col2:
-                #         st.metric(
-                #             "Base de Cálculo",
-                #             f"R$ {margem['base_calculo']:,.2f}",
-                #             help="Base + Vencimentos Fixos - Descontos Obrigatórios"
-                #         )
+                    with col2:
+                        st.metric(
+                            "Base de Cálculo",
+                            f"R$ {margem['base_calculo']:,.2f}",
+                            help="Base + Vencimentos Fixos - Descontos Obrigatórios"
+                        )
                     
-                #     with col3:
-                #         st.metric(
-                #             "Margem Total (15%)",
-                #             f"R$ {margem['margem_total']:,.2f}",
-                #             help="10% da base de cálculo para cartão"
-                #         )
+                    with col3:
+                        st.metric(
+                            "Margem Total (15%)",
+                            f"R$ {margem['margem_total']:,.2f}",
+                            help="10% da base de cálculo para cartão"
+                        )
                     
-                #     with col4:
-                #         margem_disp = margem['margem_disponivel']
-                #         delta_color = "normal" if margem_disp >= 0 else "inverse"
-                #         st.metric(
-                #             "Margem Disponível",
-                #             f"R$ {margem_disp:,.2f}",
-                #             delta=f"{margem['percentual_utilizado']:.1f}% utilizado",
-                #             delta_color=delta_color,
-                #             help="Margem disponível após descontar cartões atuais"
-                #         )
+                    with col4:
+                        margem_disp = margem['margem_disponivel']
+                        delta_color = "normal" if margem_disp >= 0 else "inverse"
+                        st.metric(
+                            "Margem Disponível",
+                            f"R$ {margem_disp:,.2f}",
+                            delta=f"{margem['percentual_utilizado']:.1f}% utilizado",
+                            delta_color=delta_color,
+                            help="Margem disponível após descontar cartões atuais"
+                        )
                     
-                #     # Informações complementares
-                #     st.markdown("---")
-                #     col1, col2, col3 = st.columns(3)
+                    # Informações complementares
+                    st.markdown("---")
+                    col1, col2, col3 = st.columns(3)
                     
-                #     with col1:
-                #         st.metric(
-                #             "Vencimentos Fixos",
-                #             f"R$ {margem['total_vencimentos_fixos']:,.2f}",
-                #             help="Adicional Tempo + 6ª Parte + outros"
-                #         )
+                    with col1:
+                        st.metric(
+                            "Vencimentos Fixos",
+                            f"R$ {margem['total_vencimentos_fixos']:,.2f}",
+                            help="Adicional Tempo + 6ª Parte + outros"
+                        )
                     
-                #     with col2:
-                #         st.metric(
-                #             "Descontos Obrigatórios",
-                #             f"R$ {margem['total_descontos_obrigatorios']:,.2f}",
-                #             help="INSS + IRRF + Previdência"
-                #         )
+                    with col2:
+                        st.metric(
+                            "Descontos Obrigatórios",
+                            f"R$ {margem['total_descontos_obrigatorios']:,.2f}",
+                            help="INSS + IRRF + Previdência"
+                        )
                     
-                #     with col3:
-                #         st.metric(
-                #             "Comprometido com Cartões",
-                #             f"R$ {margem['total_cartoes']:,.2f}",
-                #             help="Total de descontos com cartões"
-                #         )
+                    with col3:
+                        st.metric(
+                            "Comprometido com Cartões",
+                            f"R$ {margem['total_cartoes']:,.2f}",
+                            help="Total de descontos com cartões"
+                        )
                     
-                #     # Barra de progresso
-                #     st.markdown("---")
-                #     st.markdown("**Utilização da Margem de Cartão:**")
-                #     percentual = min(margem['percentual_utilizado'], 100)
+                    # Barra de progresso
+                    st.markdown("---")
+                    st.markdown("**Utilização da Margem de Cartão:**")
+                    percentual = min(margem['percentual_utilizado'], 100)
                     
-                #     if percentual <= 50:
-                #         cor = "🟢"
-                #         status_margem = "Ótima margem disponível"
-                #     elif percentual <= 80:
-                #         cor = "🟡"
-                #         status_margem = "Margem moderada"
-                #     elif percentual <= 100:
-                #         cor = "🟠"
-                #         status_margem = "Margem quase esgotada"
-                #     else:
-                #         cor = "🔴"
-                #         status_margem = "Margem excedida"
+                    if percentual <= 50:
+                        cor = "🟢"
+                        status_margem = "Ótima margem disponível"
+                    elif percentual <= 80:
+                        cor = "🟡"
+                        status_margem = "Margem moderada"
+                    elif percentual <= 100:
+                        cor = "🟠"
+                        status_margem = "Margem quase esgotada"
+                    else:
+                        cor = "🔴"
+                        status_margem = "Margem excedida"
                     
-                #     st.progress(min(percentual / 100, 1.0))
-                #     st.caption(f"{cor} {status_margem} - {percentual:.1f}% da margem comprometida")
+                    st.progress(min(percentual / 100, 1.0))
+                    st.caption(f"{cor} {status_margem} - {percentual:.1f}% da margem comprometida")
                     
-                #     # Detalhamento da composição da base
-                #     with st.expander("📋 Ver composição da base de cálculo"):
-                #         st.write("**Cálculo da Margem:**")
-                #         st.write(f"1. Salário Base: R$ {margem['salario_base']:,.2f}")
+                    # Detalhamento da composição da base
+                    with st.expander("📋 Ver composição da base de cálculo"):
+                        st.write("**Cálculo da Margem:**")
+                        st.write(f"1. Salário Base: R$ {margem['salario_base']:,.2f}")
                         
-                #         vencimentos_fixos = resultado.get('vencimentos_fixos', {})
-                #         if vencimentos_fixos.get('adicional_tempo_servico', 0) > 0:
-                #             st.write(f"2. Adicional Tempo Serviço: + R$ {vencimentos_fixos['adicional_tempo_servico']:,.2f}")
-                #         if vencimentos_fixos.get('sexta_parte', 0) > 0:
-                #             st.write(f"3. 6ª Parte: + R$ {vencimentos_fixos['sexta_parte']:,.2f}")
+                        vencimentos_fixos = resultado.get('vencimentos_fixos', {})
+                        if vencimentos_fixos.get('adicional_tempo_servico', 0) > 0:
+                            st.write(f"2. Adicional Tempo Serviço: + R$ {vencimentos_fixos['adicional_tempo_servico']:,.2f}")
+                        if vencimentos_fixos.get('sexta_parte', 0) > 0:
+                            st.write(f"3. 6ª Parte: + R$ {vencimentos_fixos['sexta_parte']:,.2f}")
                         
-                #         descontos_obrig = resultado.get('descontos_obrigatorios', {})
-                #         if descontos_obrig.get('inss', 0) > 0:
-                #             st.write(f"4. INSS: - R$ {descontos_obrig['inss']:,.2f}")
-                #         if descontos_obrig.get('irrf', 0) > 0:
-                #             st.write(f"5. IRRF: - R$ {descontos_obrig['irrf']:,.2f}")
-                #         if descontos_obrig.get('previdencia', 0) > 0:
-                #             st.write(f"6. Previdência: - R$ {descontos_obrig['previdencia']:,.2f}")
+                        descontos_obrig = resultado.get('descontos_obrigatorios', {})
+                        if descontos_obrig.get('inss', 0) > 0:
+                            st.write(f"4. INSS: - R$ {descontos_obrig['inss']:,.2f}")
+                        if descontos_obrig.get('irrf', 0) > 0:
+                            st.write(f"5. IRRF: - R$ {descontos_obrig['irrf']:,.2f}")
+                        if descontos_obrig.get('previdencia', 0) > 0:
+                            st.write(f"6. Previdência: - R$ {descontos_obrig['previdencia']:,.2f}")
                         
-                #         st.write("---")
-                #         st.write(f"**Base de Cálculo: R$ {margem['base_calculo']:,.2f}**")
-                #         st.write(f"**Margem para Cartão (10%): R$ {margem['margem_total']:,.2f}**")
+                        st.write("---")
+                        st.write(f"**Base de Cálculo: R$ {margem['base_calculo']:,.2f}**")
+                        st.write(f"**Margem para Cartão (10%): R$ {margem['margem_total']:,.2f}**")
                     
-                #     # Detalhamento dos cartões
-                #     valores_cartoes = resultado.get('valores_cartoes', {})
-                #     if valores_cartoes.get('total', 0) > 0:
-                #         with st.expander("💳 Ver detalhamento dos cartões identificados"):
-                #             if valores_cartoes.get('nossos_contratos'):
-                #                 st.write("**🏆 Nossos Contratos:**")
-                #                 for item in valores_cartoes['nossos_contratos']:
-                #                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
+                    # Detalhamento dos cartões
+                    valores_cartoes = resultado.get('valores_cartoes', {})
+                    if valores_cartoes.get('total', 0) > 0:
+                        with st.expander("💳 Ver detalhamento dos cartões identificados"):
+                            if valores_cartoes.get('nossos_contratos'):
+                                st.write("**🏆 Nossos Contratos:**")
+                                for item in valores_cartoes['nossos_contratos']:
+                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
                             
-                #             if valores_cartoes.get('conhecidos'):
-                #                 st.write("**✅ Concorrentes:**")
-                #                 for item in valores_cartoes['conhecidos']:
-                #                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
+                            if valores_cartoes.get('conhecidos'):
+                                st.write("**✅ Concorrentes:**")
+                                for item in valores_cartoes['conhecidos']:
+                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
                             
-                #             if valores_cartoes.get('desconhecidos'):
-                #                 st.write("**⚠️ Outros:**")
-                #                 for item in valores_cartoes['desconhecidos']:
-                #                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                # else:
-                #     st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações completas de salário e descontos.")
-
-
-                # Analise de margem - EM MANUTENÇÃO
-                st.markdown("""
-                    <div style="
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        border-radius: 16px;
-                        padding: 3rem 2rem;
-                        text-align: center;
-                        margin: 2rem 0;
-                        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
-                        position: relative;
-                        overflow: hidden;
-                    ">
-                        <div style="
-                            position: absolute;
-                            top: -50px;
-                            right: -50px;
-                            width: 200px;
-                            height: 200px;
-                            background: rgba(255, 255, 255, 0.1);
-                            border-radius: 50%;
-                        "></div>
-                        <div style="
-                            position: absolute;
-                            bottom: -30px;
-                            left: -30px;
-                            width: 150px;
-                            height: 150px;
-                            background: rgba(255, 255, 255, 0.1);
-                            border-radius: 50%;
-                        "></div>
-                        
-                        <div style="position: relative; z-index: 1;">
-                            <div style="
-                                font-size: 4rem;
-                                margin-bottom: 1rem;
-                                animation: pulse 2s ease-in-out infinite;
-                            ">🔧</div>
-                            
-                            <div style="
-                                font-size: 2rem;
-                                font-weight: 700;
-                                color: white;
-                                margin-bottom: 1rem;
-                                letter-spacing: 0.5px;
-                            ">💰 Análise de Margem</div>
-                            
-                            <div style="
-                                display: inline-block;
-                                background: rgba(255, 255, 255, 0.2);
-                                backdrop-filter: blur(10px);
-                                padding: 0.5rem 1.5rem;
-                                border-radius: 50px;
-                                margin-bottom: 1.5rem;
-                            ">
-                                <span style="
-                                    color: white;
-                                    font-weight: 600;
-                                    font-size: 0.95rem;
-                                    letter-spacing: 1px;
-                                ">🚧 SISTEMA EM MANUTENÇÃO</span>
-                            </div>
-                            
-                            <div style="
-                                color: rgba(255, 255, 255, 0.95);
-                                font-size: 1.1rem;
-                                line-height: 1.6;
-                                max-width: 600px;
-                                margin: 0 auto;
-                            ">
-                                Estamos aprimorando o cálculo de margem para oferecer<br>
-                                <strong>análises ainda mais precisas</strong> para você.
-                            </div>
-                            
-                            <div style="
-                                margin-top: 2rem;
-                                color: rgba(255, 255, 255, 0.8);
-                                font-size: 0.95rem;
-                            ">
-                                ⏱️ <em>Disponível em breve</em> • ✨ <strong>Aguarde novidades!</strong>
-                            </div>
-                        </div>
-                        
-                        <style>
-                            @keyframes pulse {
-                                0%, 100% { transform: scale(1); }
-                                50% { transform: scale(1.1); }
-                            }
-                        </style>
-                    </div>
-                """, unsafe_allow_html=True)
+                            if valores_cartoes.get('desconhecidos'):
+                                st.write("**⚠️ Outros:**")
+                                for item in valores_cartoes['desconhecidos']:
+                                    st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
+                else:
+                    st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações completas de salário e descontos.")
+                
                 
                 st.markdown("---")
                 
