@@ -366,9 +366,14 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
             if valor > 0:
                 vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
+                
 
-
-        elif 'GRAT' in linha_norm and 'INCORPORADA' in linha_norm:
+        elif any(palavra in linha_norm for palavra in [
+            'Grat',
+            'Grat.Exerc',
+            'Funcao Incorporada',
+            'Grat.Exerc.Funcao Incorporada'
+        ]):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['outros_fixos'].append({
