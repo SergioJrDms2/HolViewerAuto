@@ -367,7 +367,7 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
                 vencimentos_fixos['total'] += valor
         
         # Outros vencimentos fixos comuns
-        elif any(palavra in linha_norm for palavra in ['GRATIFICACAO', 'Grat', 'Hora Ativ', 'Extra', 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
+        elif any(palavra in linha_norm for palavra in ['GRATIFICACAO', 'Grat.Exerc.Funcao Incorporada', 'Hora Ativ.Extra Classe Supleme', 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
             # Garante que não é desconto
             if 'DESCONTO' not in linha_norm:
                 valor = extrair_valores_vencimento(linha)
@@ -564,7 +564,7 @@ def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict,
     """
     
     # Base de cálculo
-    total_vencimentos_fixos = vencimentos_fixos.get('total', 0.0)
+    total_vencimentos_fixos = vencimentos_fixos.get('total', 0.0) + salario_base
     total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
     
     # Fórmula: (Salário Base + Vencimentos Fixos - Descontos Obrigatórios)
