@@ -315,7 +315,7 @@ def extrair_salario_bruto(texto: str) -> float:
     # Prioridade 2: Buscar "VENCIMENTO BASE" no cabeçalho
     for i, linha in enumerate(linhas):
         linha_norm = normalizar_texto(linha)
-        if 'REMUNERAÇÃO' in linha_norm:
+        if 'VENCIMENTO BASE' in linha_norm:
             # Próxima linha pode ter os valores
             if i + 1 < len(linhas):
                 valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linhas[i + 1])
