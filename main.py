@@ -345,6 +345,7 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
     vencimentos_fixos = {
         'adicional_tempo_servico': 0.0,
         'sexta_parte': 0.0,
+        'gratificacao': 0.0,
         'outros_fixos': [],
         'total': 0.0
     }
@@ -365,9 +366,15 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
             if valor > 0:
                 vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
+
+        elif 'Grat.Exerc.Funcao Incorporada' in linha_norm or 'Grat' in linha_norm or 'Grat.' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
         
         # Outros vencimentos fixos comuns
-        elif any(palavra in linha_norm for palavra in ['GRATIFICACAO', 'Grat.Exerc.Funcao Incorporada', 'Hora Ativ.Extra Classe Supleme', 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
+        elif any(palavra in linha_norm for palavra in ['Hora Ativ.Extra Classe Supleme', 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
             # Garante que não é desconto
             if 'DESCONTO' not in linha_norm:
                 valor = extrair_valores_vencimento(linha)
