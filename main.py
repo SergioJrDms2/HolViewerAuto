@@ -286,7 +286,7 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
     return info
 
 # ============================================================================
-# FUNÇÕES DE CÁLCULO DE MARGEM
+# FUNÇÕES DE CÁLCULO DE 
 # ============================================================================
 
 def extrair_valores_linha(linha: str) -> float:
@@ -367,7 +367,7 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
                 vencimentos_fixos['total'] += valor
         
         # Outros vencimentos fixos comuns
-        elif any(palavra in linha_norm for palavra in ['GRATIFICACAO', 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
+        elif any(palavra in linha_norm for palavra in ['GRATIFICACAO', 'Grat', 'Hora Ativ', 'Extra', 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
             # Garante que não é desconto
             if 'DESCONTO' not in linha_norm:
                 valor = extrair_valores_vencimento(linha)
