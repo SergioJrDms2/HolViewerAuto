@@ -1107,9 +1107,7 @@ def main():
                             color_continuous_scale='Blues'
                         )
                         st.plotly_chart(fig_regime, use_container_width=True)
-                    
-                    # Análise de Margem
-                    st.subheader("💰 Análise de Margem Disponível")
+
                     
                     df_margem = df.groupby('matricula').agg({
                         'nome': 'first',
