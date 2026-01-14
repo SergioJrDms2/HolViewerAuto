@@ -286,7 +286,7 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
     return info
 
 # ============================================================================
-# FUNÇÕES DE CÁLCULO DE 
+# FUNÇÕES DE CÁLCULO DE MARGEM
 # ============================================================================
 
 def extrair_valores_linha(linha: str) -> float:
@@ -358,6 +358,7 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
             if valor > 0:
                 vencimentos_fixos['adicional_tempo_servico'] = valor
                 vencimentos_fixos['total'] += valor
+                
         
         # 6ª Parte
         elif '6A.PARTE' in linha_norm or '6A PARTE' in linha_norm or 'SEXTA PARTE' in linha_norm:
@@ -365,9 +366,29 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
             if valor > 0:
                 vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
+
+        elif 'AULA SUPLEMENTAR' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['outros_fixos'].append({
+                    'descricao': linha.strip(),
+                    'valor': valor
+                })
+                vencimentos_fixos['total'] += valor
+
+
+        elif 'GRAT' in linha_norm and 'INCORPORADA' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['outros_fixos'].append({
+                    'descricao': linha.strip(),
+                    'valor': valor
+                })
+                vencimentos_fixos['total'] += valor
+
         
         # Outros vencimentos fixos comuns
-        elif any(palavra in linha_norm for palavra in ['Hora Ativ.Extra Classe Supleme', 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
+        elif any(palavra in linha_norm for palavra in ['HORA ATIV', 'EXTRA CLASSE', 'ATIV.EXTRA' 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
             # Garante que não é desconto
             if 'DESCONTO' not in linha_norm:
                 valor = extrair_valores_vencimento(linha)
