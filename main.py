@@ -299,62 +299,125 @@ def extrair_valores_linha(linha: str) -> float:
 
 def extrair_salario_bruto(texto: str) -> float:
     """
-    Extrai o valor do salário bruto do contracheque
-    Versão melhorada que busca especificamente por totais de vencimentos
+    Extrai o valor do salário base (vencimento estatutário/salário base)
+    Para a margem de cartão, precisamos do SALÁRIO BASE, não o total
     """
     texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
-    # Prioridade 1: Buscar por "TOTAL DE VENCIMENTOS" ou "TOTAL VENCIMENTOS"
-    # Esta é geralmente a linha mais confiável
+    # Prioridade 1: Buscar por "VENCIMENTOS ESTATUTARIOS" ou "SALARIO BASE"
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        if 'TOTAL' in linha_norm and ('VENCIMENTO' in linha_norm or 'VENC' in linha_norm):
-            # Evita linhas de desconto
-            if 'DESCONTO' not in linha_norm and 'DESC' not in linha_norm:
-                valor = extrair_valores_linha(linha)
-                if valor > 0:
-                    return valor
-    
-    # Prioridade 2: Buscar por linha com múltiplas palavras-chave específicas
-    keywords_primarias = ['SALARIO BASE', 'SALÁRIO BASE', 'VENCIMENTO BASE', 'REMUNERACAO']
-    
-    for linha in linhas:
-        linha_norm = normalizar_texto(linha)
-        for keyword in keywords_primarias:
-            if keyword in linha_norm:
-                # Não filtra "BASE" aqui, pois "SALARIO BASE" é válido
-                if 'DESCONTO' not in linha_norm:
-                    valor = extrair_valores_linha(linha)
-                    if valor > 0:
-                        return valor
-    
-    # Prioridade 3: Buscar por SUBSÍDIO (comum em cargos públicos)
-    for linha in linhas:
-        linha_norm = normalizar_texto(linha)
-        if 'SUBSIDIO' in linha_norm or 'SUBSÍDIO' in linha_norm:
+        if ('VENCIMENTOS ESTATUTARIOS' in linha_norm or 
+            'VENCIMENTO ESTATUTARIO' in linha_norm or
+            'SALARIO BASE' in linha_norm):
             valor = extrair_valores_linha(linha)
             if valor > 0:
                 return valor
     
-    # Prioridade 4: Buscar na função extrair_informacoes_financeiras
-    # que já tem a lógica de pegar vencimentos_total
-    info = extrair_informacoes_financeiras(texto)
-    if info.get('vencimentos_total', 0) > 0:
-        return info['vencimentos_total']
-    
-    # Prioridade 5: Fallback - buscar qualquer linha com palavras-chave
-    keywords_fallback = ['SALARIO', 'VENCIMENTO', 'REMUNERACAO']
-    
+    # Prioridade 2: Buscar por linhas que contenham apenas "VENCIMENTO" sem outras palavras
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        if any(keyword in linha_norm for keyword in keywords_fallback):
-            if 'DESCONTO' not in linha_norm and 'TOTAL' not in linha_norm:
+        if 'VENCIMENTO' in linha_norm and 'TOTAL' not in linha_norm and 'DESCONTO' not in linha_norm:
+            # Verificar se não é adicional ou outra coisa
+            if 'ADICIONAL' not in linha_norm and 'TEMPO' not in linha_norm:
                 valor = extrair_valores_linha(linha)
                 if valor > 0:
                     return valor
     
     return 0.0
+
+
+
+def extrair_vencimentos_fixos(texto: str) -> Dict:
+    """
+    Extrai vencimentos fixos (adicionais de tempo de serviço, 6ª parte, etc.)
+    Estes entram no cálculo da margem de cartão
+    """
+    texto_normalizado = normalizar_texto(texto)
+    linhas = texto.split('\n')
+    
+    vencimentos_fixos = {
+        'adicional_tempo_servico': 0.0,
+        'sexta_parte': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+    
+    keywords = {
+        'adicional_tempo_servico': ['ADICIONAL TEMPO SERVICO', 'ADICIONAL TEMPO', 'ATS'],
+        'sexta_parte': ['6A.PARTE', '6A PARTE', 'SEXTA PARTE'],
+    }
+    
+    # Palavras-chave para identificar outros vencimentos fixos
+    outros_vencimentos = ['GRATIFICACAO', 'INSALUBRIDADE', 'PERICULOSIDADE', 
+                          'ADICIONAL NOTURNO', 'HORA EXTRA']
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # Verifica adicional de tempo de serviço
+        if any(palavra in linha_norm for palavra in keywords['adicional_tempo_servico']):
+            valor = extrair_valores_linha(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] += valor
+                vencimentos_fixos['total'] += valor
+        
+        # Verifica 6ª parte
+        elif any(palavra in linha_norm for palavra in keywords['sexta_parte']):
+            valor = extrair_valores_linha(linha)
+            if valor > 0:
+                vencimentos_fixos['sexta_parte'] += valor
+                vencimentos_fixos['total'] += valor
+        
+        # Verifica outros vencimentos fixos
+        elif any(palavra in linha_norm for palavra in outros_vencimentos):
+            # Garante que é vencimento e não desconto
+            if 'DESCONTO' not in linha_norm:
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    vencimentos_fixos['outros_fixos'].append({
+                        'descricao': linha.strip(),
+                        'valor': valor
+                    })
+                    vencimentos_fixos['total'] += valor
+    
+    return vencimentos_fixos
+
+
+def extrair_descontos_obrigatorios(texto: str) -> Dict:
+    """
+    Extrai apenas os descontos OBRIGATÓRIOS (INSS, IRRF, Previdência)
+    Estes são deduzidos no cálculo da margem de cartão
+    """
+    texto_normalizado = normalizar_texto(texto)
+    linhas = texto.split('\n')
+    
+    descontos_obrigatorios = {
+        'inss': 0.0,
+        'irrf': 0.0,
+        'previdencia': 0.0,
+        'total': 0.0
+    }
+    
+    keywords = {
+        'inss': ['INSS', 'I.N.S.S', 'INSTITUTO NACIONAL'],
+        'irrf': ['IRRF', 'I.R.R.F', 'IMPOSTO DE RENDA', 'IR FONTE', 'IMP RENDA'],
+        'previdencia': ['PREV', 'PREVIDENCIA', 'RPPS', 'UASPREV', 'IPSM', 'FUNPREV']
+    }
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        for categoria, palavras in keywords.items():
+            if any(palavra in linha_norm for palavra in palavras):
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    descontos_obrigatorios[categoria] += valor
+                    descontos_obrigatorios['total'] += valor
+                    break
+    
+    return descontos_obrigatorios
     
 
 def extrair_descontos_fixos(texto: str) -> Dict:
@@ -453,46 +516,51 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
     
     return valores_cartoes
 
-def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valores_cartoes: Dict, salario_liquido_real: float = 0.0) -> Dict:
+def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict, 
+                               descontos_obrigatorios: Dict, valores_cartoes: Dict, 
+                               percentual_permitido: float = 0.10) -> Dict:
     """
-    Calcula a margem disponível baseada na regra:
-    Margem = Líquido do Holerite - Comprometido (Cartões)
+    Calcula a margem disponível para CARTÃO usando a fórmula:
+    Margem = (Salário Base + Vencimentos Fixos - Descontos Obrigatórios) × Percentual Permitido
+    
+    Margem Disponível = Margem Total - Comprometido com Cartões
+    
+    Args:
+        salario_base: Salário base do servidor
+        vencimentos_fixos: Dict com vencimentos fixos (adicional tempo, 6ª parte, etc)
+        descontos_obrigatorios: Dict com descontos obrigatórios (INSS, IRRF, Previdência)
+        valores_cartoes: Dict com valores de cartões já comprometidos
+        percentual_permitido: Percentual permitido para cartão (padrão 10%)
     """
     
-    # Soma descontos fixos (apenas para registro/exibição)
-    total_descontos_fixos = (
-        descontos_fixos['inss'] +
-        descontos_fixos['irrf'] +
-        descontos_fixos['previdencia'] +
-        descontos_fixos['pensao'] +
-        descontos_fixos['plano_saude'] +
-        descontos_fixos['vale_transporte']
-    )
+    # Base de cálculo
+    total_vencimentos_fixos = vencimentos_fixos.get('total', 0.0)
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
     
-    # Total já comprometido com cartões identificados
-    total_cartoes = valores_cartoes['total']
+    base_calculo = salario_base + total_vencimentos_fixos - total_descontos_obrigatorios
     
-    # LÓGICA NOVA:
-    # A base agora é o VALOR LÍQUIDO extraído do PDF.
-    # Se por algum motivo o código não achou o líquido (0.0), 
-    # usamos (Bruto - Descontos Fixos) como fallback.
-    if salario_liquido_real > 0:
-        base_calculo = salario_liquido_real
-    else:
-        base_calculo = salario_bruto - total_descontos_fixos
-
-
-    # Cálculo da Margem Disponível (Líquido - Comprometido)
-    margem_disponivel = base_calculo - total_cartoes
+    # Margem total permitida para cartão
+    margem_total = base_calculo * percentual_permitido
+    
+    # Total já comprometido com cartões
+    total_cartoes = valores_cartoes.get('total', 0.0)
+    
+    # Margem disponível
+    margem_disponivel = margem_total - total_cartoes
+    
+    # Percentual utilizado
+    percentual_utilizado = (total_cartoes / margem_total * 100) if margem_total > 0 else 0
     
     return {
-        'salario_bruto': salario_bruto,
-        'total_descontos_fixos': total_descontos_fixos,
-        'salario_liquido': base_calculo, # Agora reflete a base usada
-        'margem_total': base_calculo,    # Para o gráfico, o "Total" agora é o Líquido
+        'salario_base': salario_base,
+        'total_vencimentos_fixos': total_vencimentos_fixos,
+        'total_descontos_obrigatorios': total_descontos_obrigatorios,
+        'base_calculo': base_calculo,
+        'percentual_permitido': percentual_permitido * 100,  # Para exibir em %
+        'margem_total': margem_total,
         'total_cartoes': total_cartoes,
         'margem_disponivel': margem_disponivel,
-        'percentual_utilizado': (total_cartoes / base_calculo * 100) if base_calculo > 0 else 0,
+        'percentual_utilizado': percentual_utilizado,
         'tem_margem': margem_disponivel > 0
     }
 
@@ -518,7 +586,7 @@ def analisar_contracheque(texto: str, cartoes_encontrados: Dict) -> Dict:
 # ============================================================================
 
 def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict:
-    """Analisa um holerite e retorna os resultados com validação adicional"""
+    """Analisa um holerite e retorna os resultados - VERSÃO ATUALIZADA"""
     texto = extrair_texto_pdf(arquivo_bytes)
     
     if not texto.strip():
@@ -528,27 +596,23 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
     info_financeira = extrair_informacoes_financeiras(texto)
     cartoes = identificar_cartoes_credito(texto)
     
-    # Calcula margem disponível
-    descontos_fixos = extrair_descontos_fixos(texto)
+    # Extrai dados para cálculo de margem de CARTÃO
+    salario_base = extrair_salario_bruto(texto)
+    vencimentos_fixos = extrair_vencimentos_fixos(texto)
+    descontos_obrigatorios = extrair_descontos_obrigatorios(texto)
     valores_cartoes = extrair_valores_cartoes(texto, cartoes)
-    salario_bruto = extrair_salario_bruto(texto)
     
-    # Obtém o salário líquido extraído (trata se vier vazio/string)
-    salario_liquido_real = info_financeira.get('liquido', 0.0)
-    if isinstance(salario_liquido_real, str):
-        salario_liquido_real = 0.0
-    
-    # VALIDAÇÃO: Se não conseguiu extrair salário bruto, tenta fallback
-    if salario_bruto == 0.0 and info_financeira.get('vencimentos_total', 0) > 0:
-        salario_bruto = info_financeira['vencimentos_total']
-    
-    # === AQUI ESTÁ A MUDANÇA NA CHAMADA ===
+    # Calcula margem disponível para cartão (10% do salário)
     margem = calcular_margem_disponivel(
-        salario_bruto, 
-        descontos_fixos, 
-        valores_cartoes, 
-        salario_liquido_real=salario_liquido_real
+        salario_base, 
+        vencimentos_fixos,
+        descontos_obrigatorios,
+        valores_cartoes,
+        percentual_permitido=0.10  # 10% para cartão
     )
+    
+    # Mantém os descontos fixos originais para exibição (se necessário)
+    descontos_fixos_completos = extrair_descontos_fixos(texto)
     
     return {
         'arquivo': nome_arquivo,
@@ -557,7 +621,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
         'nossos_contratos': cartoes['nossos_contratos'],
         'cartoes_conhecidos': cartoes['conhecidos'],
         'cartoes_desconhecidos': cartoes['desconhecidos'],
-        'descontos_fixos': descontos_fixos,
+        'descontos_fixos': descontos_fixos_completos,  # Mantém para compatibilidade
+        'descontos_obrigatorios': descontos_obrigatorios,  # Novo campo
+        'vencimentos_fixos': vencimentos_fixos,  # Novo campo
         'valores_cartoes': valores_cartoes,
         'margem': margem,
         'texto_completo': texto
