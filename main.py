@@ -337,67 +337,89 @@ def extrair_salario_bruto(texto: str) -> float:
 
 def extrair_vencimentos_fixos(texto: str) -> Dict:
     """
-    Extrai vencimentos fixos (adicionais de tempo de serviço, 6ª parte, etc.)
-    da coluna de VENCIMENTOS
+    Extrai vencimentos (Vencimento Base, Adicional Tempo, Gratificação,
+    Hora Ativ. Extra Classe, Aula Suplementar, Vale Alimentação, 6ª parte, etc.)
+    da coluna de VENCIMENTOS.
+
+    Retorna um dict com chaves explícitas e uma lista 'outros_fixos' para itens
+    não mapeados individualmente, além do 'total' (soma de todos os vencimentos encontrados).
     """
     linhas = texto.split('\n')
-    
+
     vencimentos_fixos = {
+        'vencimento_base': 0.0,
         'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,               # ex: Grat.Exerc.Funcao Incorporada
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
         'sexta_parte': 0.0,
         'outros_fixos': [],
         'total': 0.0
     }
-    
+
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        
+
+        # Vencimento Base / Vencimentos Estatutarios
+        if any(p in linha_norm for p in ['VENCIMENTO BASE', 'VENCIMENTOS ESTATUTARIOS', 'VENCIMENTO ESTATUTARIO']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
         # Adicional de Tempo de Serviço
-        if 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO' in linha_norm:
+        if 'ADICIONAL TEMPO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO SERVI' in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['adicional_tempo_servico'] = valor
                 vencimentos_fixos['total'] += valor
-                
-        
-        # 6ª Parte
-        elif '6A.PARTE' in linha_norm or '6A PARTE' in linha_norm or 'SEXTA PARTE' in linha_norm:
+            continue
+
+        # Gratificação / Grat. Exercício / Função Incorporada
+        if any(p in linha_norm for p in ['GRAT', 'GRAT.EXERC', 'FUNCao INCORPORADA', 'GRAT.EXERC.FUNCAO', 'GRAT.EXERC.FUNCAO INCORPORADA']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                # some holerites escrevem apenas "GRAT" — agregamos em 'gratificacao'
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Hora Ativ. Extra Classe (várias formas possíveis)
+        if any(p in linha_norm for p in ['HORA ATIV', 'HORA ATIV.EXTRA', 'HORA ATIV. EXTRA', 'HORA ATIV.EXTRA CLASSE', 'HORA ATIV EXTRA CLASSE']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['hora_ativ_extra_classe'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Aula Suplementar / Aula Suplente / Aula Suplementar
+        if any(p in linha_norm for p in ['AULA SUPLEMENTAR', 'AULA SUPL', 'AULA SUPLE']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['aula_suplementar'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Vale alimentação (caso esteja na coluna de vencimentos)
+        if any(p in linha_norm for p in ['VALE ALIMENTACAO', 'VALE ALIMENTAÇÃO', 'VALE-ALIMENTACAO']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vale_alimentacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # 6ª Parte / Sexta Parte
+        if any(p in linha_norm for p in ['6A.PARTE', '6A PARTE', 'SEXTA PARTE']):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
-                
+            continue
 
-        # elif any(palavra in linha_norm for palavra in [
-        #     'Grat',
-        #     'Grat.Exerc',
-        #     'Funcao Incorporada',
-        #     'Grat.Exerc.Funcao Incorporada'
-        # ]):
-        #     valor = extrair_valores_vencimento(linha)
-        #     if valor > 0:
-        #         vencimentos_fixos['outros_fixos'].append({
-        #             'descricao': linha.strip(),
-        #             'valor': valor
-        #         })
-        #         vencimentos_fixos['total'] += valor
-
-        elif any(palavra in linha_norm for palavra in [
-            'HORA ATIV.EXTRA CLASSE',
-            'HORA ATIV. EXTRA CLASSE',
-            'AULA SUPLEMENTAR'
-        ]):
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['outros_fixos'].append({
-                    'descricao': linha.strip(),
-                    'valor': valor
-                })
-                vencimentos_fixos['total'] += valor
-
-        
-        # Outros vencimentos fixos comuns
-        elif any(palavra in linha_norm for palavra in ['INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
+        # Insalubridade / Periculosidade / Adicional Noturno e outros vencimentos específicos
+        if any(p in linha_norm for p in ['INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO', 'ADICIONAL NOTURNO']):
             # Garante que não é desconto
             if 'DESCONTO' not in linha_norm:
                 valor = extrair_valores_vencimento(linha)
@@ -407,7 +429,20 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
                         'valor': valor
                     })
                     vencimentos_fixos['total'] += valor
-    
+            continue
+
+        # Caso geral: se a linha tem um valor na coluna VENCIMENTOS (penúltimo valor)
+        # e não foi capturada acima, colocamos em 'outros_fixos' para não perder nada.
+        valor_possivel = extrair_valores_vencimento(linha)
+        if valor_possivel > 0:
+            # Evita duplicar itens já capturados (checa se descrição curta já apareceu)
+            desc_curta = linha_norm[:40].strip()
+            vencimentos_fixos['outros_fixos'].append({
+                'descricao': linha.strip(),
+                'valor': valor_possivel
+            })
+            vencimentos_fixos['total'] += valor_possivel
+
     return vencimentos_fixos
 
 def extrair_descontos_obrigatorios(texto: str) -> Dict:
