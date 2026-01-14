@@ -987,20 +987,95 @@ def main():
 
 
                 # Analise de margem - EM MANUTENÇÃO
-                st.subheader("💰 Análise de Margem para Cartão de Crédito")
-                
                 st.markdown("""
-                    <div class="maintenance-box">
-                        <div class="maintenance-icon">🔧</div>
-                        <div class="maintenance-title">Sistema em Manutenção</div>
-                        <div class="maintenance-text">
-                            O cálculo de margem está sendo aprimorado e estará disponível em breve.
-                            <br>Agradecemos a compreensão!
+                    <div style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        border-radius: 16px;
+                        padding: 3rem 2rem;
+                        text-align: center;
+                        margin: 2rem 0;
+                        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+                        position: relative;
+                        overflow: hidden;
+                    ">
+                        <div style="
+                            position: absolute;
+                            top: -50px;
+                            right: -50px;
+                            width: 200px;
+                            height: 200px;
+                            background: rgba(255, 255, 255, 0.1);
+                            border-radius: 50%;
+                        "></div>
+                        <div style="
+                            position: absolute;
+                            bottom: -30px;
+                            left: -30px;
+                            width: 150px;
+                            height: 150px;
+                            background: rgba(255, 255, 255, 0.1);
+                            border-radius: 50%;
+                        "></div>
+                        
+                        <div style="position: relative; z-index: 1;">
+                            <div style="
+                                font-size: 4rem;
+                                margin-bottom: 1rem;
+                                animation: pulse 2s ease-in-out infinite;
+                            ">🔧</div>
+                            
+                            <div style="
+                                font-size: 2rem;
+                                font-weight: 700;
+                                color: white;
+                                margin-bottom: 1rem;
+                                letter-spacing: 0.5px;
+                            ">💰 Análise de Margem</div>
+                            
+                            <div style="
+                                display: inline-block;
+                                background: rgba(255, 255, 255, 0.2);
+                                backdrop-filter: blur(10px);
+                                padding: 0.5rem 1.5rem;
+                                border-radius: 50px;
+                                margin-bottom: 1.5rem;
+                            ">
+                                <span style="
+                                    color: white;
+                                    font-weight: 600;
+                                    font-size: 0.95rem;
+                                    letter-spacing: 1px;
+                                ">🚧 SISTEMA EM MANUTENÇÃO</span>
+                            </div>
+                            
+                            <div style="
+                                color: rgba(255, 255, 255, 0.95);
+                                font-size: 1.1rem;
+                                line-height: 1.6;
+                                max-width: 600px;
+                                margin: 0 auto;
+                            ">
+                                Estamos aprimorando o cálculo de margem para oferecer<br>
+                                <strong>análises ainda mais precisas</strong> para você.
+                            </div>
+                            
+                            <div style="
+                                margin-top: 2rem;
+                                color: rgba(255, 255, 255, 0.8);
+                                font-size: 0.95rem;
+                            ">
+                                ⏱️ <em>Disponível em breve</em> • ✨ <strong>Aguarde novidades!</strong>
+                            </div>
                         </div>
+                        
+                        <style>
+                            @keyframes pulse {
+                                0%, 100% { transform: scale(1); }
+                                50% { transform: scale(1.1); }
+                            }
+                        </style>
                     </div>
                 """, unsafe_allow_html=True)
-                
-                st.markdown("---")
                 
                 st.markdown("---")
                 
