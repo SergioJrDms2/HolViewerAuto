@@ -361,14 +361,6 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
 
-        # Vencimento Base / Vencimentos Estatutarios
-        if any(p in linha_norm for p in ['VENCIMENTO BASE', 'VENCIMENTOS ESTATUTARIOS', 'VENCIMENTO ESTATUTARIO']):
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['vencimento_base'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
-
         # Adicional de Tempo de Serviço
         if 'ADICIONAL TEMPO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO SERVI' in linha_norm:
             valor = extrair_valores_vencimento(linha)
@@ -394,54 +386,6 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
                 vencimentos_fixos['total'] += valor
             continue
 
-        # Aula Suplementar / Aula Suplente / Aula Suplementar
-        if any(p in linha_norm for p in ['AULA SUPLEMENTAR', 'AULA SUPL', 'AULA SUPLE']):
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['aula_suplementar'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
-
-        # Vale alimentação (caso esteja na coluna de vencimentos)
-        if any(p in linha_norm for p in ['VALE ALIMENTACAO', 'VALE ALIMENTAÇÃO', 'VALE-ALIMENTACAO']):
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['vale_alimentacao'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
-
-        # 6ª Parte / Sexta Parte
-        if any(p in linha_norm for p in ['6A.PARTE', '6A PARTE', 'SEXTA PARTE']):
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['sexta_parte'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
-
-        # Insalubridade / Periculosidade / Adicional Noturno e outros vencimentos específicos
-        if any(p in linha_norm for p in ['INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO', 'ADICIONAL NOTURNO']):
-            # Garante que não é desconto
-            if 'DESCONTO' not in linha_norm:
-                valor = extrair_valores_vencimento(linha)
-                if valor > 0:
-                    vencimentos_fixos['outros_fixos'].append({
-                        'descricao': linha.strip(),
-                        'valor': valor
-                    })
-                    vencimentos_fixos['total'] += valor
-            continue
-
-        # Caso geral: se a linha tem um valor na coluna VENCIMENTOS (penúltimo valor)
-        # e não foi capturada acima, colocamos em 'outros_fixos' para não perder nada.
-        valor_possivel = extrair_valores_vencimento(linha)
-        if valor_possivel > 0:
-            # Evita duplicar itens já capturados (checa se descrição curta já apareceu)
-            desc_curta = linha_norm[:40].strip()
-            vencimentos_fixos['outros_fixos'].append({
-                'descricao': linha.strip(),
-                'valor': valor_possivel
-            })
-            vencimentos_fixos['total'] += valor_possivel
 
     return vencimentos_fixos
 
