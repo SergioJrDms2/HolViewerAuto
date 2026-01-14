@@ -483,7 +483,7 @@ def calcular_margem_disponivel(salario_bruto: float, descontos_fixos: Dict, valo
 
 
     # Cálculo da Margem Disponível (Líquido - Comprometido)
-    margem_disponivel = (base_calculo * 0.35) - total_cartoes
+    margem_disponivel = base_calculo - total_cartoes
     
     return {
         'salario_bruto': salario_bruto,
