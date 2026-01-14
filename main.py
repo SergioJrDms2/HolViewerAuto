@@ -299,31 +299,37 @@ def extrair_valores_linha(linha: str) -> float:
 
 def extrair_salario_bruto(texto: str) -> float:
     """
-    Extrai o valor do salário base (vencimento estatutário/salário base)
-    Para a margem de cartão, precisamos do SALÁRIO BASE, não o total
+    Extrai o valor do salário base do contracheque
+    Busca por "Vencimentos Estatutarios" ou similar na coluna de vencimentos
     """
-    texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
-    # Prioridade 1: Buscar por "VENCIMENTOS ESTATUTARIOS" ou "SALARIO BASE"
+    # Prioridade 1: Buscar linha "Vencimentos Estatutarios"
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        if ('VENCIMENTOS ESTATUTARIOS' in linha_norm or 
-            'VENCIMENTO ESTATUTARIO' in linha_norm or
-            'SALARIO BASE' in linha_norm):
-            valor = extrair_valores_linha(linha)
+        if 'VENCIMENTOS ESTATUTARIOS' in linha_norm or 'VENCIMENTO ESTATUTARIO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 return valor
     
-    # Prioridade 2: Buscar por linhas que contenham apenas "VENCIMENTO" sem outras palavras
+    # Prioridade 2: Buscar "VENCIMENTO BASE" no cabeçalho
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO BASE' in linha_norm:
+            # Próxima linha pode ter os valores
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linhas[i + 1])
+                if valores:
+                    valor_str = valores[0].replace('.', '').replace(',', '.')
+                    return float(valor_str)
+    
+    # Prioridade 3: Buscar "SALARIO BASE" ou apenas "SALARIO"
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        if 'VENCIMENTO' in linha_norm and 'TOTAL' not in linha_norm and 'DESCONTO' not in linha_norm:
-            # Verificar se não é adicional ou outra coisa
-            if 'ADICIONAL' not in linha_norm and 'TEMPO' not in linha_norm:
-                valor = extrair_valores_linha(linha)
-                if valor > 0:
-                    return valor
+        if 'SALARIO BASE' in linha_norm or (linha_norm.strip().startswith('SALARIO') and 'DESCONTO' not in linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
     
     return 0.0
 
@@ -332,9 +338,8 @@ def extrair_salario_bruto(texto: str) -> float:
 def extrair_vencimentos_fixos(texto: str) -> Dict:
     """
     Extrai vencimentos fixos (adicionais de tempo de serviço, 6ª parte, etc.)
-    Estes entram no cálculo da margem de cartão
+    da coluna de VENCIMENTOS
     """
-    texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
     vencimentos_fixos = {
@@ -344,37 +349,28 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
         'total': 0.0
     }
     
-    keywords = {
-        'adicional_tempo_servico': ['ADICIONAL TEMPO SERVICO', 'ADICIONAL TEMPO', 'ATS'],
-        'sexta_parte': ['6A.PARTE', '6A PARTE', 'SEXTA PARTE'],
-    }
-    
-    # Palavras-chave para identificar outros vencimentos fixos
-    outros_vencimentos = ['GRATIFICACAO', 'INSALUBRIDADE', 'PERICULOSIDADE', 
-                          'ADICIONAL NOTURNO', 'HORA EXTRA']
-    
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         
-        # Verifica adicional de tempo de serviço
-        if any(palavra in linha_norm for palavra in keywords['adicional_tempo_servico']):
-            valor = extrair_valores_linha(linha)
+        # Adicional de Tempo de Serviço
+        if 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
             if valor > 0:
-                vencimentos_fixos['adicional_tempo_servico'] += valor
+                vencimentos_fixos['adicional_tempo_servico'] = valor
                 vencimentos_fixos['total'] += valor
         
-        # Verifica 6ª parte
-        elif any(palavra in linha_norm for palavra in keywords['sexta_parte']):
-            valor = extrair_valores_linha(linha)
+        # 6ª Parte
+        elif '6A.PARTE' in linha_norm or '6A PARTE' in linha_norm or 'SEXTA PARTE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
             if valor > 0:
-                vencimentos_fixos['sexta_parte'] += valor
+                vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
         
-        # Verifica outros vencimentos fixos
-        elif any(palavra in linha_norm for palavra in outros_vencimentos):
-            # Garante que é vencimento e não desconto
+        # Outros vencimentos fixos comuns
+        elif any(palavra in linha_norm for palavra in ['GRATIFICACAO', 'INSALUBRIDADE', 'PERICULOSIDADE', 'ADICIONAL NOTURNO']):
+            # Garante que não é desconto
             if 'DESCONTO' not in linha_norm:
-                valor = extrair_valores_linha(linha)
+                valor = extrair_valores_vencimento(linha)
                 if valor > 0:
                     vencimentos_fixos['outros_fixos'].append({
                         'descricao': linha.strip(),
@@ -384,13 +380,11 @@ def extrair_vencimentos_fixos(texto: str) -> Dict:
     
     return vencimentos_fixos
 
-
 def extrair_descontos_obrigatorios(texto: str) -> Dict:
     """
     Extrai apenas os descontos OBRIGATÓRIOS (INSS, IRRF, Previdência)
-    Estes são deduzidos no cálculo da margem de cartão
+    da coluna de DESCONTOS
     """
-    texto_normalizado = normalizar_texto(texto)
     linhas = texto.split('\n')
     
     descontos_obrigatorios = {
@@ -400,22 +394,29 @@ def extrair_descontos_obrigatorios(texto: str) -> Dict:
         'total': 0.0
     }
     
-    keywords = {
-        'inss': ['INSS', 'I.N.S.S', 'INSTITUTO NACIONAL'],
-        'irrf': ['IRRF', 'I.R.R.F', 'IMPOSTO DE RENDA', 'IR FONTE', 'IMP RENDA'],
-        'previdencia': ['PREV', 'PREVIDENCIA', 'RPPS', 'UASPREV', 'IPSM', 'FUNPREV']
-    }
-    
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         
-        for categoria, palavras in keywords.items():
-            if any(palavra in linha_norm for palavra in palavras):
-                valor = extrair_valores_linha(linha)
-                if valor > 0:
-                    descontos_obrigatorios[categoria] += valor
-                    descontos_obrigatorios['total'] += valor
-                    break
+        # INSS
+        if 'I.N.S.S' in linha_norm or 'INSS' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['inss'] = valor
+                descontos_obrigatorios['total'] += valor
+        
+        # IRRF
+        elif 'IRRF' in linha_norm or 'I.R.R.F' in linha_norm or 'IMPOSTO DE RENDA' in linha_norm or 'IR ' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['irrf'] = valor
+                descontos_obrigatorios['total'] += valor
+        
+        # Previdência
+        elif any(palavra in linha_norm for palavra in ['PREV', 'PREVIDENCIA', 'RPPS', 'UASPREV', 'IPSM', 'FUNPREV']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['previdencia'] = valor
+                descontos_obrigatorios['total'] += valor
     
     return descontos_obrigatorios
     
@@ -473,8 +474,40 @@ def extrair_descontos_fixos(texto: str) -> Dict:
     
     return descontos_fixos
 
+
+def extrair_valores_vencimento(linha: str) -> float:
+    """
+    Extrai o valor da coluna de VENCIMENTOS (penúltimo valor numérico)
+    """
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if len(valores) >= 2:
+        # Penúltimo valor é a coluna de vencimentos
+        valor_str = valores[-2].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    elif len(valores) == 1:
+        valor_str = valores[0].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
+
+def extrair_valores_desconto(linha: str) -> float:
+    """
+    Extrai o valor da coluna de DESCONTOS (último valor numérico)
+    """
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if valores:
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
+
+
+
 def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
-    """Extrai os valores dos descontos de cartões identificados"""
+    """
+    Extrai os valores dos descontos de cartões identificados
+    Usa a coluna de DESCONTOS
+    """
     valores_cartoes = {
         'nossos_contratos': [],
         'conhecidos': [],
@@ -482,11 +515,9 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
         'total': 0.0
     }
     
-    linhas = texto.split('\n')
-    
     # Processa nossos contratos
     for cartao_linha in cartoes_encontrados.get('nossos_contratos', []):
-        valor = extrair_valores_linha(cartao_linha)
+        valor = extrair_valores_desconto(cartao_linha)
         if valor > 0:
             valores_cartoes['nossos_contratos'].append({
                 'descricao': cartao_linha.strip(),
@@ -496,7 +527,7 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
     
     # Processa cartões conhecidos
     for cartao_linha in cartoes_encontrados.get('conhecidos', []):
-        valor = extrair_valores_linha(cartao_linha)
+        valor = extrair_valores_desconto(cartao_linha)
         if valor > 0:
             valores_cartoes['conhecidos'].append({
                 'descricao': cartao_linha.strip(),
@@ -506,7 +537,7 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
     
     # Processa cartões desconhecidos
     for cartao_linha in cartoes_encontrados.get('desconhecidos', []):
-        valor = extrair_valores_linha(cartao_linha)
+        valor = extrair_valores_desconto(cartao_linha)
         if valor > 0:
             valores_cartoes['desconhecidos'].append({
                 'descricao': cartao_linha.strip(),
@@ -516,6 +547,7 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
     
     return valores_cartoes
 
+
 def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict, 
                                descontos_obrigatorios: Dict, valores_cartoes: Dict, 
                                percentual_permitido: float = 0.10) -> Dict:
@@ -523,23 +555,22 @@ def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict,
     Calcula a margem disponível para CARTÃO usando a fórmula:
     Margem = (Salário Base + Vencimentos Fixos - Descontos Obrigatórios) × Percentual Permitido
     
-    Margem Disponível = Margem Total - Comprometido com Cartões
-    
-    Args:
-        salario_base: Salário base do servidor
-        vencimentos_fixos: Dict com vencimentos fixos (adicional tempo, 6ª parte, etc)
-        descontos_obrigatorios: Dict com descontos obrigatórios (INSS, IRRF, Previdência)
-        valores_cartoes: Dict com valores de cartões já comprometidos
-        percentual_permitido: Percentual permitido para cartão (padrão 10%)
+    Com o holerite exemplo:
+    - Salário Base: R$ 2.423,27
+    - Vencimentos Fixos: R$ 605,82 + R$ 403,88 = R$ 1.009,70
+    - Descontos Obrigatórios: R$ 305,36 + R$ 9,75 = R$ 315,11
+    - Base: R$ 2.423,27 + R$ 1.009,70 - R$ 315,11 = R$ 3.117,86
+    - Margem Total: R$ 3.117,86 × 10% = R$ 311,79
     """
     
     # Base de cálculo
     total_vencimentos_fixos = vencimentos_fixos.get('total', 0.0)
     total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
     
+    # Fórmula: (Salário Base + Vencimentos Fixos - Descontos Obrigatórios)
     base_calculo = salario_base + total_vencimentos_fixos - total_descontos_obrigatorios
     
-    # Margem total permitida para cartão
+    # Margem total permitida para cartão (10%)
     margem_total = base_calculo * percentual_permitido
     
     # Total já comprometido com cartões
@@ -563,7 +594,6 @@ def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict,
         'percentual_utilizado': percentual_utilizado,
         'tem_margem': margem_disponivel > 0
     }
-
 # Exemplo de uso integrado:
 def analisar_contracheque(texto: str, cartoes_encontrados: Dict) -> Dict:
     """
@@ -586,7 +616,7 @@ def analisar_contracheque(texto: str, cartoes_encontrados: Dict) -> Dict:
 # ============================================================================
 
 def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict:
-    """Analisa um holerite e retorna os resultados - VERSÃO ATUALIZADA"""
+    """Analisa um holerite e retorna os resultados - VERSÃO CORRIGIDA"""
     texto = extrair_texto_pdf(arquivo_bytes)
     
     if not texto.strip():
@@ -621,9 +651,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
         'nossos_contratos': cartoes['nossos_contratos'],
         'cartoes_conhecidos': cartoes['conhecidos'],
         'cartoes_desconhecidos': cartoes['desconhecidos'],
-        'descontos_fixos': descontos_fixos_completos,  # Mantém para compatibilidade
-        'descontos_obrigatorios': descontos_obrigatorios,  # Novo campo
-        'vencimentos_fixos': vencimentos_fixos,  # Novo campo
+        'descontos_fixos': descontos_fixos_completos,
+        'descontos_obrigatorios': descontos_obrigatorios,
+        'vencimentos_fixos': vencimentos_fixos,
         'valores_cartoes': valores_cartoes,
         'margem': margem,
         'texto_completo': texto
