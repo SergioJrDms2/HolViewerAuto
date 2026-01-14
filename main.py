@@ -1122,46 +1122,7 @@ def main():
                     df_margem = df_margem[df_margem['margem_disponivel'].notna()]
                     
                     if not df_margem.empty:
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            fig_hist_margem = px.histogram(
-                                df_margem,
-                                x='margem_disponivel',
-                                nbins=20,
-                                title="Distribuição de Margem Disponível",
-                                labels={'margem_disponivel': 'Margem Disponível (R$)', 'count': 'Quantidade'},
-                                color_discrete_sequence=['#1f77b4']
-                            )
-                            fig_hist_margem.add_vline(x=0, line_dash="dash", line_color="red", 
-                                                     annotation_text="Zero", annotation_position="top")
-                            st.plotly_chart(fig_hist_margem, use_container_width=True)
-                        
-                        with col2:
-                            fig_scatter = px.scatter(
-                                df_margem,
-                                x='margem_total',
-                                y='total_cartoes',
-                                size='percentual_utilizado',
-                                hover_data=['nome', 'margem_disponivel'],
-                                title="Margem Total vs Comprometimento",
-                                labels={
-                                    'margem_total': 'Margem Total (R$)',
-                                    'total_cartoes': 'Total Comprometido (R$)'
-                                },
-                                color='margem_disponivel',
-                                color_continuous_scale='RdYlGn'
-                            )
-                            max_val = max(df_margem['margem_total'].max(), df_margem['total_cartoes'].max())
-                            fig_scatter.add_trace(go.Scatter(
-                                x=[0, max_val],
-                                y=[0, max_val],
-                                mode='lines',
-                                line=dict(dash='dash', color='red'),
-                                name='100% Utilização',
-                                showlegend=True
-                            ))
-                            st.plotly_chart(fig_scatter, use_container_width=True)
+   
                         
                         # Top 10 com melhor margem
                         st.markdown("---")
