@@ -571,7 +571,7 @@ def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
 
 def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict, 
                                descontos_obrigatorios: Dict, valores_cartoes: Dict, 
-                               percentual_permitido: float = 0.15) -> Dict:
+                               percentual_permitido: float = 0.07) -> Dict:
     """
     Calcula a margem disponível para CARTÃO usando a fórmula:
     Margem = (Salário Base + Vencimentos Fixos - Descontos Obrigatórios) × Percentual Permitido
@@ -659,7 +659,7 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
         vencimentos_fixos,
         descontos_obrigatorios,
         valores_cartoes,
-        percentual_permitido=0.15  # 10% para cartão
+        percentual_permitido=0.07  # 10% para cartão
     )
     
     # Mantém os descontos fixos originais para exibição (se necessário)
