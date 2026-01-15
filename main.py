@@ -1292,7 +1292,7 @@ def main():
                             values=tipo_counts.values,
                             names=tipo_counts.index,
                             title="",
-                            color_discrete_sequence=["#1a3a52", "#ffc107", "#4caf50", "#f44336"]
+                            color_discrete_sequence=["#401c5c", "#6a3d7f", "#8a5fa0", "#b088c9"]
                         )
                         fig_tipo.update_layout(height=400, showlegend=True, font=dict(size=12))
                         st.plotly_chart(fig_tipo, use_container_width=True)
@@ -1306,7 +1306,7 @@ def main():
                             title="",
                             labels={'x': 'Regime', 'y': 'Quantidade'},
                             color=regime_counts.values,
-                            color_continuous_scale='Viridis'
+                            color_continuous_scale='Purples'
                         )
                         fig_regime.update_layout(height=400, font=dict(size=12), showlegend=False)
                         st.plotly_chart(fig_regime, use_container_width=True)
