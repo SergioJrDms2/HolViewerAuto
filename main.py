@@ -195,6 +195,13 @@ CARTOES_CONHECIDOS = [
     "BIG CARD"
 ]
 
+CARTOES_NAO_COMPRADOS = [
+    "MASTER",
+    "CREDCESTA",
+    "QISTA",
+    "PIX CARD"
+]
+
 # Lista completa para busca
 TODOS_CARTOES = NOSSOS_PRODUTOS + CARTOES_CONHECIDOS
 
@@ -860,6 +867,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     cartoes_encontrados = {
         'nossos_contratos': [],
         'conhecidos': [],
+        'nao_comprados': [],  # NOVA CATEGORIA
         'desconhecidos': []
     }
     
@@ -869,13 +877,9 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     for produto in NOSSOS_PRODUTOS:
         if produto in texto_normalizado:
             for linha in linhas:
-                # Verifica se é produto nosso E se tem palavras de cartão
                 if produto in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'ANTICIPAY', 'STARCARD', 'STARBANK']):
-                    
-                    # LOGICA NOVA: Se tiver termo de empréstimo, PULA esta linha
                     if any(termo in linha for termo in TERMOS_EXCLUSAO):
                         continue
-
                     if linha.strip() not in cartoes_encontrados['nossos_contratos']:
                         cartoes_encontrados['nossos_contratos'].append(linha.strip())
     
@@ -886,13 +890,22 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         if cartao in texto_normalizado:
             for linha in linhas:
                 if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'CART.', 'CART']):
-                    
-                    # LOGICA NOVA: Bloqueia empréstimos
                     if any(termo in linha for termo in TERMOS_EXCLUSAO):
                         continue
-
                     if linha.strip() not in cartoes_encontrados['conhecidos']:
                         cartoes_encontrados['conhecidos'].append(linha.strip())
+    
+    # ---------------------------------------------------------
+    # 2.5. Cartões Não Comprados (NOVA CATEGORIA)
+    # ---------------------------------------------------------
+    for cartao in CARTOES_NAO_COMPRADOS:
+        if cartao in texto_normalizado:
+            for linha in linhas:
+                if cartao in linha and any(kw in linha for kw in ['CARTAO', 'CRED', 'CART.', 'CART']):
+                    if any(termo in linha for termo in TERMOS_EXCLUSAO):
+                        continue
+                    if linha.strip() not in cartoes_encontrados['nao_comprados']:
+                        cartoes_encontrados['nao_comprados'].append(linha.strip())
     
     # ---------------------------------------------------------
     # 3. Desconhecidos (Com filtro de exclusão)
@@ -900,7 +913,6 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         
-        # Verifica se parece emprestimo ANTES de qualquer coisa
         if any(termo in linha_norm for termo in TERMOS_EXCLUSAO):
             continue
 
@@ -910,8 +922,9 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         if tem_keyword_cartao:
             eh_nosso = any(produto in linha_norm for produto in NOSSOS_PRODUTOS)
             eh_conhecido = any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS)
+            eh_nao_comprado = any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS)  # NOVA VALIDAÇÃO
             
-            if not eh_nosso and not eh_conhecido and linha.strip():
+            if not eh_nosso and not eh_conhecido and not eh_nao_comprado and linha.strip():
                 if linha.strip() not in cartoes_encontrados['desconhecidos']:
                     cartoes_encontrados['desconhecidos'].append(linha.strip())
     
@@ -1747,6 +1760,7 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         'info_financeira': info_financeira,
         'nossos_contratos': cartoes['nossos_contratos'],
         'cartoes_conhecidos': cartoes['conhecidos'],
+        'cartoes_nao_comprados': cartoes['nao_comprados'],  # NOVA LINHA
         'cartoes_desconhecidos': cartoes['desconhecidos'],
         'descontos_fixos': descontos_fixos_completos,
         'descontos_obrigatorios': descontos_obrigatorios,
@@ -1826,6 +1840,26 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                             'descricao': cartao,
                             'status': '🏆 CLIENTE NOSSO'
                         })
+
+                # Adiciona cartões não comprados (NOVA SEÇÃO)
+                if resultado['cartoes_nao_comprados']:
+                    for cartao in resultado['cartoes_nao_comprados']:
+                        resultados.append({
+                            'arquivo': resultado['arquivo'],
+                            'nome': info.get('nome', 'N/A'),
+                            'matricula': info.get('matricula', 'N/A'),
+                            'regime': resultado['regime'],
+                            'vencimentos': info.get('vencimentos_total', 0),
+                            'descontos': info.get('descontos_total', 0),
+                            'liquido': info.get('liquido', 'N/A'),
+                            'margem_disponivel': margem['margem_disponivel'],
+                            'margem_total': margem['margem_total'],
+                            'total_cartoes': margem['total_cartoes'],
+                            'percentual_utilizado': margem['percentual_utilizado'],
+                            'tipo_oportunidade': 'NAO COMPRADO',
+                            'descricao': cartao,
+                            'status': '🚫 NÃO COMPRAMOS'
+                        })
                 
                 # Adiciona cartões para estudar
                 if resultado['cartoes_desconhecidos']:
@@ -1848,7 +1882,7 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                         })
                 
                 # Se não tem oportunidades
-                if not resultado['cartoes_conhecidos'] and not resultado['cartoes_desconhecidos']:
+                if not resultado['cartoes_conhecidos'] and not resultado['cartoes_nao_comprados'] and not resultado['cartoes_desconhecidos']:
                     resultados.append({
                         'arquivo': resultado['arquivo'],
                         'nome': info.get('nome', 'N/A'),
@@ -1918,6 +1952,14 @@ def main():
         with st.expander("Ver lista completa", expanded=False):
             cols = st.columns(2)
             for idx, cartao in enumerate(CARTOES_CONHECIDOS):
+                with cols[idx % 2]:
+                    st.markdown(f"<div style='padding: 0.25rem;'>{cartao}</div>", unsafe_allow_html=True)
+
+
+        st.markdown("<h3 style='color: #1a3a52; margin-top: 1.5rem;'>Cartões Que Não Compramos</h3>", unsafe_allow_html=True)
+        with st.expander("Ver lista completa", expanded=False):
+            cols = st.columns(2)
+            for idx, cartao in enumerate(CARTOES_NAO_COMPRADOS):
                 with cols[idx % 2]:
                     st.markdown(f"<div style='padding: 0.25rem;'>{cartao}</div>", unsafe_allow_html=True)
         
@@ -2202,6 +2244,42 @@ def main():
                     st.info("Nenhuma oportunidade confirmada encontrada.")
                 
                 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+                st.markdown("<h3 class='section-header'>Cartões Que Não Compramos</h3>", unsafe_allow_html=True)
+                st.info(f"Total: {len(resultado['cartoes_nao_comprados'])} cartão(ões) que não compramos")
+                if resultado['cartoes_nao_comprados']:
+                    for i, cartao in enumerate(resultado['cartoes_nao_comprados'], 1):
+                        st.markdown(f"""
+                        <div style='
+                            padding: 1rem;
+                            background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%);
+                            border-left: 5px solid #c2185b;
+                            border-radius: 0.6rem;
+                            margin: 0.75rem 0;
+                            box-shadow: 0 2px 6px rgba(194, 24, 91, 0.1);
+                        '>
+                            <div style='display: flex; align-items: flex-start; gap: 1rem;'>
+                                <div style='
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    width: 32px;
+                                    height: 32px;
+                                    background: #c2185b;
+                                    color: white;
+                                    border-radius: 50%;
+                                    font-weight: 600;
+                                    flex-shrink: 0;
+                                '>{i}</div>
+                                <div style='flex: 1;'>
+                                    <p style='margin: 0; color: #1a3a52; font-weight: 600;'>{cartao}</p>
+                                    <p style='margin: 0.25rem 0 0 0; color: #666; font-size: 0.85rem;'>Cartão que não compramos</p>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.success("Não há cartões de instituições que não compramos.")
                 
                 st.markdown("<h3 class='section-header'>Itens para Estudar</h3>", unsafe_allow_html=True)
                 st.warning(f"Total: {len(resultado['cartoes_desconhecidos'])} item(ns) aguardando análise")
