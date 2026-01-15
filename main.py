@@ -187,7 +187,7 @@ CARTOES_CONHECIDOS = [
     "BMG",
     "PAN",
     "VEMCARD",
-    "PIXCARD",
+    "PIX CARD",
     "MEUCASHCARD",
     "PINE",
     "BRADESCO"
@@ -289,6 +289,10 @@ PREFEITURAS = {
     'SOROCABA': {
         'nome': 'Prefeitura de Sorocaba - SP',
         'descricao': 'Cidade: Sorocaba - São Paulo'
+    },
+    'COTIA': {
+        'nome': 'Prefeitura de Cotia - SP',
+        'descricao': 'Cidade: Cotia - São Paulo'
     }
 }
 
@@ -696,6 +700,148 @@ def extrair_vencimentos_fixos_sorocaba(texto: str) -> Dict:
     return vencimentos_fixos
 
 # ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - COTIA
+# ============================================================================
+
+def extrair_informacoes_cotia(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Cotia
+    Separa corretamente nome, matrícula e salário líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca por "FUNCIONARIO" e extrai a próxima linha
+        if 'FUNCIONARIO' in linha_norm and i + 1 < len(linhas):
+            nome_linha = linhas[i + 1].strip()
+            match = re.search(r'([A-ZÁÀÃÂÉÈÊÍÏÓÔÕÖÚÇÑ\s]+)', nome_linha)
+            if match:
+                info['nome'] = match.group(1).strip()
+        
+        # Busca por "MATRICULA" ou "REFERENCIA"
+        if 'FUNCIONARIO' in linha_norm:
+            # tenta na linha seguinte (onde normalmente está "6571 NOME")
+            if i + 1 < len(linhas):
+                prox_linha = linhas[i + 1]
+                match = re.search(r'^\s*(\d+)\s+[A-ZÁ-Ú]', prox_linha)
+                if match:
+                    info['matricula'] = match.group(1)
+        
+        # Busca por VENCIMENTOS (total)
+        if 'VENCIMENTOS' in linha_norm and 'DESCONTOS' not in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['vencimentos_total'] = float(valor_str)
+        
+        # Busca por DESCONTOS (total)
+        if 'DESCONTOS' in linha_norm and 'VENCIMENTOS' not in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['descontos_total'] = float(valor_str)
+    
+    # Estratégia 1: Buscar "LIQUIDO" na linha
+    if info['liquido'] == 0.0:
+        for linha in linhas:
+            linha_norm = normalizar_texto(linha)
+            if 'LIQUIDO' in linha_norm or 'LÍQUIDO' in linha_norm:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    valor_str = valores[-1].replace('.', '').replace(',', '.')
+                    info['liquido'] = float(valor_str)
+                    break
+    
+    # Estratégia 2: Calcular como Vencimentos - Descontos
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0 and info['descontos_total'] >= 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+def extrair_salario_bruto_cotia(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de COTIA
+    Busca por vencimento base ou similar
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "VENCIMENTO BASE"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO BASE' in linha_norm or 'SALARIO BASE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar primeiro vencimento significativo
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTOS' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+def extrair_vencimentos_fixos_cotia(texto: str) -> Dict:
+    """
+    Extrai vencimentos de COTIA da coluna de VENCIMENTOS
+    Estrutura similar a POÁ
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # Adicional de Tempo de Serviço
+        if 'ADICIONAL TEMPO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Gratificação
+        if any(p in linha_norm for p in ['GRAT', 'GRAT.EXERC', 'FUNCao INCORPORADA']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Hora Ativ. Extra Classe
+        if any(p in linha_norm for p in ['HORA ATIV', 'HORA ATIV.EXTRA', 'HORA ATIV. EXTRA']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['hora_ativ_extra_classe'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
+
+# ============================================================================
 # FUNÇÕES GENÉRICAS (COMPARTILHADAS)
 # ============================================================================
 
@@ -706,7 +852,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     
     TERMOS_EXCLUSAO = [
         'EMPRESTIMO', 'EMP ', ' EMP', 'CONSIGNADO', 
-        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP '
+        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP ', 'CORRENTE', 'UASPREV'
     ]
 
     cartoes_encontrados = {
@@ -1218,6 +1364,205 @@ def extrair_descontos_fixos(texto: str) -> Dict:
     
     return descontos_fixos
 
+# ============================================================================
+# FUNÇÕES DE CÁLCULO DE MARGEM
+# ============================================================================
+
+def extrair_valores_linha(linha: str) -> float:
+    """Extrai o último valor numérico de uma linha (coluna de descontos)"""
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if valores:
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
+def extrair_salario_bruto(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque
+    Busca por "Vencimentos Estatutarios" ou similar na coluna de vencimentos
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar linha "Vencimentos Estatutarios"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTOS ESTATUTARIOS' in linha_norm or 'VENCIMENTO ESTATUTARIO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "VENCIMENTO BASE" no cabeçalho
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO BASE' in linha_norm:
+            # Próxima linha pode ter os valores
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linhas[i + 1])
+                if valores:
+                    valor_str = valores[0].replace('.', '').replace(',', '.')
+                    return float(valor_str)
+    
+    # Prioridade 3: Buscar "SALARIO BASE" ou apenas "SALARIO"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO BASE' in linha_norm or (linha_norm.strip().startswith('SALARIO') and 'DESCONTO' not in linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+
+def extrair_vencimentos_fixos(texto: str) -> Dict:
+    """
+    Extrai vencimentos (Vencimento Base, Adicional Tempo, Gratificação,
+    Hora Ativ. Extra Classe, Aula Suplementar, Vale Alimentação, 6ª parte, etc.)
+    da coluna de VENCIMENTOS.
+
+    Retorna um dict com chaves explícitas e uma lista 'outros_fixos' para itens
+    não mapeados individualmente, além do 'total' (soma de todos os vencimentos encontrados).
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,               # ex: Grat.Exerc.Funcao Incorporada
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+
+        # Adicional de Tempo de Serviço
+        if 'ADICIONAL TEMPO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO SERVI' in linha_norm or 'Adicional Tempo Servico' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Gratificação / Grat. Exercício / Função Incorporada
+        if any(p in linha_norm for p in ['GRAT', 'GRAT.EXERC', 'FUNCao INCORPORADA', 'GRAT.EXERC.FUNCAO', 'GRAT.EXERC.FUNCAO INCORPORADA']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                # some holerites escrevem apenas "GRAT" — agregamos em 'gratificacao'
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Hora Ativ. Extra Classe (várias formas possíveis)
+        if any(p in linha_norm for p in ['HORA ATIV', 'HORA ATIV.EXTRA', 'HORA ATIV. EXTRA', 'HORA ATIV.EXTRA CLASSE', 'HORA ATIV EXTRA CLASSE']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['hora_ativ_extra_classe'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+
+    return vencimentos_fixos
+
+def extrair_descontos_obrigatorios(texto: str) -> Dict:
+    """
+    Extrai apenas os descontos OBRIGATÓRIOS (INSS, IRRF, Previdência)
+    da coluna de DESCONTOS
+    """
+    linhas = texto.split('\n')
+    
+    descontos_obrigatorios = {
+        'inss': 0.0,
+        'irrf': 0.0,
+        'previdencia': 0.0,
+        'total': 0.0
+    }
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # INSS
+        if 'I.N.S.S' in linha_norm or 'INSS' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['inss'] = valor
+                descontos_obrigatorios['total'] += valor
+        
+        # IRRF
+        elif 'IRRF' in linha_norm or 'I.R.R.F' in linha_norm or 'IMPOSTO DE RENDA' in linha_norm or 'IR ' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['irrf'] = valor
+                descontos_obrigatorios['total'] += valor
+        
+        # Previdência
+        elif any(palavra in linha_norm for palavra in ['PREVIDENCIA', 'RPPS', 'IPSM', 'FUNPREV']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['previdencia'] = valor
+                descontos_obrigatorios['total'] += valor
+    
+    return descontos_obrigatorios
+    
+
+def extrair_descontos_fixos(texto: str) -> Dict:
+    """Identifica e extrai valores de descontos fixos"""
+    texto_normalizado = normalizar_texto(texto)
+    linhas = texto.split('\n')
+    
+    descontos_fixos = {
+        'inss': 0.0,
+        'irrf': 0.0,
+        'previdencia': 0.0,
+        'pensao': 0.0,
+        'plano_saude': 0.0,
+        'vale_transporte': 0.0,
+        'outros': []
+    }
+    
+    keywords = {
+        'inss': ['INSS', 'I.N.S.S', 'INSTITUTO NACIONAL'],
+        'irrf': ['IRRF', 'I.R.R.F', 'IMPOSTO DE RENDA', 'IR FONTE', 'IMP RENDA'],
+        'previdencia': ['PREV', 'PREVIDENCIA', 'RPPS', 'UASPREV', 'IPSM', 'FUNPREV'],
+        'pensao': ['PENSAO', 'PENSÃO', 'ALIMENTICIA', 'ALIMENTÍCIA'],
+        'plano_saude': ['PLANO', 'SAUDE', 'SAÚDE', 'ASSISTENCIA MEDICA', 'UNIMED', 'AMIL'],
+        'vale_transporte': ['VALE TRANSPORTE', 'VT', 'V.TRANSPORTE', 'TRANSP']
+    }
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        for categoria, palavras in keywords.items():
+            if any(palavra in linha_norm for palavra in palavras):
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    if categoria == 'inss':
+                        descontos_fixos['inss'] += valor
+                    elif categoria == 'irrf':
+                        descontos_fixos['irrf'] += valor
+                    elif categoria == 'previdencia':
+                        descontos_fixos['previdencia'] += valor
+                    elif categoria == 'pensao':
+                        descontos_fixos['pensao'] += valor
+                    elif categoria == 'plano_saude':
+                        descontos_fixos['plano_saude'] += valor
+                    elif categoria == 'vale_transporte':
+                        descontos_fixos['vale_transporte'] += valor
+                    
+                    descontos_fixos['outros'].append({
+                        'descricao': linha.strip(),
+                        'valor': valor,
+                        'categoria': categoria
+                    })
+                    break
+    
+    return descontos_fixos
+
 
 def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict, 
                                descontos_obrigatorios: Dict, valores_cartoes: Dict, 
@@ -1300,6 +1645,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'MARINGA':
         salario_base = extrair_salario_bruto_maringa(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_maringa(texto)
+    elif prefeitura == 'COTIA':
+        salario_base = extrair_salario_bruto_cotia(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_cotia(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -1320,7 +1668,7 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
 def detectar_prefeitura_holerite(texto: str) -> str:
     """
     Detecta qual prefeitura o holerite pertence
-    Retorna: 'MARINGA', 'POA', 'SOROCABA' ou 'DESCONHECIDA'
+    Retorna: 'MARINGA', 'POA', 'SOROCABA', 'COTIA' ou 'DESCONHECIDA'
     """
     texto_norm = normalizar_texto(texto)
     
@@ -1331,6 +1679,10 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     # Indicadores de Sorocaba
     if 'SOROCABA' in texto_norm:
         return 'SOROCABA'
+    
+    # Indicadores de Cotia
+    if 'COTIA' in texto_norm:
+        return 'COTIA'
     
     # Indicadores de Poá
     if 'POA' in texto_norm or 'POÁ' in texto_norm:
@@ -1359,6 +1711,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_maringa(texto)
     elif prefeitura == 'SOROCABA':
         info_financeira = extrair_informacoes_sorocaba(texto)
+    elif prefeitura == 'COTIA':
+        info_financeira = extrair_informacoes_cotia(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
