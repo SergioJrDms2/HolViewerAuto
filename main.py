@@ -1116,6 +1116,7 @@ def main():
                                 '>{i}</div>
                                 <div style='flex: 1;'>
                                     <p style='margin: 0; color: #1a3a52; font-weight: 600;'>{contrato}</p>
+                                    <p style='margin: 0.25rem 0 0 0; color: #666; font-size: 0.85rem;'>Nosso Cartão</p>
                                 </div>
                             </div>
                         </div>
@@ -1152,6 +1153,7 @@ def main():
                                 '>{i}</div>
                                 <div style='flex: 1;'>
                                     <p style='margin: 0; color: #1a3a52; font-weight: 600;'>{cartao}</p>
+                                    <p style='margin: 0.25rem 0 0 0; color: #666; font-size: 0.85rem;'>Cartão Concorrente</p>
                                 </div>
                             </div>
                         </div>
