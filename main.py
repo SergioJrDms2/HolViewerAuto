@@ -1974,9 +1974,9 @@ def main():
                     except (ValueError, AttributeError):
                         liquido_valor = 0.0
                 
-                col1, col2, col3, col4 = st.columns(4, gap="medium")
+                col1, col2, col3, col4 = st.columns(4, gap="xlarge")
                 with col1:
-                    st.metric("👤 Nome", info.get('nome', 'N/A')[:20] + "..." if len(info.get('nome', 'N/A')) > 20 else info.get('nome', 'N/A'))
+                    st.metric("👤 Nome", info.get('nome', 'N/A').strip().split()[0][:10])
                 
                 with col2:
                     st.metric("🏛️ Regime", resultado['regime'])
