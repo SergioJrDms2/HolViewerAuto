@@ -134,7 +134,7 @@ st.markdown("""
         }
         
         .stButton > button {
-            background: #1a3a52;
+            background: #401c5c;
             color: white;
             border: none;
             border-radius: 0.6rem;
@@ -145,7 +145,7 @@ st.markdown("""
         }
         
         .stButton > button:hover {
-            background: #0f2436;
+            background: #5b366f;
             box-shadow: 0 4px 12px rgba(26, 58, 82, 0.3);
         }
         
@@ -884,15 +884,13 @@ def main():
     
     # Sidebar
     with st.sidebar:
+        st.image("https://www.starbank.tec.br/wp-content/uploads/2024/04/cropped-1.png", width=500)
         st.markdown("---")
-        st.image("https://img.icons8.com/fluency/96/000000/bank-card-back-side.png", width=80)
-        st.markdown("<h2 style='text-align: center; color: #1a3a52; margin-top: 1rem;'>Menu Principal</h2>", unsafe_allow_html=True)
-        st.markdown("---")
-        
+
         modo = st.radio(
             "Selecione o Modo",
             ["Análise Individual", "Análise em Lote"],
-            help="Escolha entre analisar um único PDF ou múltiplos PDFs"
+            help="Escolha entre analisar um único PDF ou múltiplos PDFs",
         )
         
         st.markdown("---")
@@ -1088,8 +1086,6 @@ def main():
                 #     st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações completas de salário e descontos.")
                 
                 
-                st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-                
                 # Nossos Contratos
                 if resultado['nossos_contratos']:
                     st.markdown("<h3 class='section-header'>Nossos Contratos</h3>", unsafe_allow_html=True)
@@ -1129,6 +1125,7 @@ def main():
                 
                 # Oportunidades
                 st.markdown("<h3 class='section-header'>Oportunidades Confirmadas</h3>", unsafe_allow_html=True)
+                st.success(f"Total: {len(resultado['cartoes_conhecidos'])} oportunidade(s) identificada(s)")
                 if resultado['cartoes_conhecidos']:
                     for i, cartao in enumerate(resultado['cartoes_conhecidos'], 1):
                         st.markdown(f"""
@@ -1159,13 +1156,14 @@ def main():
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
-                    st.success(f"Total: {len(resultado['cartoes_conhecidos'])} oportunidade(s) identificada(s)")
+                    
                 else:
                     st.info("Nenhuma oportunidade confirmada encontrada.")
                 
                 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                 
                 st.markdown("<h3 class='section-header'>Itens para Estudar</h3>", unsafe_allow_html=True)
+                st.warning(f"Total: {len(resultado['cartoes_desconhecidos'])} item(ns) aguardando análise")
                 if resultado['cartoes_desconhecidos']:
                     for i, cartao in enumerate(resultado['cartoes_desconhecidos'], 1):
                         st.markdown(f"""
@@ -1197,7 +1195,6 @@ def main():
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
-                    st.warning(f"Total: {len(resultado['cartoes_desconhecidos'])} item(ns) aguardando análise")
                 else:
                     st.success("Todos os cartões estão na lista conhecida.")
     
@@ -1212,7 +1209,6 @@ def main():
         )
         
         if arquivos_upload:
-            st.markdown(f"<div style='background: #f8f9fa; padding: 1rem; border-radius: 0.8rem; margin: 1rem 0; border-left: 4px solid #1a3a52;'><strong>{len(arquivos_upload)} arquivo(s) carregado(s)</strong></div>", unsafe_allow_html=True)
             
             if st.button("Processar Todos", type="primary", use_container_width=False):
                 with st.spinner("Processando arquivos..."):
