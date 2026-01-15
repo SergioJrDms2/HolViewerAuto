@@ -354,13 +354,33 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
     linhas = texto.split('\n')
     
     for i, linha in enumerate(linhas):
-        if 'NOME' in linha and i + 1 < len(linhas):
-            info['nome'] = linhas[i + 1].strip()
-        
+        # Extrai matrícula - pode estar na mesma linha ou na linha anterior ao NOME
         if 'MATRICULA' in linha:
+            # Tenta extrair da mesma linha
             match = re.search(r'(\d{6})', linha)
             if match:
                 info['matricula'] = match.group(1)
+            # Se não encontrou, tenta próxima linha
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{6})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+        
+        # Extrai nome - vem depois de "NOME"
+        if 'NOME' in linha and i + 1 < len(linhas):
+            nome_completo = linhas[i + 1].strip()
+            # Remove a matrícula do início do nome se estiver lá
+            nome_limpo = re.sub(r'^\d{6}\s*', '', nome_completo).strip()
+            info['nome'] = nome_limpo
+        
+        # Se não encontrou matrícula pelo MATRICULA, tenta buscar antes do NOME
+        if not info['matricula'] and 'NOME' in linha and i > 0:
+            # Procura a matrícula nas linhas anteriores
+            for j in range(max(0, i - 3), i):
+                match = re.search(r'(\d{6})', linhas[j])
+                if match:
+                    info['matricula'] = match.group(1)
+                    break
         
         if 'VENCIMENTOS' in linha and 'DESCONTOS' not in linha:
             match = re.search(r'(\d+[.,]\d{2})', linha)
