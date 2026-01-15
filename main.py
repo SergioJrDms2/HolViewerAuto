@@ -177,7 +177,8 @@ st.markdown("""
 NOSSOS_PRODUTOS = [
     "STARCARD",
     "ANTICIPAY",
-    "STARBANK"
+    "STARBANK",
+    "UASPREV - REFIN"
 ]
 
 # Cartões de terceiros (concorrentes)
@@ -187,10 +188,11 @@ CARTOES_CONHECIDOS = [
     "BMG",
     "PAN",
     "VEMCARD",
-    "PIX CARD",
     "MEUCASHCARD",
     "PINE",
-    "BRADESCO"
+    "BRADESCO",
+    "SANTANDER / OLÉ",
+    "BIG CARD"
 ]
 
 # Lista completa para busca
