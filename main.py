@@ -261,8 +261,12 @@ def extrair_regime_contrato(texto: str) -> str:
     if "ESTATUTARIO" in texto_normalizado or "ESTATUARIO" in texto_normalizado:
         return "ESTATUTÁRIO"
     elif "CLT" in texto_normalizado:
-        return "CLT"
+        return "CELETISTA"
+    elif "C.L.T." in texto_normalizado:
+        return "CELETISTA"
     elif "COMISSIONADO" in texto_normalizado:
+        return "COMISSIONADO"
+    elif "COMISSAO" in texto_normalizado:
         return "COMISSIONADO"
     elif "TEMPORARIO" in texto_normalizado or "TEMPORÁRIO" in texto_normalizado:
         return "TEMPORÁRIO"
@@ -281,8 +285,13 @@ PREFEITURAS = {
     'MARINGA': {
         'nome': 'Prefeitura de Maringá - PR',
         'descricao': 'Cidade: Maringá - Paraná'
+    },
+    'SOROCABA': {
+        'nome': 'Prefeitura de Sorocaba - SP',
+        'descricao': 'Cidade: Sorocaba - São Paulo'
     }
 }
+
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - POÁ
@@ -527,6 +536,157 @@ def extrair_vencimentos_fixos_maringa(texto: str) -> Dict:
 
         # ADICIONAL / ADICIONAIS
         if 'ADICIONAL' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - SOROCABA
+# ============================================================================
+
+def extrair_informacoes_sorocaba(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Sorocaba
+    Separa corretamente matrícula, nome e salário líquido
+    Estrutura: MATRÍCULA / NOME / VALOR TOTAL LÍQUIDO
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca por "MATRICULA" - extrai APENAS o número
+        if 'MATRICULA' in linha_norm:
+            match = re.search(r'(\d{4,8})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{4,8})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+        
+        # Busca por "NOME" - extrai a próxima linha APENAS para o nome
+        if 'NOME' in linha_norm and i + 1 < len(linhas):
+            nome_linha = linhas[i + 1].strip()
+            match = re.search(r'([A-ZÁÀÃÂÉÈÊÍÏÓÔÕÖÚÇÑ\s]+)', nome_linha)
+            if match:
+                info['nome'] = match.group(1).strip()
+        
+        # Busca por "VENCIMENTOS" (total)
+        if 'VENCIMENTOS' in linha_norm and 'DESCONTOS' not in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['vencimentos_total'] = float(valor_str)
+        
+        # Busca por "DESCONTOS" (total)
+        if 'DESCONTOS' in linha_norm and 'VENCIMENTOS' not in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['descontos_total'] = float(valor_str)
+    
+    # Estratégia 1: Buscar "VALOR TOTAL LIQUIDO" na linha
+    if info['liquido'] == 0.0:
+        for linha in linhas:
+            linha_norm = normalizar_texto(linha)
+            if 'VALOR TOTAL LIQUIDO' in linha_norm or 'VALOR TOTAL LÍQUIDO' in linha_norm:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    valor_str = valores[-1].replace('.', '').replace(',', '.')
+                    info['liquido'] = float(valor_str)
+                    break
+    
+    # Estratégia 2: Buscar linha com "VENCIMENTO BASE" e pegar valor
+    if info['liquido'] == 0.0:
+        for i, linha in enumerate(linhas):
+            linha_norm = normalizar_texto(linha)
+            if 'VENCIMENTO BASE' in linha_norm or 'REMUNERACAO' in linha_norm:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    valor_str = valores[-1].replace('.', '').replace(',', '.')
+                    info['liquido'] = float(valor_str)
+                    break
+    
+    return info
+
+def extrair_salario_bruto_sorocaba(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de SOROCABA
+    Busca por "VENCIMENTO BASE" na coluna de vencimentos
+    """
+    linhas = texto.split('\n')
+    
+    # Buscar "VENCIMENTO BASE" ou similar
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO' in linha_norm or 'REMUNERACAO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Fallback: Buscar primeiro vencimento significativo
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTOS' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+def extrair_vencimentos_fixos_sorocaba(texto: str) -> Dict:
+    """
+    Extrai vencimentos de SOROCABA da coluna de VENCIMENTOS
+    Estrutura: CÓD | DESCRIÇÃO | VENCIMENTOS | DESCONTOS
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTO BASE / REMUNERAÇÃO
+        if 'VENCIMENTO' in linha_norm and 'BASE' in linha_norm or 'REMUNERACAO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # TICKET / VALE ALIMENTAÇÃO
+        if 'TICKET' in linha_norm or 'VALE ALIMENTACAO' in linha_norm or 'VALE ALIMENTAÇÃO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vale_alimentacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL DE TEMPO
+        if 'ADICIONAL' in linha_norm and 'TEMPO' in linha_norm and 'DESCONTO' not in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['adicional_tempo_servico'] = valor
@@ -1134,6 +1294,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     if prefeitura == 'POA':
         salario_base = extrair_salario_bruto_poa(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_poa(texto)
+    elif prefeitura == 'SOROCABA':
+        salario_base = extrair_salario_bruto_sorocaba(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_sorocaba(texto)
     elif prefeitura == 'MARINGA':
         salario_base = extrair_salario_bruto_maringa(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_maringa(texto)
@@ -1157,13 +1320,17 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
 def detectar_prefeitura_holerite(texto: str) -> str:
     """
     Detecta qual prefeitura o holerite pertence
-    Retorna: 'MARINGA', 'POA' ou 'DESCONHECIDA'
+    Retorna: 'MARINGA', 'POA', 'SOROCABA' ou 'DESCONHECIDA'
     """
     texto_norm = normalizar_texto(texto)
     
     # Indicadores de Maringá
     if 'MARINGA' in texto_norm or 'MARINGÁ' in texto_norm:
         return 'MARINGA'
+    
+    # Indicadores de Sorocaba
+    if 'SOROCABA' in texto_norm:
+        return 'SOROCABA'
     
     # Indicadores de Poá
     if 'POA' in texto_norm or 'POÁ' in texto_norm:
@@ -1190,6 +1357,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     # Usar função específica para cada prefeitura
     if prefeitura == 'MARINGA':
         info_financeira = extrair_informacoes_maringa(texto)
+    elif prefeitura == 'SOROCABA':
+        info_financeira = extrair_informacoes_sorocaba(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
