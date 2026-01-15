@@ -269,13 +269,281 @@ def extrair_regime_contrato(texto: str) -> str:
     else:
         return "NÃO IDENTIFICADO"
 
+# ============================================================================
+# CONFIGURAÇÃO DE PREFEITURAS
+# ============================================================================
+
+PREFEITURAS = {
+    'POA': {
+        'nome': 'Prefeitura de Poá - SP',
+        'descricao': 'Cidade: Poá - São Paulo'
+    },
+    'MARINGA': {
+        'nome': 'Prefeitura de Maringá - PR',
+        'descricao': 'Cidade: Maringá - Paraná'
+    }
+}
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - POÁ
+# ============================================================================
+
+def extrair_salario_bruto_poa(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de POÁ
+    Busca por "Vencimentos Estatutarios" ou similar na coluna de vencimentos
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar linha "Vencimentos Estatutarios"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTOS ESTATUTARIOS' in linha_norm or 'VENCIMENTO ESTATUTARIO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "VENCIMENTO BASE" no cabeçalho
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO BASE' in linha_norm:
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linhas[i + 1])
+                if valores:
+                    valor_str = valores[0].replace('.', '').replace(',', '.')
+                    return float(valor_str)
+    
+    # Prioridade 3: Buscar "SALARIO BASE" ou apenas "SALARIO"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO BASE' in linha_norm or (linha_norm.strip().startswith('SALARIO') and 'DESCONTO' not in linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+def extrair_vencimentos_fixos_poa(texto: str) -> Dict:
+    """
+    Extrai vencimentos de POÁ da coluna de VENCIMENTOS
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # Adicional de Tempo de Serviço
+        if 'ADICIONAL TEMPO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Gratificação
+        if any(p in linha_norm for p in ['GRAT', 'GRAT.EXERC', 'FUNCao INCORPORADA']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Hora Ativ. Extra Classe
+        if any(p in linha_norm for p in ['HORA ATIV', 'HORA ATIV.EXTRA', 'HORA ATIV. EXTRA']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['hora_ativ_extra_classe'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - MARINGÁ
+# ============================================================================
+
+def extrair_informacoes_maringa(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Maringá
+    Separa corretamente nome, matrícula e salário líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca por "NOME" e extrai a próxima linha APENAS para o nome
+        if 'NOME' in linha_norm and i + 1 < len(linhas):
+            nome_linha = linhas[i + 1].strip()
+            # Tenta extrair apenas o nome (sem números no início)
+            match = re.search(r'([A-ZÁÀÃÂÉÈÊÍÏÓÔÕÖÚÇÑ\s]+)', nome_linha)
+            if match:
+                info['nome'] = match.group(1).strip()
+        
+        # Busca por "MATRICULA" - extrai APENAS o número
+        if 'MATRICULA' in linha_norm:
+            # Tenta extrair matrícula da mesma linha
+            match = re.search(r'(\d{4,8})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            # Se não encontrou, tenta próxima linha
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{4,8})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+        
+        # Busca por VENCIMENTOS (total)
+        if 'VENCIMENTOS' in linha_norm and 'DESCONTOS' not in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['vencimentos_total'] = float(valor_str)
+        
+        # Busca por DESCONTOS (total)
+        if 'DESCONTOS' in linha_norm and 'VENCIMENTOS' not in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['descontos_total'] = float(valor_str)
+    
+    # Estratégia 1: Buscar "SALARIO NORMAL" como vencimento
+    if info['liquido'] == 0.0:
+        for linha in linhas:
+            linha_norm = normalizar_texto(linha)
+            if 'SALARIO NORMAL' in linha_norm:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    valor_str = valores[-1].replace('.', '').replace(',', '.')
+                    info['liquido'] = float(valor_str)
+                    break
+    
+    # Estratégia 2: Buscar "SALARIO BASE" e pegar o primeiro valor abaixo
+    if info['liquido'] == 0.0:
+        for i, linha in enumerate(linhas):
+            linha_norm = normalizar_texto(linha)
+            if 'SALARIO BASE' in linha_norm:
+                # Procura pelo próximo valor numérico nas linhas seguintes
+                for j in range(i + 1, min(i + 5, len(linhas))):
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[j])
+                    if valores:
+                        valor_str = valores[0].replace('.', '').replace(',', '.')
+                        info['liquido'] = float(valor_str)
+                        break
+                if info['liquido'] > 0.0:
+                    break
+    
+    return info
+
+def extrair_salario_bruto_maringa(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de MARINGÁ
+    Busca por "SALARIO NORMAL" na coluna de vencimentos
+    """
+    linhas = texto.split('\n')
+    
+    # Buscar "SALARIO NORMAL" no holerite de Maringá
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO NORMAL' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Fallback: Buscar primeiro vencimento significativo
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTOS' in linha_norm or 'REFERENCIA' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+def extrair_vencimentos_fixos_maringa(texto: str) -> Dict:
+    """
+    Extrai vencimentos de MARINGÁ da coluna de VENCIMENTOS
+    Estrutura: CÓD | DESCRIÇÃO | REFERÊNCIA | VENCIMENTOS | DESCONTOS
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO NORMAL (vencimento base em Maringá)
+        if 'SALARIO NORMAL' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # HORA EXTRA / AULA EXTRA (pode ser escrito de várias formas)
+        if 'HORA ATIV' in linha_norm or ('AULA' in linha_norm and 'EXTRA' in linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['hora_ativ_extra_classe'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL / ADICIONAIS
+        if 'ADICIONAL' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
+
+# ============================================================================
+# FUNÇÕES GENÉRICAS (COMPARTILHADAS)
+# ============================================================================
+
 def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     """Identifica cartões de crédito no texto (FILTRA RIGOROSAMENTE EMPRÉSTIMOS)"""
     texto_normalizado = normalizar_texto(texto)
     linhas = texto_normalizado.split('\n')
     
-    # Lista de termos que, se encontrados, invalidam a linha imediatamente
-    # Adicionei espaços em " EMP " e "EMP " para evitar confundir com "EMPRESARIAL"
     TERMOS_EXCLUSAO = [
         'EMPRESTIMO', 'EMP ', ' EMP', 'CONSIGNADO', 
         'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP '
@@ -401,6 +669,195 @@ def extrair_informacoes_financeiras(texto: str) -> Dict:
                 info['liquido'] = float(valor)
     
     return info
+
+# ============================================================================
+# FUNÇÕES DE CÁLCULO DE MARGEM
+# ============================================================================
+
+def extrair_valores_linha(linha: str) -> float:
+    """Extrai o último valor numérico de uma linha (coluna de descontos)"""
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if valores:
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
+def extrair_valores_vencimento(linha: str) -> float:
+    """
+    Extrai o valor da coluna de VENCIMENTOS (penúltimo valor numérico)
+    """
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if len(valores) >= 2:
+        valor_str = valores[-2].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    elif len(valores) == 1:
+        valor_str = valores[0].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
+def extrair_valores_desconto(linha: str) -> float:
+    """
+    Extrai o valor da coluna de DESCONTOS (último valor numérico)
+    """
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if valores:
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
+def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
+    """
+    Extrai os valores dos descontos de cartões identificados
+    Usa a coluna de DESCONTOS
+    """
+    linhas = texto.split('\n')
+    
+    valores_cartoes = {
+        'nossos_contratos': [],
+        'conhecidos': [],
+        'desconhecidos': [],
+        'total': 0.0
+    }
+    
+    # Processa nossos contratos
+    for cartao_linha in cartoes_encontrados.get('nossos_contratos', []):
+        cartao_norm = normalizar_texto(cartao_linha)
+        for linha in linhas:
+            linha_norm = normalizar_texto(linha)
+            if cartao_norm in linha_norm:
+                valor = extrair_valores_desconto(linha)
+                if valor > 0:
+                    valores_cartoes['nossos_contratos'].append({
+                        'descricao': cartao_linha.strip(),
+                        'valor': valor
+                    })
+                    valores_cartoes['total'] += valor
+                    break
+    
+    # Processa cartões conhecidos
+    for cartao_linha in cartoes_encontrados.get('conhecidos', []):
+        cartao_norm = normalizar_texto(cartao_linha)
+        for linha in linhas:
+            linha_norm = normalizar_texto(linha)
+            if cartao_norm in linha_norm:
+                valor = extrair_valores_desconto(linha)
+                if valor > 0:
+                    valores_cartoes['conhecidos'].append({
+                        'descricao': cartao_linha.strip(),
+                        'valor': valor
+                    })
+                    valores_cartoes['total'] += valor
+                    break
+    
+    # Processa cartões desconhecidos
+    for cartao_linha in cartoes_encontrados.get('desconhecidos', []):
+        cartao_norm = normalizar_texto(cartao_linha)
+        for linha in linhas:
+            linha_norm = normalizar_texto(linha)
+            if cartao_norm in linha_norm:
+                valor = extrair_valores_desconto(linha)
+                if valor > 0:
+                    valores_cartoes['desconhecidos'].append({
+                        'descricao': cartao_linha.strip(),
+                        'valor': valor
+                    })
+                    valores_cartoes['total'] += valor
+                    break
+    
+    return valores_cartoes
+
+def extrair_descontos_obrigatorios(texto: str) -> Dict:
+    """
+    Extrai apenas os descontos OBRIGATÓRIOS (INSS, IRRF, Previdência)
+    da coluna de DESCONTOS
+    """
+    linhas = texto.split('\n')
+    
+    descontos_obrigatorios = {
+        'inss': 0.0,
+        'irrf': 0.0,
+        'previdencia': 0.0,
+        'total': 0.0
+    }
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # INSS
+        if 'I.N.S.S' in linha_norm or 'INSS' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['inss'] = valor
+                descontos_obrigatorios['total'] += valor
+        
+        # IRRF
+        elif 'IRRF' in linha_norm or 'I.R.R.F' in linha_norm or 'IMPOSTO DE RENDA' in linha_norm or 'IR ' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['irrf'] = valor
+                descontos_obrigatorios['total'] += valor
+        
+        # Previdência
+        elif any(palavra in linha_norm for palavra in ['PREVIDENCIA', 'RPPS', 'IPSM', 'FUNPREV']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                descontos_obrigatorios['previdencia'] = valor
+                descontos_obrigatorios['total'] += valor
+    
+    return descontos_obrigatorios
+
+def extrair_descontos_fixos(texto: str) -> Dict:
+    """Identifica e extrai valores de descontos fixos"""
+    texto_normalizado = normalizar_texto(texto)
+    linhas = texto.split('\n')
+    
+    descontos_fixos = {
+        'inss': 0.0,
+        'irrf': 0.0,
+        'previdencia': 0.0,
+        'pensao': 0.0,
+        'plano_saude': 0.0,
+        'vale_transporte': 0.0,
+        'outros': []
+    }
+    
+    keywords = {
+        'inss': ['INSS', 'I.N.S.S', 'INSTITUTO NACIONAL'],
+        'irrf': ['IRRF', 'I.R.R.F', 'IMPOSTO DE RENDA', 'IR FONTE', 'IMP RENDA'],
+        'previdencia': ['PREV', 'PREVIDENCIA', 'RPPS', 'UASPREV', 'IPSM', 'FUNPREV'],
+        'pensao': ['PENSAO', 'PENSÃO', 'ALIMENTICIA', 'ALIMENTÍCIA'],
+        'plano_saude': ['PLANO', 'SAUDE', 'SAÚDE', 'ASSISTENCIA MEDICA', 'UNIMED', 'AMIL'],
+        'vale_transporte': ['VALE TRANSPORTE', 'VT', 'V.TRANSPORTE', 'TRANSP']
+    }
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        for categoria, palavras in keywords.items():
+            if any(palavra in linha_norm for palavra in palavras):
+                valor = extrair_valores_linha(linha)
+                if valor > 0:
+                    if categoria == 'inss':
+                        descontos_fixos['inss'] += valor
+                    elif categoria == 'irrf':
+                        descontos_fixos['irrf'] += valor
+                    elif categoria == 'previdencia':
+                        descontos_fixos['previdencia'] += valor
+                    elif categoria == 'pensao':
+                        descontos_fixos['pensao'] += valor
+                    elif categoria == 'plano_saude':
+                        descontos_fixos['plano_saude'] += valor
+                    elif categoria == 'vale_transporte':
+                        descontos_fixos['vale_transporte'] += valor
+                    
+                    descontos_fixos['outros'].append({
+                        'descricao': linha.strip(),
+                        'valor': valor,
+                        'categoria': categoria
+                    })
+                    break
+    
+    return descontos_fixos
 
 # ============================================================================
 # FUNÇÕES DE CÁLCULO DE MARGEM
@@ -602,79 +1059,6 @@ def extrair_descontos_fixos(texto: str) -> Dict:
     return descontos_fixos
 
 
-def extrair_valores_vencimento(linha: str) -> float:
-    """
-    Extrai o valor da coluna de VENCIMENTOS (penúltimo valor numérico)
-    """
-    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
-    if len(valores) >= 2:
-        # Penúltimo valor é a coluna de vencimentos
-        valor_str = valores[-2].replace('.', '').replace(',', '.')
-        return float(valor_str)
-    elif len(valores) == 1:
-        valor_str = valores[0].replace('.', '').replace(',', '.')
-        return float(valor_str)
-    return 0.0
-
-
-def extrair_valores_desconto(linha: str) -> float:
-    """
-    Extrai o valor da coluna de DESCONTOS (último valor numérico)
-    """
-    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
-    if valores:
-        valor_str = valores[-1].replace('.', '').replace(',', '.')
-        return float(valor_str)
-    return 0.0
-
-
-
-
-def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
-    """
-    Extrai os valores dos descontos de cartões identificados
-    Usa a coluna de DESCONTOS
-    """
-    valores_cartoes = {
-        'nossos_contratos': [],
-        'conhecidos': [],
-        'desconhecidos': [],
-        'total': 0.0
-    }
-    
-    # Processa nossos contratos
-    for cartao_linha in cartoes_encontrados.get('nossos_contratos', []):
-        valor = extrair_valores_desconto(cartao_linha)
-        if valor > 0:
-            valores_cartoes['nossos_contratos'].append({
-                'descricao': cartao_linha.strip(),
-                'valor': valor
-            })
-            valores_cartoes['total'] += valor
-    
-    # Processa cartões conhecidos
-    for cartao_linha in cartoes_encontrados.get('conhecidos', []):
-        valor = extrair_valores_desconto(cartao_linha)
-        if valor > 0:
-            valores_cartoes['conhecidos'].append({
-                'descricao': cartao_linha.strip(),
-                'valor': valor
-            })
-            valores_cartoes['total'] += valor
-    
-    # Processa cartões desconhecidos
-    for cartao_linha in cartoes_encontrados.get('desconhecidos', []):
-        valor = extrair_valores_desconto(cartao_linha)
-        if valor > 0:
-            valores_cartoes['desconhecidos'].append({
-                'descricao': cartao_linha.strip(),
-                'valor': valor
-            })
-            valores_cartoes['total'] += valor
-    
-    return valores_cartoes
-
-
 def calcular_margem_disponivel(salario_base: float, vencimentos_fixos: Dict, 
                                descontos_obrigatorios: Dict, valores_cartoes: Dict, 
                                percentual_permitido: float = 0.15) -> Dict:
@@ -738,25 +1122,85 @@ def analisar_contracheque(texto: str, cartoes_encontrados: Dict) -> Dict:
         'margem': margem
     }
 
+
 # ============================================================================
-# FUNÇÃO PRINCIPAL DE ANÁLISE
+# FUNÇÕES WRAPPER POR PREFEITURA
 # ============================================================================
 
-def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict:
-    """Analisa um holerite e retorna os resultados - VERSÃO CORRIGIDA"""
+def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
+    """
+    Seleciona as funções corretas baseado na prefeitura
+    """
+    if prefeitura == 'POA':
+        salario_base = extrair_salario_bruto_poa(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_poa(texto)
+    elif prefeitura == 'MARINGA':
+        salario_base = extrair_salario_bruto_maringa(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_maringa(texto)
+    else:
+        # Fallback para POÁ
+        salario_base = extrair_salario_bruto_poa(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_poa(texto)
+    
+    descontos_obrigatorios = extrair_descontos_obrigatorios(texto)
+    
+    return {
+        'salario_base': salario_base,
+        'vencimentos_fixos': vencimentos_fixos,
+        'descontos_obrigatorios': descontos_obrigatorios
+    }
+
+# ============================================================================
+# FUNÇÃO PRINCIPAL DE ANÁLISE (ADAPTADA)
+# ============================================================================
+
+def detectar_prefeitura_holerite(texto: str) -> str:
+    """
+    Detecta qual prefeitura o holerite pertence
+    Retorna: 'MARINGA', 'POA' ou 'DESCONHECIDA'
+    """
+    texto_norm = normalizar_texto(texto)
+    
+    # Indicadores de Maringá
+    if 'MARINGA' in texto_norm or 'MARINGÁ' in texto_norm:
+        return 'MARINGA'
+    
+    # Indicadores de Poá
+    if 'POA' in texto_norm or 'POÁ' in texto_norm:
+        return 'POA'
+    
+    # Verificar por estrutura do holerite
+    if 'SALARIO NORMAL' in texto_norm:
+        return 'MARINGA'
+    
+    if 'VENCIMENTOS ESTATUTARIOS' in texto_norm or 'VENCIMENTO ESTATUTARIO' in texto_norm:
+        return 'POA'
+    
+    return 'DESCONHECIDA'
+
+def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeitura: str) -> Dict:
+    """Analisa um holerite e retorna os resultados"""
     texto = extrair_texto_pdf(arquivo_bytes)
     
     if not texto.strip():
         return None
     
     regime = extrair_regime_contrato(texto)
-    info_financeira = extrair_informacoes_financeiras(texto)
+    
+    # Usar função específica para cada prefeitura
+    if prefeitura == 'MARINGA':
+        info_financeira = extrair_informacoes_maringa(texto)
+    else:
+        info_financeira = extrair_informacoes_financeiras(texto)
+    
     cartoes = identificar_cartoes_credito(texto)
     
-    # Extrai dados para cálculo de margem de CARTÃO
-    salario_base = extrair_salario_bruto(texto)
-    vencimentos_fixos = extrair_vencimentos_fixos(texto)
-    descontos_obrigatorios = extrair_descontos_obrigatorios(texto)
+    # Extrai dados específicos da prefeitura
+    dados_prefeitura = analisar_holerite_por_prefeitura(texto, prefeitura)
+    
+    salario_base = dados_prefeitura['salario_base']
+    vencimentos_fixos = dados_prefeitura['vencimentos_fixos']
+    descontos_obrigatorios = dados_prefeitura['descontos_obrigatorios']
     valores_cartoes = extrair_valores_cartoes(texto, cartoes)
     
     # Calcula margem disponível para cartão (10% do salário)
@@ -765,14 +1209,15 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
         vencimentos_fixos,
         descontos_obrigatorios,
         valores_cartoes,
-        percentual_permitido=0.15  # 10% para cartão
+        percentual_permitido=0.15  
     )
     
-    # Mantém os descontos fixos originais para exibição (se necessário)
     descontos_fixos_completos = extrair_descontos_fixos(texto)
     
     return {
         'arquivo': nome_arquivo,
+        'prefeitura': prefeitura,
+        'prefeitura_detectada': detectar_prefeitura_holerite(texto),
         'regime': regime,
         'info_financeira': info_financeira,
         'nossos_contratos': cartoes['nossos_contratos'],
@@ -786,7 +1231,7 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str) -> Dict
         'texto_completo': texto
     }
 
-def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
+def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame:
     """Processa múltiplos PDFs e retorna DataFrame"""
     resultados = []
     
@@ -800,9 +1245,20 @@ def processar_multiplos_pdfs(arquivos_uploaded) -> pd.DataFrame:
         
         try:
             arquivo_bytes = arquivo_uploaded.read()
-            resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_uploaded.name)
+            resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_uploaded.name, prefeitura)
             
             if resultado:
+                # VALIDAÇÃO: Verificar se a prefeitura detectada bate com a selecionada
+                prefeitura_detectada = resultado.get('prefeitura_detectada', 'DESCONHECIDA')
+                
+                if prefeitura_detectada != prefeitura and prefeitura_detectada != 'DESCONHECIDA':
+                    st.warning(
+                        f"⚠️ **Arquivo Ignorado: {arquivo_uploaded.name}**\n\n"
+                        f"Você selecionou: **{PREFEITURAS[prefeitura]['nome']}**\n\n"
+                        f"Mas este holerite é de: **{PREFEITURAS.get(prefeitura_detectada, {}).get('nome', prefeitura_detectada)}**"
+                    )
+                    continue
+                
                 info = resultado['info_financeira']
                 margem = resultado['margem']
                 
@@ -902,9 +1358,23 @@ def main():
     st.markdown('<h1 class="main-header">Analisador de Holerite</h1>', unsafe_allow_html=True)
     st.markdown('<p class="main-subtitle">Sistema de Análise de Oportunidades de Crédito</p>', unsafe_allow_html=True)
     
-    # Sidebar
+    # Sidebar com seleção de prefeitura
     with st.sidebar:
         st.image("https://www.starbank.tec.br/wp-content/uploads/2024/04/cropped-1.png", width=500)
+        st.markdown("---")
+        
+        # SELEÇÃO DE PREFEITURA
+        st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
+        prefeitura_selecionada = st.selectbox(
+            "Selecione a prefeitura",
+            options=list(PREFEITURAS.keys()),
+            format_func=lambda x: PREFEITURAS[x]['nome'],
+            help="Escolha a prefeitura do holerite para análise correta"
+        )
+        
+        prefeitura_info = PREFEITURAS[prefeitura_selecionada]
+        st.info(f"📍 {prefeitura_info['descricao']}", icon="ℹ️")
+        
         st.markdown("---")
 
         modo = st.radio(
@@ -932,6 +1402,7 @@ def main():
     # Conteúdo principal
     if modo == "Análise Individual":
         st.markdown("<h2 class='section-header'>Análise Individual de Holerite</h2>", unsafe_allow_html=True)
+        st.info(f"Prefeitura selecionada: **{PREFEITURAS[prefeitura_selecionada]['nome']}**", icon="📍")
         
         arquivo_upload = st.file_uploader(
             "Faça upload do PDF do holerite",
@@ -943,7 +1414,7 @@ def main():
             if st.button("Analisar", type="primary", use_container_width=False):
                 with st.spinner("Analisando holerite..."):
                     arquivo_bytes = arquivo_upload.read()
-                    resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_upload.name)
+                    resultado = analisar_holerite_streamlit(arquivo_bytes, arquivo_upload.name, prefeitura_selecionada)
                     
                     if resultado:
                         st.session_state['resultado_individual'] = resultado
@@ -951,11 +1422,34 @@ def main():
             if 'resultado_individual' in st.session_state:
                 resultado = st.session_state['resultado_individual']
                 
+                # VALIDAÇÃO: Verificar se a prefeitura selecionada bate com o holerite
+                prefeitura_detectada = resultado.get('prefeitura_detectada', 'DESCONHECIDA')
+                
+                if prefeitura_detectada != prefeitura_selecionada and prefeitura_detectada != 'DESCONHECIDA':
+                    st.warning(
+                        f"⚠️ **Aviso de Prefeitura**\n\n"
+                        f"Você selecionou: **{PREFEITURAS[prefeitura_selecionada]['nome']}**\n\n"
+                        f"Mas o holerite parece ser de: **{PREFEITURAS.get(prefeitura_detectada, {}).get('nome', prefeitura_detectada)}**\n\n"
+                        f"Verifique se selecionou a prefeitura correta!"
+                    )
+                    st.stop()
+                
                 st.success("✅ Análise concluída com sucesso!")
+                
+                # Extrai a variável margem do resultado
+                margem = resultado.get('margem', {})
                 
                 # Informações do servidor em cards modernos
                 st.markdown("<h3 class='section-header'>👤 Informações do Servidor</h3>", unsafe_allow_html=True)
                 info = resultado['info_financeira']
+                
+                # Corrigir: Garantir que liquido é float antes de formatar
+                liquido_valor = info.get('liquido', 0)
+                if isinstance(liquido_valor, str):
+                    try:
+                        liquido_valor = float(liquido_valor.replace('.', '').replace(',', '.'))
+                    except (ValueError, AttributeError):
+                        liquido_valor = 0.0
                 
                 col1, col2, col3, col4 = st.columns(4, gap="medium")
                 with col1:
@@ -968,7 +1462,7 @@ def main():
                     st.metric("🆔 Matrícula", info.get('matricula', 'N/A'))
                 
                 with col4:
-                    st.metric("💵 Líquido", f"R$ {info.get('liquido', 0):,.2f}")
+                    st.metric("💵 Líquido", f"R$ {liquido_valor:,.2f}")
                 
                 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
@@ -978,32 +1472,32 @@ def main():
                 st.info("🔧 **Manutenção - Em Breve**\n\nEste módulo está em manutenção e será disponibilizado em breve.", icon="⚙️")
                 
                 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-                # 
+                 
                 # # CORREÇÃO: Verificar se há margem calculada usando as chaves corretas
                 # if margem.get('base_calculo', 0) > 0:
                 #     col1, col2, col3, col4 = st.columns(4)
-                #     
+                    
                 #     with col1:
                 #         st.metric(
                 #             "Salário Base",
                 #             f"R$ {margem['salario_base']:,.2f}",
                 #             help="Vencimentos Estatutários"
                 #         )
-                #     
+                    
                 #     with col2:
                 #         st.metric(
                 #             "Base de Cálculo",
                 #             f"R$ {margem['base_calculo']:,.2f}",
                 #             help="Base + Vencimentos Fixos - Descontos Obrigatórios"
                 #         )
-                #     
+                    
                 #     with col3:
                 #         st.metric(
                 #             "Margem Total (15%)",
                 #             f"R$ {margem['margem_total']:,.2f}",
                 #             help="10% da base de cálculo para cartão"
                 #         )
-                #     
+                    
                 #     with col4:
                 #         margem_disp = margem['margem_disponivel']
                 #         delta_color = "normal" if margem_disp >= 0 else "inverse"
@@ -1014,37 +1508,37 @@ def main():
                 #             delta_color=delta_color,
                 #             help="Margem disponível após descontar cartões atuais"
                 #         )
-                #     
+                    
                 #     # Informações complementares
                 #     st.markdown("---")
                 #     col1, col2, col3 = st.columns(3)
-                #     
+                    
                 #     with col1:
                 #         st.metric(
                 #             "Vencimentos Fixos",
                 #             f"R$ {margem['total_vencimentos_fixos']:,.2f}",
                 #             help="Adicional Tempo + 6ª Parte + outros"
                 #         )
-                #     
+                    
                 #     with col2:
                 #         st.metric(
                 #             "Descontos Obrigatórios",
                 #             f"R$ {margem['total_descontos_obrigatorios']:,.2f}",
                 #             help="INSS + IRRF + Previdência"
                 #         )
-                #     
+                    
                 #     with col3:
                 #         st.metric(
                 #             "Comprometido com Cartões",
                 #             f"R$ {margem['total_cartoes']:,.2f}",
                 #             help="Total de descontos com cartões"
                 #         )
-                #     
+                    
                 #     # Barra de progresso
                 #     st.markdown("---")
                 #     st.markdown("**Utilização da Margem de Cartão:**")
                 #     percentual = min(margem['percentual_utilizado'], 100)
-                #     
+                    
                 #     if percentual <= 50:
                 #         cor = "🟢"
                 #         status_margem = "Ótima margem disponível"
@@ -1057,21 +1551,21 @@ def main():
                 #     else:
                 #         cor = "🔴"
                 #         status_margem = "Margem excedida"
-                #     
+                    
                 #     st.progress(min(percentual / 100, 1.0))
                 #     st.caption(f"{cor} {status_margem} - {percentual:.1f}% da margem comprometida")
-                #     
+                    
                 #     # Detalhamento da composição da base
                 #     with st.expander("📋 Ver composição da base de cálculo"):
                 #         st.write("**Cálculo da Margem:**")
                 #         st.write(f"1. Salário Base: R$ {margem['salario_base']:,.2f}")
-                #         
+                        
                 #         vencimentos_fixos = resultado.get('vencimentos_fixos', {})
                 #         if vencimentos_fixos.get('adicional_tempo_servico', 0) > 0:
                 #             st.write(f"2. Adicional Tempo Serviço: + R$ {vencimentos_fixos['adicional_tempo_servico']:,.2f}")
                 #         if vencimentos_fixos.get('sexta_parte', 0) > 0:
                 #             st.write(f"3. 6ª Parte: + R$ {vencimentos_fixos['sexta_parte']:,.2f}")
-                #         
+                        
                 #         descontos_obrig = resultado.get('descontos_obrigatorios', {})
                 #         if descontos_obrig.get('inss', 0) > 0:
                 #             st.write(f"4. INSS: - R$ {descontos_obrig['inss']:,.2f}")
@@ -1079,11 +1573,11 @@ def main():
                 #             st.write(f"5. IRRF: - R$ {descontos_obrig['irrf']:,.2f}")
                 #         if descontos_obrig.get('previdencia', 0) > 0:
                 #             st.write(f"6. Previdência: - R$ {descontos_obrig['previdencia']:,.2f}")
-                #         
+                        
                 #         st.write("---")
                 #         st.write(f"**Base de Cálculo: R$ {margem['base_calculo']:,.2f}**")
                 #         st.write(f"**Margem para Cartão (10%): R$ {margem['margem_total']:,.2f}**")
-                #     
+                    
                 #     # Detalhamento dos cartões
                 #     valores_cartoes = resultado.get('valores_cartoes', {})
                 #     if valores_cartoes.get('total', 0) > 0:
@@ -1092,12 +1586,12 @@ def main():
                 #                 st.write("**🏆 Nossos Contratos:**")
                 #                 for item in valores_cartoes['nossos_contratos']:
                 #                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                #             
+                            
                 #             if valores_cartoes.get('conhecidos'):
                 #                 st.write("**✅ Concorrentes:**")
                 #                 for item in valores_cartoes['conhecidos']:
                 #                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                #             
+                            
                 #             if valores_cartoes.get('desconhecidos'):
                 #                 st.write("**⚠️ Outros:**")
                 #                 for item in valores_cartoes['desconhecidos']:
@@ -1222,6 +1716,7 @@ def main():
     
     else:  # Análise em Lote
         st.markdown("<h2 class='section-header'>Análise em Lote de Holerites</h2>", unsafe_allow_html=True)
+        st.info(f"Prefeitura selecionada: **{PREFEITURAS[prefeitura_selecionada]['nome']}**", icon="📍")
         
         arquivos_upload = st.file_uploader(
             "Faça upload dos PDFs dos holerites",
@@ -1231,10 +1726,9 @@ def main():
         )
         
         if arquivos_upload:
-            
             if st.button("Processar Todos", type="primary", use_container_width=False):
                 with st.spinner("Processando arquivos..."):
-                    df = processar_multiplos_pdfs(arquivos_upload)
+                    df = processar_multiplos_pdfs(arquivos_upload, prefeitura_selecionada)
                     st.session_state['df_resultados'] = df
                     st.success(f"{len(arquivos_upload)} arquivo(s) processado(s) com sucesso!")
             
@@ -1442,6 +1936,9 @@ def main():
                     st.markdown(f"<p style='color: #666; font-size: 0.9rem; margin: 1rem 0;'><strong>Exibindo {len(df_filtrado)} resultado(s)</strong></p>", unsafe_allow_html=True)
                     
                     st.dataframe(
+
+
+
                         df_filtrado,
                         column_config={
                             "arquivo": "Arquivo",
@@ -1462,7 +1959,7 @@ def main():
                             ),
                             "margem_disponivel": st.column_config.NumberColumn(
                                 "Margem Disp.",
-                                format="R$ %.2f",
+                                                               format="R$ %.2f",
                                 help="Margem disponível para novos empréstimos"
                             ),
                             "margem_total": st.column_config.NumberColumn(
