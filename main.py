@@ -2344,7 +2344,7 @@ def main():
                     # Dashboard de Estatísticas
                     st.markdown("<h3 class='section-header'>Dashboard de Resultados</h3>", unsafe_allow_html=True)
                     
-                    col1, col2, col3, col4, col5 = st.columns(5, gap="small")
+                    col1, col2, col3, col4 = st.columns(4, gap="small")
                     
                     with col1:
                         total_oportunidades = len(df[df['tipo_oportunidade'] == 'CONHECIDA'])
@@ -2366,16 +2366,16 @@ def main():
                         st.metric("Servidores", f"{total_servidores}",
                                 help="Total de servidores únicos")
                     
-                    with col5:
-                        df_com_margem = df[df['margem_disponivel'].notna()]
-                        if not df_com_margem.empty:
-                            margem_por_servidor = df_com_margem.groupby('matricula')['margem_disponivel'].first()
-                            media_margem = margem_por_servidor.mean()
-                            st.metric("Margem Média", f"R$ {media_margem:,.0f}",
-                                    help="Média de margem disponível")
-                        else:
-                            st.metric("Margem Média", "N/A",
-                                    help="Não foi possível calcular")
+                    # with col5:
+                    #     df_com_margem = df[df['margem_disponivel'].notna()]
+                    #     if not df_com_margem.empty:
+                    #         margem_por_servidor = df_com_margem.groupby('matricula')['margem_disponivel'].first()
+                    #         media_margem = margem_por_servidor.mean()
+                    #         st.metric("Margem Média", f"R$ {media_margem:,.0f}",
+                    #                 help="Média de margem disponível")
+                    #     else:
+                    #         st.metric("Margem Média", "N/A",
+                    #                 help="Não foi possível calcular")
                     
                     st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                     
@@ -2560,26 +2560,26 @@ def main():
                                 "Líquido",
                                 format="R$ %.2f"
                             ),
-                            "margem_disponivel": st.column_config.NumberColumn(
-                                "Margem Disp.",
-                                                               format="R$ %.2f",
-                                help="Margem disponível para novos empréstimos"
-                            ),
-                            "margem_total": st.column_config.NumberColumn(
-                                "Margem Total",
-                                format="R$ %.2f",
-                                help="30% dos descontos fixos"
-                            ),
+                            # "margem_disponivel": st.column_config.NumberColumn(
+                            #     "Margem Disp.",
+                            #                                    format="R$ %.2f",
+                            #     help="Margem disponível para novos empréstimos"
+                            # ),
+                            # "margem_total": st.column_config.NumberColumn(
+                            #     "Margem Total",
+                            #     format="R$ %.2f",
+                            #     help="30% dos descontos fixos"
+                            # ),
                             "total_cartoes": st.column_config.NumberColumn(
                                 "Total Cartões",
                                 format="R$ %.2f",
                                 help="Total comprometido com cartões"
                             ),
-                            "percentual_utilizado": st.column_config.NumberColumn(
-                                "% Utilizado",
-                                format="%.1f%%",
-                                help="Percentual da margem já utilizada"
-                            ),
+                            # "percentual_utilizado": st.column_config.NumberColumn(
+                            #     "% Utilizado",
+                            #     format="%.1f%%",
+                            #     help="Percentual da margem já utilizada"
+                            # ),
                             "tipo_oportunidade": "Tipo",
                             "descricao": "Descrição",
                             "status": "Status"
