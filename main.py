@@ -2239,7 +2239,9 @@ def main():
                 
                 col1, col2, col3, col4 = st.columns(4, gap="xlarge")
                 with col1:
-                    st.metric("👤 Nome", info.get('nome', 'N/A').strip().split()[0][:10])
+                    nome_valor = (info.get('nome') or '').strip()
+                    nome_exibicao = (nome_valor.split()[0][:10] if nome_valor else 'N/A')
+                    st.metric("👤 Nome", nome_exibicao)
                 
                 with col2:
                     st.metric("🏛️ Regime", resultado['regime'])
