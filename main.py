@@ -2132,10 +2132,6 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
 # ============================================================================
 
 def main():
-    # Header
-    st.markdown('<h1 class="main-header">Analisador de Holerite</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="main-subtitle">Sistema de Análise de Oportunidades de Crédito</p>', unsafe_allow_html=True)
-    
     # Sidebar com seleção de prefeitura
     with st.sidebar:
         st.image("https://www.starbank.tec.br/wp-content/uploads/2024/04/cropped-1.png", width=500)
