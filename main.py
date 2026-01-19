@@ -306,8 +306,62 @@ PREFEITURAS = {
     'IMPERATRIZ': {
         'nome': 'Prefeitura de Imperatriz - MA',
         'descricao': 'Cidade: Imperatriz - Maranhão'
+    },
+    'EMBU': {                                          # ← ADICIONAR ESTA ENTRADA
+        'nome': 'Prefeitura de Embu das Artes - SP',
+        'descricao': 'Cidade: Embu das Artes - São Paulo'
     }
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - EMBU DAS ARTES
+# ============================================================================
+
+def extrair_informacoes_embu(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Embu das Artes
+    Estrutura: Funcionário | Nome | CPF | Salário Base | Vencimentos | Descontos | Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca por "FUNCIONARIO" seguido de matrícula e nome
+        if 'FUNCIONARIO' in linha_norm and i + 1 < len(linhas):
+            # Próxima linha tem: "89036 MARCELO SOUZA DE AZEVEDO"
+            proxima_linha = linhas[i + 1].strip()
+            match = re.search(r'^(\d{4,6})\s+([A-ZÁÀÃÂÉÈÊÍÏÓÔÕÖÚÇÑ\s]+)', proxima_linha)
+            if match:
+                info['matricula'] = match.group(1)
+                info['nome'] = match.group(2).strip()
+        
+        # Busca por "Vencimentos" e "Descontos" na linha de totais
+        if 'VENCIMENTO BASE' in linha_norm and 'DESCONTOS' in linha_norm and 'LIQUIDO' in linha_norm:
+            # Próxima linha tem os valores
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 3:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                    info['liquido'] = float(valores[2].replace('.', '').replace(',', '.'))
+        
+        # Alternativa: Buscar "Líquido" diretamente
+        if 'VENCIMENTO BASE' in linha_norm and not info['liquido']:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    return info
 
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - IMPERATRIZ
 # ============================================================================
@@ -413,6 +467,31 @@ def extrair_informacoes_imperatriz(texto: str) -> Dict:
     return info
 
 
+def extrair_salario_bruto_embu(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de EMBU DAS ARTES
+    Busca por "SALARIO BASE" (código 228 no exemplo)
+    """
+    linhas = texto.split('\n')
+    
+    # Buscar "SALARIO BASE"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO BASE' in linha_norm or 'Salário Base' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # # Fallback: Buscar primeiro vencimento significativo
+    # for linha in linhas:
+    #     linha_norm = normalizar_texto(linha)
+    #     if 'VENCIMENTO BASE' in linha_norm:
+    #         valor = extrair_valores_vencimento(linha)
+    #         if valor > 0:
+    #             return valor
+    
+    return 0.0
+
 def extrair_salario_bruto_imperatriz(texto: str) -> float:
     """
     Extrai o valor do salário base do contracheque de IMPERATRIZ
@@ -445,6 +524,55 @@ def extrair_salario_bruto_imperatriz(texto: str) -> float:
                 return valor
     
     return 0.0
+
+def extrair_vencimentos_fixos_embu(texto: str) -> Dict:
+    """
+    Extrai vencimentos de EMBU DAS ARTES da coluna de VENCIMENTOS
+    Estrutura: Código | Descrição | Parcela | Referência | Valor
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO BASE
+        if 'SALARIO BASE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL DE TEMPO
+        if 'ADICIONAL' in linha_norm and 'TEMPO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
+
 
 
 def extrair_vencimentos_fixos_imperatriz(texto: str) -> Dict:
@@ -1873,6 +2001,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'IMPERATRIZ':
         salario_base = extrair_salario_bruto_imperatriz(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_imperatriz(texto)
+    elif prefeitura == 'EMBU':                           # ← ADICIONAR ESTE BLOCO
+        salario_base = extrair_salario_bruto_embu(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_embu(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -1893,9 +2024,13 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
 def detectar_prefeitura_holerite(texto: str) -> str:
     """
     Detecta qual prefeitura o holerite pertence
-    Retorna: 'MARINGA', 'POA', 'SOROCABA', 'COTIA', 'IMPERATRIZ' ou 'DESCONHECIDA'
+    Retorna: 'MARINGA', 'POA', 'SOROCABA', 'COTIA', 'IMPERATRIZ', 'EMBU' ou 'DESCONHECIDA'
     """
     texto_norm = normalizar_texto(texto)
+    
+    # Indicadores de Embu das Artes                    # ← ADICIONAR ESTE BLOCO
+    if 'EMBU DAS ARTES' in texto_norm or 'ESTANCIA TURISTICA DE EMBU' in texto_norm:
+        return 'EMBU'
     
     # Indicadores de Imperatriz
     if 'IMPERATRIZ' in texto_norm:
@@ -1947,6 +2082,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_cotia(texto)
     elif prefeitura == 'IMPERATRIZ':
         info_financeira = extrair_informacoes_imperatriz(texto)
+    elif prefeitura == 'EMBU':                          # ← ADICIONAR ESTA LINHA
+        info_financeira = extrair_informacoes_embu(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
@@ -2561,7 +2698,7 @@ def main():
                     # Dashboard de Estatísticas
                     st.markdown("<h3 class='section-header'>Dashboard de Resultados</h3>", unsafe_allow_html=True)
                     
-                    col1, col2, col3, col4, col5 = st.columns(5, gap="small")
+                    col1, col2, col3, col4 = st.columns(4, gap="small")
                     
                     with col1:
                         total_oportunidades = len(df[df['tipo_oportunidade'] == 'CONHECIDA'])
@@ -2583,16 +2720,16 @@ def main():
                         st.metric("Servidores", f"{total_servidores}",
                                 help="Total de servidores únicos")
                     
-                    with col5:
-                        df_com_margem = df[df['margem_disponivel'].notna()]
-                        if not df_com_margem.empty:
-                            margem_por_servidor = df_com_margem.groupby('matricula')['margem_disponivel'].first()
-                            media_margem = margem_por_servidor.mean()
-                            st.metric("Margem Média", f"R$ {media_margem:,.0f}",
-                                    help="Média de margem disponível")
-                        else:
-                            st.metric("Margem Média", "N/A",
-                                    help="Não foi possível calcular")
+                    # with col5:
+                    #     df_com_margem = df[df['margem_disponivel'].notna()]
+                    #     if not df_com_margem.empty:
+                    #         margem_por_servidor = df_com_margem.groupby('matricula')['margem_disponivel'].first()
+                    #         media_margem = margem_por_servidor.mean()
+                    #         st.metric("Margem Média", f"R$ {media_margem:,.0f}",
+                    #                 help="Média de margem disponível")
+                    #     else:
+                    #         st.metric("Margem Média", "N/A",
+                    #                 help="Não foi possível calcular")
                     
                     st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                     
@@ -2620,7 +2757,7 @@ def main():
                             title="",
                             labels={'x': 'Regime', 'y': 'Quantidade'},
                             color=regime_counts.values,
-                            color_continuous_scale='Purples'
+                            color_continuous_scale='Purples',
                         )
                         fig_regime.update_layout(height=400, font=dict(size=12), showlegend=False)
                         st.plotly_chart(fig_regime, use_container_width=True)
@@ -2754,6 +2891,10 @@ def main():
                         ]
                     
                     st.markdown(f"<p style='color: #666; font-size: 0.9rem; margin: 1rem 0;'><strong>Exibindo {len(df_filtrado)} resultado(s)</strong></p>", unsafe_allow_html=True)
+                    
+                    df_filtrado = df_filtrado.drop(
+                        columns=["margem_disponivel", "margem_total", "total_cartoes", "percentual_utilizado", "vencimentos", "descontos"]
+                    )
                     
                     st.dataframe(
 
