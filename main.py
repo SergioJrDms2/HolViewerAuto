@@ -180,7 +180,7 @@ NOSSOS_PRODUTOS = [
     "STARCARD",
     "ANTICIPAY",
     "STARBANK",
-    "UASPREV - REFIN"
+    "UASPREV"
 ]
 
 # Cartões de terceiros (concorrentes)
@@ -194,14 +194,18 @@ CARTOES_CONHECIDOS = [
     "PINE",
     "BRADESCO",
     "SANTANDER / OLÉ",
-    "BIG CARD"
+    "BIG CARD",
+    "DAYC",
+    "IND"
 ]
 
 CARTOES_NAO_COMPRADOS = [
     "MASTER",
     "CREDCESTA",
     "QISTA",
-    "PIX CARD"
+    "PIX CARD",
+    "C CONSIG",
+    "CAPITAL"
 ]
 
 # Lista completa para busca
@@ -288,6 +292,7 @@ def extrair_regime_contrato(texto: str) -> str:
 # CONFIGURAÇÃO DE PREFEITURAS
 # ============================================================================
 
+# Adicionar Bauru na configuração de prefeituras (linha ~186)
 PREFEITURAS = {
     'POA': {
         'nome': 'Prefeitura de Poá - SP',
@@ -313,11 +318,239 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Embu das Artes - SP',
         'descricao': 'Cidade: Embu das Artes - São Paulo'
     },
-    'HORTOLANDIA': {  # ← NOVA PREFEITURA
+    'HORTOLANDIA': {
         'nome': 'Prefeitura de Hortolândia - SP',
         'descricao': 'Cidade: Hortolândia - São Paulo'
+    },
+    'BAURU': {  # ← NOVA PREFEITURA
+        'nome': 'Prefeitura de Bauru - SP',
+        'descricao': 'Cidade: Bauru - São Paulo'
     }
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - BAURU
+# ============================================================================
+
+def extrair_informacoes_bauru(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Bauru
+    Estrutura: Matrícula / Nome / CPF / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    # Buscar linha que contém "Matricula" seguida do número
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        # Padrão: "Matricula 30261" ou "Matricula: 30261"
+        if 'MATRICULA' in linha_norm:
+            # Tenta extrair da mesma linha
+            match = re.search(r'MATRICULA\s*:?\s*(\d{4,6})', linha_norm)
+            if match:
+                info['matricula'] = match.group(1)
+                break
+            # Tenta próxima linha
+            elif i + 1 < len(linhas):
+                match = re.search(r'^(\d{4,6})', linhas[i + 1].strip())
+                if match:
+                    info['matricula'] = match.group(1)
+                    break
+    
+    # Estratégia alternativa: buscar padrão "número Nome"
+    if not info['matricula']:
+        for linha in linhas[:30]:
+            # Procura por linha começando com número de 4-6 dígitos seguido de nome
+            match = re.search(r'^(\d{4,6})\s+([A-Z][A-Z\s]+)', linha)
+            if match and len(match.group(2).split()) >= 2:
+                info['matricula'] = match.group(1)
+                info['nome'] = match.group(2).strip()
+                break
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    if not info['nome']:
+        for i, linha in enumerate(linhas[:50]):
+            linha_norm = normalizar_texto(linha)
+            
+            if 'NOME DO FUNCIONARIO' in linha_norm or 'NOME FUNCIONARIO' in linha_norm:
+                # Tenta extrair da mesma linha após o rótulo
+                match = re.search(r'(?:NOME\s+DO\s+)?FUNCIONARIO\s*:?\s*([A-Z][A-Z\s]+?)(?:\s+ADMISSAO|\s+CPF|\s+CONTA|$)', linha, re.IGNORECASE)
+                if match:
+                    nome_candidato = match.group(1).strip()
+                    # Remove matrícula se estiver no início
+                    nome_candidato = re.sub(r'^\d{4,6}\s*', '', nome_candidato)
+                    if len(nome_candidato) > 3:
+                        info['nome'] = nome_candidato
+                        break
+                
+                # Tenta próxima linha
+                if not info['nome'] and i + 1 < len(linhas):
+                    nome_candidato = linhas[i + 1].strip()
+                    # Remove matrícula se estiver no início
+                    nome_candidato = re.sub(r'^\d{4,6}\s*', '', nome_candidato)
+                    # Remove CPF se estiver junto
+                    nome_candidato = re.sub(r'\s*\d{3}\.\d{3}\.\d{3}-\d{2}.*$', '', nome_candidato)
+                    if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                        info['nome'] = nome_candidato
+                        break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    # Buscar em tabela estruturada: "Data de Crédito | Total Vencimentos | Total Descontos | Valor Líquido"
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Procura pela linha de cabeçalho
+        if 'DATA DE CREDITO' in linha_norm and 'TOTAL VENCIMENTOS' in linha_norm:
+            # Próxima linha contém os valores
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 3:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                    info['liquido'] = float(valores[2].replace('.', '').replace(',', '.'))
+                    break
+        
+        # Alternativa: buscar individualmente
+        if not info['vencimentos_total'] and 'TOTAL VENCIMENTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['vencimentos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        if not info['descontos_total'] and 'TOTAL DESCONTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['descontos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        if not info['liquido'] and ('VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm):
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Estratégia final: buscar padrão "Salário Referência | Base Previdência | Base IRRF | Base FGTS | Valor FGTS"
+    # e logo abaixo os valores, depois vem os totais
+    if not info['liquido']:
+        for i, linha in enumerate(linhas):
+            linha_norm = normalizar_texto(linha)
+            if 'VALOR LIQUIDO' in linha_norm and 'BASE PREVIDENCIA' in linha_norm:
+                # Procura nas próximas 5 linhas por 3 valores consecutivos
+                for j in range(i + 1, min(i + 6, len(linhas))):
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[j])
+                    if len(valores) >= 3:
+                        info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                        info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                        info['liquido'] = float(valores[2].replace('.', '').replace(',', '.'))
+                        break
+                if info['liquido'] > 0:
+                    break
+    
+    # Calcular líquido se não foi encontrado mas temos vencimentos e descontos
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0 and info['descontos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+def extrair_salario_bruto_bauru(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de BAURU
+    Busca por "SALARIO" (código 1)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "SALARIO" nas primeiras colunas
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*\d+\s+SALARIO\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar qualquer linha com "SALARIO"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+def extrair_vencimentos_fixos_bauru(texto: str) -> Dict:
+    """
+    Extrai vencimentos de BAURU da coluna de VENCIMENTOS
+    Estrutura: Código | Descrição | Qtde | Vencimentos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALÁRIO (código 1)
+        if re.match(r'^\s*\d+\s+SALARIO\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # BIENIO
+        if 'BIENIO' in linha_norm or 'TRIENIO' in linha_norm or 'QUINQUENIO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO / VANTAGEM
+        if 'VANTAG' in linha_norm or 'GRAT' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ABONO
+        if 'ABONO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['outros_fixos'].append({
+                    'descricao': 'ABONO',
+                    'valor': valor
+                })
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 
 # ============================================================================
@@ -1566,7 +1799,11 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     
     TERMOS_EXCLUSAO = [
         'EMPRESTIMO', 'EMP ', ' EMP', 'CONSIGNADO', 
-        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP ', 'CORRENTE', 'UASPREV'
+        'FINANCIAMENTO', 'CREDITO PESSOAL', 'CP ', 'CORRENTE', 'UASPREV',
+        'DATA DE CREDITO',  
+        'TOTAL VENCIMENTOS', 
+        'TOTAL DESCONTOS',
+        'VALOR LIQUIDO' 
     ]
 
     cartoes_encontrados = {
@@ -2374,9 +2611,12 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'EMBU':
         salario_base = extrair_salario_bruto_embu(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_embu(texto)
-    elif prefeitura == 'HORTOLANDIA':  # ← ADICIONAR ESTE BLOCO
+    elif prefeitura == 'HORTOLANDIA':
         salario_base = extrair_salario_bruto_hortolandia(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_hortolandia(texto)
+    elif prefeitura == 'BAURU':  # ← ADICIONAR ESTE BLOCO
+        salario_base = extrair_salario_bruto_bauru(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_bauru(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -2397,11 +2637,15 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
 def detectar_prefeitura_holerite(texto: str) -> str:
     """
     Detecta qual prefeitura o holerite pertence
-    Retorna: 'MARINGA', 'POA', 'SOROCABA', 'COTIA', 'IMPERATRIZ', 'EMBU', 'HORTOLANDIA' ou 'DESCONHECIDA'
+    Retorna: 'MARINGA', 'POA', 'SOROCABA', 'COTIA', 'IMPERATRIZ', 'EMBU', 'HORTOLANDIA', 'BAURU' ou 'DESCONHECIDA'
     """
     texto_norm = normalizar_texto(texto)
     
-    # Indicadores de Hortolândia  # ← ADICIONAR ESTE BLOCO
+    # Indicadores de Bauru  # ← ADICIONAR ESTE BLOCO
+    if 'BAURU' in texto_norm or 'PREF MUNIC DE BAURU' in texto_norm or '46.137.410/0001-80' in texto_norm:
+        return 'BAURU'
+    
+    # Indicadores de Hortolândia
     if 'HORTOLANDIA' in texto_norm or 'HORTOLÂNDIA' in texto_norm or 'MUNICIPIO DE HORTOLANDIA' in texto_norm:
         return 'HORTOLANDIA'
     
@@ -2448,7 +2692,11 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     if not texto.strip():
         return None
     
-    regime = extrair_regime_contrato(texto)
+    # REGIME ESPECÍFICO PARA BAURU
+    if prefeitura == 'BAURU':
+        regime = 'INDEFINIDO'
+    else:
+        regime = extrair_regime_contrato(texto)
     
     # Usar função específica para cada prefeitura
     if prefeitura == 'MARINGA':
@@ -2461,8 +2709,10 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_imperatriz(texto)
     elif prefeitura == 'EMBU':
         info_financeira = extrair_informacoes_embu(texto)
-    elif prefeitura == 'HORTOLANDIA':  # ← ADICIONAR ESTA LINHA
+    elif prefeitura == 'HORTOLANDIA':
         info_financeira = extrair_informacoes_hortolandia(texto)
+    elif prefeitura == 'BAURU':  # ← ADICIONAR ESTA LINHA
+        info_financeira = extrair_informacoes_bauru(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
