@@ -17,6 +17,8 @@ from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import Dict, List
+import re as _re
+import unicodedata
 
 # ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -267,7 +269,7 @@ def extrair_regime_contrato(texto: str) -> str:
     """Identifica o regime de contrato do servidor"""
     texto_normalizado = normalizar_texto(texto)
     
-    if "ESTATUTARIO" in texto_normalizado or "ESTATUARIO" in texto_normalizado:
+    if "ESTATUTARIO" in texto_normalizado or "ESTATUARIO" in texto_normalizado or "EFETIVO " in texto_normalizado:
         return "ESTATUTÁRIO"
     elif "CLT" in texto_normalizado:
         return "CELETISTA"
@@ -307,11 +309,379 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Imperatriz - MA',
         'descricao': 'Cidade: Imperatriz - Maranhão'
     },
-    'EMBU': {                                          # ← ADICIONAR ESTA ENTRADA
+    'EMBU': {
         'nome': 'Prefeitura de Embu das Artes - SP',
         'descricao': 'Cidade: Embu das Artes - São Paulo'
+    },
+    'HORTOLANDIA': {  # ← NOVA PREFEITURA
+        'nome': 'Prefeitura de Hortolândia - SP',
+        'descricao': 'Cidade: Hortolândia - São Paulo'
     }
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - HORTOLÂNDIA
+# ============================================================================
+
+def extrair_informacoes_hortolandia(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Hortolândia
+    Estrutura: Matrícula / Nome / Proventos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # Concatenar primeiras 100 linhas para busca no cabeçalho
+    header_text = " ".join(linhas[:100])
+    header_norm = normalizar_texto(header_text)
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    
+    # Estratégia 1: Buscar "Matricula:" seguido de número
+    match_matricula = re.search(r'MATRICULA\s*:?\s*(\d{7,9})', header_norm)
+    if match_matricula:
+        info['matricula'] = match_matricula.group(1)
+    
+    # Estratégia 2: Buscar em linhas individuais
+    if not info['matricula']:
+        for i, linha in enumerate(linhas[:50]):
+            linha_norm = normalizar_texto(linha)
+            if 'MATRICULA' in linha_norm:
+                # Tenta extrair da mesma linha
+                match = re.search(r'(\d{7,9})', linha)
+                if match:
+                    info['matricula'] = match.group(1)
+                    break
+                # Tenta próxima linha
+                elif i + 1 < len(linhas):
+                    match = re.search(r'(\d{7,9})', linhas[i + 1])
+                    if match:
+                        info['matricula'] = match.group(1)
+                        break
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    
+    def _clean_line(s: str) -> str:
+        if s is None:
+            return ""
+        s = s.replace('\ufeff', '').replace('\u200b', '').replace('\xa0', ' ')
+        s = unicodedata.normalize('NFKC', s)
+        s = _re.sub(r'\s+', ' ', s).strip()
+        return s
+
+    def _strip_after_labels(s: str) -> str:
+        if not s:
+            return ""
+        s = _clean_line(s)
+        s = _re.split(
+            r'\b(?:MATR[IÍ]CULA|V[IÍ]NCULO|JORNADA|SITUA[ÇC][ÃA]O|LOTA[ÇC][ÃA]O|DATA\s+DE\s+ADMISS[ÃA]O|DATA|CARGO|CPF|PAGAMENTO|C[ÓO]DIGO)\b\s*:?',
+            s,
+            maxsplit=1,
+            flags=_re.IGNORECASE,
+        )[0]
+        return _clean_line(s)
+
+    # STOP WORDS que indicam NÃO-NOME (inclui 'data' e variações)
+    _STOP_WORDS = {
+        'municipio','município','demonstrativo','demonstrativo de pagamento',
+        'folha','folha mensal','mês','mes','pagina','página','hora','pagamento',
+        'banco','agência','agencia','conta','referência','referencia','vencimento',
+        'vencimentos','descontos','proventos','valor','total','base','liquido',
+        'lotação','lotacao','situação','situacao','matricula','matrícula','vínculo',
+        'vinculo','cargo','cpf','usuário','usuario','referencia','lotaçao','data',
+        'admiss','admissão','admissao','dependentes'
+    }
+
+    def _contains_stopword(s: str) -> bool:
+        low = s.lower()
+        for w in _STOP_WORDS:
+            if _re.search(r'\b' + _re.escape(w) + r'\b', low):
+                return True
+        return False
+
+    def _is_valid_name(s: str) -> bool:
+        if not s:
+            return False
+        s = s.strip()
+        # remove possíveis ":" ou "-" no final (ex: "Data de Admissão:")
+        s = _re.sub(r'[:\-\–\—\–\s]+$', '', s).strip()
+        # rejeita se tiver dígitos ou R$
+        if _re.search(r'\d', s) or 'r$' in s.lower():
+            return False
+        # rejeita se conter qualquer stopword (inclui 'data' e 'admiss')
+        if _contains_stopword(s):
+            return False
+        parts = s.split()
+        # precisa ter pelo menos 2 palavras
+        if len(parts) < 2:
+            return False
+        # pelo menos uma palavra com mais de 2 letras (evita "de", "do", "da" sozinhas)
+        if not any(len(p) > 2 for p in parts):
+            return False
+        # comprimento médio das palavras razoável
+        avg_len = sum(len(p) for p in parts) / len(parts)
+        if avg_len < 2.5:
+            return False
+        # proporção de letras (evita linhas com muitos símbolos)
+        letters = _re.sub(r'[^A-Za-zÀ-ÖØ-öø-ÿ]', '', s)
+        if len(letters) / max(1, len(s)) < 0.55:
+            return False
+        # deve conter pelo menos uma vogal (evita siglas)
+        if not _re.search(r'[aeiouáàâãéêíóôõúü]', s.lower()):
+            return False
+        return True
+
+    def _normalize_name_candidate(s: str) -> str:
+        if not s:
+            return ""
+        s = _clean_line(s)
+        s = _strip_after_labels(s)
+        s = _re.sub(r'[^A-Za-zÀ-ÖØ-öø-ÿ\s]', ' ', s)
+        s = _re.sub(r'\s+', ' ', s).strip()
+        return s
+
+    # ===========================
+    # EXTRAÇÃO DE NOME 
+    # ===========================
+    info['nome'] = ''
+
+    for i, linha in enumerate(linhas[:200]):  # limita pro processamento
+        raw = linha or ""
+        ln = _clean_line(raw).lower()
+        # detecta ocorrências do rótulo "nome" (cobre "Nome:", "NOME", "Nome :")
+        if _re.search(r'\bnome\b', ln, flags=_re.IGNORECASE):
+            # 1) tenta capturar conteúdo na mesma linha depois do token "nome"
+            m = _re.search(r'\bnome\b[:\s\-–—]*(.+)$', raw, flags=_re.IGNORECASE)
+            if m:
+                candidate_same = _normalize_name_candidate(m.group(1))
+                if candidate_same and _is_valid_name(candidate_same):
+                    info['nome'] = candidate_same
+                    break
+
+            # 2) se não tiver na mesma linha, pegar a próxima linha não vazia válida
+            j = i + 1
+            while j < len(linhas):
+                cand_raw = linhas[j]
+                cand = _clean_line(cand_raw)
+                if cand:
+                    cand_stripped = _normalize_name_candidate(cand)
+                    if cand_stripped and _is_valid_name(cand_stripped):
+                        info['nome'] = cand_stripped
+                        break
+
+                    # rejeitar logo se contiver stopwords (ex: "Data de Admissão:")
+                    if _contains_stopword(cand):
+                        # pula essa e tenta até 2 linhas seguintes (alguns PDFs colocam rótulos entre)
+                        # tenta pular até 2 linhas (configurável)
+                        k = 1
+                        found = False
+                        while k <= 2 and j + k < len(linhas):
+                            cand2 = _clean_line(linhas[j + k])
+                            if cand2 and not _contains_stopword(cand2):
+                                if _is_valid_name(cand2):
+                                    info['nome'] = cand2
+                                    found = True
+                                break
+                            k += 1
+                        if found:
+                            break
+                        # se não encontrou nome nas próximas 2 linhas, não considera esta ocorrência de 'Nome'
+                        break
+                    # se não tiver stopwords, valida normal
+                    if _is_valid_name(cand):
+                        info['nome'] = cand
+                    # independente de aceitar ou não, pára a busca após primeira linha útil
+                    break
+                j += 1
+
+        if info['nome']:
+            break
+
+    if not info['nome']:
+        header_raw = _clean_line(" ".join(linhas[:250]))
+        nome_label = r'(?<!\w)N\s*O\s*M\s*E(?!\w)'
+        matricula_label = r'(?<!\w)M\s*A\s*T\s*R\s*[IÍ]\s*C\s*U\s*L\s*A(?!\w)'
+
+        patterns = [
+            # Caso padrão: "Nome: <valor>" (mesmo se vier com outros rótulos em seguida)
+            rf'{nome_label}\s*:?(.*?)(?=\s+\b(?:MATR[IÍ]CULA|{matricula_label}|V[IÍ]NCULO|JORNADA|SITUA[ÇC][ÃA]O|LOTA[ÇC][ÃA]O|DATA\s+DE\s+ADMISS[ÃA]O|DATA|CARGO|CPF|PAGAMENTO|C[ÓO]DIGO)\b\s*:|$)',
+            # Matrícula e Nome na mesma linha/cabeçalho
+            rf'(?:\bMATR[IÍ]CULA\b|{matricula_label})\s*:?[\s\-–—]*\d{{6,10}}\s+(?:{nome_label})\s*:?(.*?)(?=\s+\b(?:V[IÍ]NCULO|JORNADA|SITUA[ÇC][ÃA]O|LOTA[ÇC][ÃA]O|DATA\s+DE\s+ADMISS[ÃA]O|DATA|CARGO|CPF|PAGAMENTO|C[ÓO]DIGO)\b\s*:|$)',
+            # Alguns PDFs perdem o rótulo "Nome" e deixam o nome logo após a matrícula
+            rf'(?:\bMATR[IÍ]CULA\b|{matricula_label})\s*:?[\s\-–—]*\d{{6,10}}\s+(.+?)(?=\s+\b(?:V[IÍ]NCULO|JORNADA|SITUA[ÇC][ÃA]O|LOTA[ÇC][ÃA]O|DATA\s+DE\s+ADMISS[ÃA]O|DATA|CARGO|CPF|PAGAMENTO|C[ÓO]DIGO)\b\s*:|$)',
+        ]
+
+        for pat in patterns:
+            m = _re.search(pat, header_raw, flags=_re.IGNORECASE)
+            if not m:
+                continue
+            candidate = _normalize_name_candidate(m.group(1))
+            if candidate and _is_valid_name(candidate):
+                info['nome'] = candidate
+                break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca por "Total de Proventos:"
+        if 'TOTAL DE PROVENTOS' in linha_norm or 'TOTAL PROVENTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['vencimentos_total'] = float(valor_str)
+        
+        # Busca por "Descontos:" ou "Total de Descontos"
+        if ('DESCONTOS' in linha_norm or 'TOTAL DE DESCONTOS' in linha_norm) and 'PROVENTOS' not in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['descontos_total'] = float(valor_str)
+        
+        # Busca por "Valor Liquido:" ou "VALOR LIQUIDO"
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm or 'LIQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['liquido'] = float(valor_str)
+    
+    # ============================================================
+    # ESTRATÉGIAS ALTERNATIVAS PARA LÍQUIDO
+    # ============================================================
+    
+    # Estratégia 1: Buscar linha com "R$" após palavra "LIQUIDO"
+    if info['liquido'] == 0.0:
+        for i, linha in enumerate(linhas):
+            if 'R$' in linha:
+                linha_anterior = linhas[i-1] if i > 0 else ''
+                if 'LIQUIDO' in normalizar_texto(linha_anterior) or 'LÍQUIDO' in normalizar_texto(linha_anterior):
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                    if valores:
+                        valor_str = valores[-1].replace('.', '').replace(',', '.')
+                        info['liquido'] = float(valor_str)
+                        break
+    
+    # Estratégia 2: Calcular líquido se tiver proventos e descontos
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0 and info['descontos_total'] >= 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+def extrair_salario_bruto_hortolandia(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de HORTOLÂNDIA
+    Busca por "VENCIMENTO" ou "VENC. COMISS." (código 1)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "VENCIMENTO" ou "VENC. COMISS."
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if ('VENCIMENTO' in linha_norm or 'VENC. COMISS' in linha_norm or 'VENC COMISS' in linha_norm) and 'DESCONTO' not in linha_norm:
+            # No holerite, o valor do vencimento aparece após a descrição
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar linha com código "1" (primeira linha de proventos)
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        # Verifica se a linha começa com código numérico e contém "VENCIMENTO"
+        if re.match(r'^\s*\d+\s+', linha) and 'VENCIMENTO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 3: Buscar qualquer "SALARIO" ou "REMUNERACAO"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if ('SALARIO' in linha_norm or 'REMUNERACAO' in linha_norm) and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+def extrair_vencimentos_fixos_hortolandia(texto: str) -> Dict:
+    """
+    Extrai vencimentos de HORTOLÂNDIA da coluna de PROVENTOS
+    Estrutura: Código | Descrição | Referência | Valor
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTO BASE (código 1)
+        if 'VENCIMENTO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # HORAS EXTRAS (código 4)
+        if 'HORAS EXTRAS' in linha_norm or 'H EXTRAS' in linha_norm or 'H.EXTRAS' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['horas_extras'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # INSALUBRIDADE (código 38)
+        if 'INSALUBRIDADE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['insalubridade'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL DE TEMPO
+        if 'ADICIONAL' in linha_norm and 'TEMPO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 
 # ============================================================================
@@ -2001,9 +2371,12 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'IMPERATRIZ':
         salario_base = extrair_salario_bruto_imperatriz(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_imperatriz(texto)
-    elif prefeitura == 'EMBU':                           # ← ADICIONAR ESTE BLOCO
+    elif prefeitura == 'EMBU':
         salario_base = extrair_salario_bruto_embu(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_embu(texto)
+    elif prefeitura == 'HORTOLANDIA':  # ← ADICIONAR ESTE BLOCO
+        salario_base = extrair_salario_bruto_hortolandia(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_hortolandia(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -2024,11 +2397,15 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
 def detectar_prefeitura_holerite(texto: str) -> str:
     """
     Detecta qual prefeitura o holerite pertence
-    Retorna: 'MARINGA', 'POA', 'SOROCABA', 'COTIA', 'IMPERATRIZ', 'EMBU' ou 'DESCONHECIDA'
+    Retorna: 'MARINGA', 'POA', 'SOROCABA', 'COTIA', 'IMPERATRIZ', 'EMBU', 'HORTOLANDIA' ou 'DESCONHECIDA'
     """
     texto_norm = normalizar_texto(texto)
     
-    # Indicadores de Embu das Artes                    # ← ADICIONAR ESTE BLOCO
+    # Indicadores de Hortolândia  # ← ADICIONAR ESTE BLOCO
+    if 'HORTOLANDIA' in texto_norm or 'HORTOLÂNDIA' in texto_norm or 'MUNICIPIO DE HORTOLANDIA' in texto_norm:
+        return 'HORTOLANDIA'
+    
+    # Indicadores de Embu das Artes
     if 'EMBU DAS ARTES' in texto_norm or 'ESTANCIA TURISTICA DE EMBU' in texto_norm:
         return 'EMBU'
     
@@ -2082,8 +2459,10 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_cotia(texto)
     elif prefeitura == 'IMPERATRIZ':
         info_financeira = extrair_informacoes_imperatriz(texto)
-    elif prefeitura == 'EMBU':                          # ← ADICIONAR ESTA LINHA
+    elif prefeitura == 'EMBU':
         info_financeira = extrair_informacoes_embu(texto)
+    elif prefeitura == 'HORTOLANDIA':  # ← ADICIONAR ESTA LINHA
+        info_financeira = extrair_informacoes_hortolandia(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
