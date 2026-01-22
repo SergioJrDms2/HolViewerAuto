@@ -362,8 +362,213 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Campos do Jordão - SP',
         'descricao': 'Cidade: Campos do Jordão - São Paulo'
     },
+    'RIBEIRAO_PRETO': {
+        'nome': 'Prefeitura de Ribeirão Preto - SP',
+        'descricao': 'Cidade: Ribeirão Preto - São Paulo'
+    },
     
 }
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - RIBEIRÃO PRETO
+# ============================================================================
+
+def extrair_informacoes_ribeirao_preto(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Ribeirão Preto - SP
+    Estrutura: Matrícula / Nome / RG / CPF / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'MATRICULA' in linha_norm:
+            # Formato: 49592.01
+            match = re.search(r'(\d{5}\.\d{2})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{5}\.\d{2})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME DO FUNCIONARIO' in linha_norm:
+            # Nome vem na próxima linha após o cabeçalho
+            if i + 1 < len(linhas):
+                proxima_linha = linhas[i + 1].strip()
+                # Remove matrícula do início (formato: 49592.01)
+                nome_candidato = re.sub(r'^\d{5}\.\d{2}\s*', '', proxima_linha)
+                # Remove data de admissão do final (formato: 01/09/2025)
+                nome_candidato = re.sub(r'\s*\d{2}/\d{2}/\d{4}.*$', '', nome_candidato)
+                # Remove palavra ADMISSAO se aparecer
+                nome_candidato = re.sub(r'\s*ADMISSAO.*$', '', nome_candidato, flags=re.IGNORECASE)
+                
+                if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                    info['nome'] = nome_candidato.strip()
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Total Vencimentos"
+        if 'TOTAL VENCIMENTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['vencimentos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Total Descontos"
+        if 'TOTAL DESCONTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['descontos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Valor Liquido" ou "Valor Líquido"
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_ribeirao_preto(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de RIBEIRÃO PRETO
+    Busca por "AULAS P.(TDA)" (código 7)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "AULAS P.(TDA)" (vencimento base)
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'AULAS P.(TDA)' in linha_norm or 'AULAS P (TDA)' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "Salário Referência"
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO REFERENCIA' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[0].replace('.', '').replace(',', '.')
+                return float(valor_str)
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_ribeirao_preto(texto: str) -> Dict:
+    """
+    Extrai vencimentos de RIBEIRÃO PRETO da coluna de VENCIMENTOS
+    Estrutura: Código | Descrição | Qtde. | Vencimentos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'tdc': 0.0,
+        'tdi': 0.0,
+        'aulas_eventuais': 0.0,
+        'aula_extraordinaria': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # AULAS P.(TDA) (vencimento base)
+        if 'AULAS P.(TDA)' in linha_norm or 'AULAS P (TDA)' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # TDC (.PERMANENT
+        if 'TDC (.PERMANENT' in linha_norm or 'TDC (PERMANENT' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['tdc'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # TDI (.PERMANENT
+        if 'TDI (.PERMANENT' in linha_norm or 'TDI (PERMANENT' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['tdi'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # AULAS E.(TDA)
+        if 'AULAS E.(TDA)' in linha_norm or 'AULAS E (TDA)' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['aulas_eventuais'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # TDC (.EVENTUAIS
+        if 'TDC (.EVENTUAIS' in linha_norm or 'TDC (EVENTUAIS' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['tdc'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # TDI (.EVENTUAIS
+        if 'TDI (.EVENTUAIS' in linha_norm or 'TDI (EVENTUAIS' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['tdi'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # AULA EXTRAORDIN (Aula Extraordinária)
+        if 'AULA EXTRAORDIN' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['aula_extraordinaria'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - CAMPOS DO JORDÃO
@@ -4110,6 +4315,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'CAMPOS_JORDAO':
         salario_base = extrair_salario_bruto_campos_jordao(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_campos_jordao(texto)
+    elif prefeitura == 'RIBEIRAO_PRETO':
+        salario_base = extrair_salario_bruto_ribeirao_preto(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_ribeirao_preto(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -4204,6 +4412,10 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     if 'CAMPOS DO JORDAO' in texto_norm or 'MUNICIPIO DE CAMPOS DO JORDAO' in texto_norm or 'FPJ1035' in texto_norm:
         return 'CAMPOS_JORDAO'
     
+    # Indicadores de Ribeirão Preto
+    if 'RIBEIRAO PRETO' in texto_norm or 'MUNICIPIO DE RIBEIRAO PRETO' in texto_norm or '56.024.581/0001-56' in texto_norm:
+        return 'RIBEIRAO_PRETO'
+    
     return 'DESCONHECIDA'
 
 def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeitura: str) -> Dict:
@@ -4250,6 +4462,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_salto(texto)
     elif prefeitura == 'CAMPOS_JORDAO':
         info_financeira = extrair_informacoes_campos_jordao(texto)
+    elif prefeitura == 'RIBEIRAO_PRETO':
+        info_financeira = extrair_informacoes_ribeirao_preto(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
