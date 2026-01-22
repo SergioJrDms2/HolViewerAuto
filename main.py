@@ -275,7 +275,7 @@ def extrair_regime_contrato(texto: str) -> str:
     """Identifica o regime de contrato do servidor"""
     texto_normalizado = normalizar_texto(texto)
     
-    if "ESTATUTARIO" in texto_normalizado or "ESTATUARIO" in texto_normalizado or "EFETIVO " in texto_normalizado or "EFETIVOS " in texto_normalizado:
+    if "ESTATUTARIO" in texto_normalizado or "ESTATUARIO" in texto_normalizado or "EFETIVO " in texto_normalizado or "EFETIVOS " in texto_normalizado or "EFETIVO-HORISTA" in texto_normalizado:
         return "ESTATUTÁRIO"
     elif "CLT" in texto_normalizado:
         return "CELETISTA"
@@ -353,8 +353,190 @@ PREFEITURAS = {
     'ITAITUBA': {
         'nome': 'Prefeitura de Itaituba - PA',
         'descricao': 'Cidade: Itaituba - Pará'
-    }
+    },
+    'BARCARENA': {
+        'nome': 'Prefeitura de Barcarena - PA',
+        'descricao': 'Cidade: Barcarena - Pará'
+    },
+    
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - BARCARENA
+# ============================================================================
+
+def extrair_informacoes_barcarena(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Barcarena - PA
+    Estrutura: Matrícula / Nome / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'MATRICULA' in linha_norm:
+            # Formato: 8858-7/1
+            match = re.search(r'(\d{4}-\d/\d)', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{4}-\d/\d)', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME:' in linha_norm or 'NOME :' in linha_norm:
+            # Nome vem após "Nome:"
+            match = re.search(r'NOME\s*:\s*([A-Z][A-Z\s]+?)(?:\s+SECRETARIA|\s+CARGO|$)', linha_norm)
+            if match:
+                info['nome'] = match.group(1).strip()
+                break
+            elif i + 1 < len(linhas):
+                nome_candidato = linhas[i + 1].strip()
+                # Remove possíveis rótulos
+                nome_candidato = re.sub(r'^\s*(?:SECRETARIA|CARGO|ADMISSAO).*$', '', nome_candidato, flags=re.IGNORECASE)
+                if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                    info['nome'] = nome_candidato
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Totais" (linha de soma de rendimentos e descontos)
+        if linha_norm.strip() == 'TOTAIS' or 'TOTAIS' in linha_norm:
+            # Próxima linha ou mesma linha pode ter os valores
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if len(valores) >= 2:
+                info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+            elif i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 2:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Valor Liquido" ou "Valor Líquido"
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+            elif i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if valores:
+                    info['liquido'] = float(valores[0].replace('.', '').replace(',', '.'))
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_barcarena(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de BARCARENA
+    Busca por "SALARIO MENSAL" (código 2)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "2 Salário Mensal(Hrs)"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*2\s+SALARIO MENSAL', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "SALARIO MENSAL" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO MENSAL' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_barcarena(texto: str) -> Dict:
+    """
+    Extrai vencimentos de BARCARENA da coluna de RENDIMENTOS
+    Estrutura: Código | Descrição | Referência | Rendimentos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO MENSAL (código 2)
+        if re.match(r'^\s*2\s+SALARIO MENSAL', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRAT.REG.DE CLASSE (código 12)
+        if 'GRAT.REG.DE CLASSE' in linha_norm or 'GRAT REG DE CLASSE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRAT.DE MAGISTÉRIO (código 19)
+        if 'GRAT.DE MAGISTERIO' in linha_norm or 'GRAT DE MAGISTERIO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADIC TEMPO SERVIÇO (código 35)
+        if 'ADIC TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - ITAITUBA
@@ -3748,6 +3930,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'TUPA': 
         salario_base = extrair_salario_bruto_tupa(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_tupa(texto)
+    elif prefeitura == 'BARCARENA':
+        salario_base = extrair_salario_bruto_barcarena(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_barcarena(texto)
     elif prefeitura == 'SALTO':  
         salario_base = extrair_salario_bruto_salto(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_salto(texto)
@@ -3773,6 +3958,9 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     Detecta qual prefeitura o holerite pertence
     """
     texto_norm = normalizar_texto(texto)
+
+    if 'BARCARENA' in texto_norm or 'PREFEITURA MUNICIPAL DE BARCARENA' in texto_norm or '05.058.458/0001-15' in texto_norm:
+        return 'BARCARENA'
 
     # Indicadores de Itaituba
     if 'ITAITUBA' in texto_norm or 'PREFEITURA MUNICIPAL DE ITAITUBA' in texto_norm or '05.138.730/0001-77' in texto_norm:
@@ -3879,6 +4067,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_itaituba(texto)
     elif prefeitura == 'TUPA': 
         info_financeira = extrair_informacoes_tupa(texto)
+    elif prefeitura == 'BARCARENA':
+        info_financeira = extrair_informacoes_barcarena(texto)
     elif prefeitura == 'SALTO':  
         info_financeira = extrair_informacoes_salto(texto)
     else:
