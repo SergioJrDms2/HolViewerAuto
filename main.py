@@ -358,8 +358,179 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Barcarena - PA',
         'descricao': 'Cidade: Barcarena - Pará'
     },
+    'CAMPOS_JORDAO': {
+        'nome': 'Prefeitura de Campos do Jordão - SP',
+        'descricao': 'Cidade: Campos do Jordão - São Paulo'
+    },
     
 }
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - CAMPOS DO JORDÃO
+# ============================================================================
+
+def extrair_informacoes_campos_jordao(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Campos do Jordão - SP
+    Estrutura: Funcionário / Banco / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA E NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        # Procura por "Funcionario" seguido de matrícula e nome na próxima linha
+        if 'FUNCIONARIO' in linha_norm:
+            # Próxima linha tem formato: "8473 MARIA DALVA DA SILVA"
+            if i + 1 < len(linhas):
+                proxima_linha = linhas[i + 1].strip()
+                match = re.search(r'^(\d{4,6})\s+([A-Z][A-Z\s]+)', proxima_linha)
+                if match:
+                    info['matricula'] = match.group(1)
+                    nome_candidato = match.group(2).strip()
+                    if len(nome_candidato) > 3:
+                        info['nome'] = nome_candidato
+                        break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca linha com "Salário Base | Vencimentos | Descontos | Líquido"
+        if 'SALARIO BASE' in linha_norm and 'VENCIMENTOS' in linha_norm and 'DESCONTOS' in linha_norm and 'LIQUIDO' in linha_norm:
+            # Próxima linha tem os valores: salário_base | vencimentos | descontos | líquido
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 4:
+                    # valores[0] = salário base
+                    # valores[1] = vencimentos total
+                    # valores[2] = descontos total
+                    # valores[3] = líquido
+                    info['vencimentos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[2].replace('.', '').replace(',', '.'))
+                    info['liquido'] = float(valores[3].replace('.', '').replace(',', '.'))
+                    break
+    
+    # Estratégia alternativa: buscar separadamente se não encontrou na linha combinada
+    if info['liquido'] == 0.0:
+        for i, linha in enumerate(linhas):
+            linha_norm = normalizar_texto(linha)
+            
+            # Busca "Vencimentos" 
+            if 'VENCIMENTOS' in linha_norm and 'DESCONTOS' in linha_norm and 'LIQUIDO' in linha_norm:
+                if i + 1 < len(linhas):
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                    if len(valores) >= 3:
+                        info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                        info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                        info['liquido'] = float(valores[2].replace('.', '').replace(',', '.'))
+                        break
+    
+    # Calcular líquido se ainda não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_campos_jordao(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de CAMPOS DO JORDÃO
+    Busca por "SALARIO" na coluna de vencimentos
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "SALARIO" como primeira linha de vencimento
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if linha_norm.strip().startswith('SALARIO') or 'VENCIMENTO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "SALARIO BASE" 
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO BASE' in linha_norm or 'SALARIO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_campos_jordao(texto: str) -> Dict:
+    """
+    Extrai vencimentos de CAMPOS DO JORDÃO da coluna de VENCIMENTOS
+    Estrutura: Código | Descrição | Parcela | Referência | Valor
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'abono': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO (vencimento base)
+        if linha_norm.strip().startswith('SALARIO') and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL TEMPO SERVICO (código 1310)
+        if 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ABONO (código 4900)
+        if 'ABONO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['abono'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 
 # ============================================================================
@@ -3936,6 +4107,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'SALTO':  
         salario_base = extrair_salario_bruto_salto(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_salto(texto)
+    elif prefeitura == 'CAMPOS_JORDAO':
+        salario_base = extrair_salario_bruto_campos_jordao(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_campos_jordao(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -4027,6 +4201,9 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     if 'VENCIMENTO CARGO COMISSIONADO' in texto_norm:
         return 'IMPERATRIZ'
     
+    if 'CAMPOS DO JORDAO' in texto_norm or 'MUNICIPIO DE CAMPOS DO JORDAO' in texto_norm or 'FPJ1035' in texto_norm:
+        return 'CAMPOS_JORDAO'
+    
     return 'DESCONHECIDA'
 
 def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeitura: str) -> Dict:
@@ -4071,6 +4248,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_barcarena(texto)
     elif prefeitura == 'SALTO':  
         info_financeira = extrair_informacoes_salto(texto)
+    elif prefeitura == 'CAMPOS_JORDAO':
+        info_financeira = extrair_informacoes_campos_jordao(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
