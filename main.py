@@ -342,8 +342,159 @@ PREFEITURAS = {
     'SALTO': {
         'nome': 'Prefeitura de Salto - SP',
         'descricao': 'Cidade: Salto - São Paulo'
+    },
+    'TUPA': {
+        'nome': 'Prefeitura de Tupã - SP',
+        'descricao': 'Cidade: Tupã - São Paulo'
     }
 }
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - TUPÃ
+# ============================================================================
+
+def extrair_informacoes_tupa(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Tupã - SP
+    Estrutura: Matrícula / Nome / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA E NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        # Procura por "Matrícula" seguido do número e nome
+        if 'MATRICULA' in linha_norm and i + 1 < len(linhas):
+            # Próxima linha pode ter: "50245-4 Nome ROSICLEIA LUCIA..."
+            proxima_linha = linhas[i + 1].strip()
+            match = re.search(r'^(\d{4,6}-?\d?)\s+(.+?)(?:\s+PIS|\s+\d{10,}|$)', proxima_linha)
+            if match:
+                info['matricula'] = match.group(1)
+                nome_candidato = match.group(2).strip()
+                # Remove "Nome" se estiver no início
+                nome_candidato = re.sub(r'^NOME\s+', '', nome_candidato, flags=re.IGNORECASE)
+                if len(nome_candidato) > 3:
+                    info['nome'] = nome_candidato
+                    break
+    
+    # Estratégia alternativa se não encontrou
+    if not info['matricula'] or not info['nome']:
+        for i, linha in enumerate(linhas[:50]):
+            # Procura padrão "número-número Nome NOME COMPLETO"
+            match = re.search(r'^(\d{4,6}-\d)\s+(?:NOME\s+)?([A-Z][A-Z\s]+?)\s+(?:PIS|ADMISSAO|\d{10,})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+                info['nome'] = match.group(2).strip()
+                break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Total de Vencimentos" e "Total de Descontos" na mesma estrutura
+        if 'TOTAL DE VENCIMENTOS' in linha_norm and 'TOTAL DE DESCONTOS' in linha_norm:
+            # Próxima linha deve ter os valores
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 2:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Valor Líquido"
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_tupa(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de TUPÃ
+    Busca por "SALARIO BASE" (código 001)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "001 SALARIO BASE"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*001\s+SALARIO BASE', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "SALARIO BASE" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO BASE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_tupa(texto: str) -> Dict:
+    """
+    Extrai vencimentos de TUPÃ da coluna de VENCIMENTOS
+    Estrutura: Código | Descrição | Referência | Vencimentos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'ferias': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO BASE (código 001)
+        if re.match(r'^\s*001\s+SALARIO BASE', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # 1/3 FERIAS (código 908)
+        if '1/3 FERIAS' in linha_norm or '1/3 DE FERIAS' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['ferias'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - SALTO
@@ -3396,6 +3547,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'TABOAO_SERRA': 
         salario_base = extrair_salario_bruto_taboao_serra(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_taboao_serra(texto)
+    elif prefeitura == 'TUPA': 
+        salario_base = extrair_salario_bruto_tupa(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_tupa(texto)
     elif prefeitura == 'SALTO':  
         salario_base = extrair_salario_bruto_salto(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_salto(texto)
@@ -3421,6 +3575,10 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     Detecta qual prefeitura o holerite pertence
     """
     texto_norm = normalizar_texto(texto)
+
+    # Indicadores de Tupã
+    if 'TUPA' in texto_norm or 'PREFEITURA MUNICIPAL DE TUPA' in texto_norm or '44.573.087/0001-61' in texto_norm:
+        return 'TUPA'
 
     if 'MUNICIPIO DE SALTO' in texto_norm or 'SALTO' in texto_norm and 'FPJ1035' in texto_norm:
         return 'SALTO'
@@ -3515,6 +3673,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_lago_verde(texto)
     elif prefeitura == 'TABOAO_SERRA':  
         info_financeira = extrair_informacoes_taboao_serra(texto)
+    elif prefeitura == 'TUPA': 
+        info_financeira = extrair_informacoes_tupa(texto)
     elif prefeitura == 'SALTO':  
         info_financeira = extrair_informacoes_salto(texto)
     else:
