@@ -338,9 +338,226 @@ PREFEITURAS = {
     'TABOAO_SERRA': { 
         'nome': 'Prefeitura de Taboão da Serra - SP',
         'descricao': 'Cidade: Taboão da Serra - São Paulo'
+    },
+    'SALTO': {
+        'nome': 'Prefeitura de Salto - SP',
+        'descricao': 'Cidade: Salto - São Paulo'
     }
 }
 
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - SALTO
+# ============================================================================
+
+def extrair_informacoes_salto(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Salto - SP
+    Estrutura: Matrícula / Nome / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA E NOME JUNTOS
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        # Procura por linha que começa com número de 5 dígitos seguido de nome
+        # Formato: "10149 JAQUELINE APARECIDA STECCA"
+        match = re.search(r'^(\d{5})\s+([A-Z][A-Z\s]+?)(?:\s+\d{5}|\s*$)', linha.strip())
+        if match and not info['matricula']:
+            info['matricula'] = match.group(1)
+            nome_candidato = match.group(2).strip()
+            # Remove possíveis números ou códigos do final
+            nome_candidato = re.sub(r'\s+\d+$', '', nome_candidato)
+            if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                info['nome'] = nome_candidato
+                break
+    
+    # Se não encontrou, tenta estratégia alternativa
+    if not info['matricula'] or not info['nome']:
+        for i, linha in enumerate(linhas[:50]):
+            linha_norm = normalizar_texto(linha)
+            
+            if 'FUNCIONARIO' in linha_norm and i + 1 < len(linhas):
+                proxima_linha = linhas[i + 1].strip()
+                # Tenta extrair matrícula e nome da próxima linha
+                match = re.search(r'^(\d{5})\s+(.+)', proxima_linha)
+                if match:
+                    if not info['matricula']:
+                        info['matricula'] = match.group(1)
+                    if not info['nome']:
+                        nome_candidato = match.group(2).strip()
+                        # Remove possíveis números do final
+                        nome_candidato = re.sub(r'\s+\d{5}.*$', '', nome_candidato)
+                        if len(nome_candidato) > 3:
+                            info['nome'] = nome_candidato
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca linha com "Salário Base" seguida de "Vencimentos Descontos Líquido"
+        if 'SALARIO BASE' in linha_norm and 'VENCIMENTOS' in linha_norm and 'DESCONTOS' in linha_norm and 'LIQUIDO' in linha_norm:
+            # Próxima linha tem os valores: valor_salario_base  vencimentos  descontos  liquido
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 3:
+                    # Pega os últimos 3 valores (vencimentos, descontos, líquido)
+                    info['vencimentos_total'] = float(valores[-3].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[-2].replace('.', '').replace(',', '.'))
+                    info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Alternativa: Buscar separadamente por cada campo
+        if not info['vencimentos_total']:
+            # Busca por linha que contém apenas "Vencimentos" como cabeçalho
+            if linha_norm.strip() == 'VENCIMENTOS' or (linha_norm.startswith('VENCIMENTOS') and 'DESCONTOS' not in linha_norm):
+                # Valor pode estar na mesma linha ou próxima
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                elif i + 1 < len(linhas):
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                    if valores:
+                        info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+        
+        if not info['descontos_total']:
+            # Busca por linha que contém apenas "Descontos" como cabeçalho
+            if linha_norm.strip() == 'DESCONTOS' or (linha_norm.startswith('DESCONTOS') and 'VENCIMENTOS' not in linha_norm and 'LIQUIDO' not in linha_norm):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    info['descontos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                elif i + 1 < len(linhas):
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                    if valores:
+                        info['descontos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+        
+        # Buscar especificamente "Líquido" (o valor final)
+        if not info['liquido']:
+            if linha_norm.strip() == 'LIQUIDO' or linha_norm.strip() == 'LÍQUIDO' or (linha_norm.startswith('LIQUIDO') and 'VENCIMENTOS' not in linha_norm and 'DESCONTOS' not in linha_norm):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    # Pega o último valor da linha (que é o líquido)
+                    info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+                elif i + 1 < len(linhas):
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                    if valores:
+                        info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0 and info['descontos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_salto(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de SALTO
+    Busca por "SALARIO BASE" (código 10)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "10 SALARIO BASE"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*10\s+SALARIO BASE', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "SALARIO BASE" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO BASE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_salto(texto: str) -> Dict:
+    """
+    Extrai vencimentos de SALTO da coluna de VENCIMENTOS
+    Estrutura: Código | Descrição | Parcela | Valor
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'progressao_salarial': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO BASE (código 10)
+        if re.match(r'^\s*10\s+SALARIO BASE', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL INSALUBRIDADE (código 660)
+        if 'ADICIONAL INSALUBRIDADE' in linha_norm or re.match(r'^\s*660\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['insalubridade'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICACAO SUS (código 720)
+        if 'GRATIFICACAO SUS' in linha_norm or re.match(r'^\s*720\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # FALTAS ABONADAS-ATESTADO MEDICO (código 1510)
+        if 'FALTAS ABONADAS' in linha_norm and 'ATESTADO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['outros_fixos'].append({
+                    'descricao': 'FALTAS ABONADAS-ATESTADO MEDICO',
+                    'valor': valor
+                })
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # PROGRESSAO SALARIAL (código 1730)
+        if 'PROGRESSAO SALARIAL' in linha_norm or re.match(r'^\s*1730\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['progressao_salarial'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - TABOÃO DA SERRA
@@ -3176,9 +3393,12 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'LAGO_VERDE':
         salario_base = extrair_salario_bruto_lago_verde(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_lago_verde(texto)
-    elif prefeitura == 'TABOAO_SERRA':  # ← ADICIONAR ESTE BLOCO
+    elif prefeitura == 'TABOAO_SERRA': 
         salario_base = extrair_salario_bruto_taboao_serra(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_taboao_serra(texto)
+    elif prefeitura == 'SALTO':  
+        salario_base = extrair_salario_bruto_salto(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_salto(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -3201,6 +3421,9 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     Detecta qual prefeitura o holerite pertence
     """
     texto_norm = normalizar_texto(texto)
+
+    if 'MUNICIPIO DE SALTO' in texto_norm or 'SALTO' in texto_norm and 'FPJ1035' in texto_norm:
+        return 'SALTO'
     
     # Indicadores de Uberaba
     if 'UBERABA' in texto_norm or 'PREFEITURA MUNICIPAL DE UBERABA' in texto_norm:
@@ -3292,6 +3515,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_lago_verde(texto)
     elif prefeitura == 'TABOAO_SERRA':  
         info_financeira = extrair_informacoes_taboao_serra(texto)
+    elif prefeitura == 'SALTO':  
+        info_financeira = extrair_informacoes_salto(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
