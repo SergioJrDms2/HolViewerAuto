@@ -366,8 +366,221 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Ribeirão Preto - SP',
         'descricao': 'Cidade: Ribeirão Preto - São Paulo'
     },
+    'PONTA_GROSSA': {
+        'nome': 'Prefeitura de Ponta Grossa - PR',
+        'descricao': 'Cidade: Ponta Grossa - Paraná'
+    },
     
 }
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - PONTA GROSSA
+# ============================================================================
+
+def extrair_informacoes_ponta_grossa(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Ponta Grossa - PR
+    Estrutura: CADASTRO / NOME / CARGO / VENCIMENTOS / DESCONTOS / LÍQUIDO
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA (CADASTRO)
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'CADASTRO' in linha_norm:
+            # Formato: 32925
+            match = re.search(r'(\d{5})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{5})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME' in linha_norm:
+            # Nome vem na próxima linha após o cabeçalho
+            if i + 1 < len(linhas):
+                proxima_linha = linhas[i + 1].strip()
+                # Remove matrícula do início
+                nome_candidato = re.sub(r'^\d{5}\s*', '', proxima_linha)
+                # Remove data de admissão do final (formato: 22/10/2024)
+                nome_candidato = re.sub(r'\s*\d{2}/\d{2}/\d{4}.*$', '', nome_candidato)
+                
+                if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                    info['nome'] = nome_candidato.strip()
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "TOTAL DE VENCIMENTOS" e pega valor da mesma linha ou linha seguinte
+        if 'TOTAL DE VENCIMENTOS' in linha_norm:
+            # Tenta na mesma linha primeiro
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                # Pega o valor que vem após "TOTAL DE VENCIMENTOS"
+                # Se houver múltiplos valores, pega o penúltimo ou último
+                if len(valores) >= 2:
+                    info['vencimentos_total'] = float(valores[-2].replace('.', '').replace(',', '.'))
+                else:
+                    info['vencimentos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+            elif i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if valores and len(valores) >= 4:
+                    # Na linha de valores: salario_base, salario_contr, faixa_irrf, vencimentos, descontos
+                    info['vencimentos_total'] = float(valores[3].replace('.', '').replace(',', '.'))
+                    if len(valores) >= 5:
+                        info['descontos_total'] = float(valores[4].replace('.', '').replace(',', '.'))
+        
+        # Busca "TOTAL DE DESCONTOS" (caso não tenha sido capturado acima)
+        if not info['descontos_total'] and 'TOTAL DE DESCONTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['descontos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+            elif i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if valores:
+                    info['descontos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "VALOR LIQUIDO" - o valor está na linha ANTERIOR ao rótulo
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm:
+            # Tenta na mesma linha primeiro
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+            # Se não encontrou, busca na linha ANTERIOR (onde estão os valores numéricos)
+            elif i > 0:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i - 1])
+                if valores:
+                    # O valor líquido é o último valor da linha anterior
+                    info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Estratégia alternativa: Procurar linha com BASE CALCULO IRRF
+    if info['liquido'] == 0.0:
+        for i, linha in enumerate(linhas):
+            linha_norm = normalizar_texto(linha)
+            if 'BASE CALCULO IRRF' in linha_norm or 'BASE CÁLCULO IRRF' in linha_norm:
+                # Valores estão na linha anterior
+                if i > 0:
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i - 1])
+                    if valores and len(valores) >= 4:
+                        # Último valor é o líquido
+                        info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+                        break
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_ponta_grossa(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de PONTA GROSSA
+    Busca por "Salario" (código 001)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "001 Salario"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*001\s+SALARIO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "SALARIO" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_ponta_grossa(texto: str) -> Dict:
+    """
+    Extrai vencimentos de PONTA GROSSA da coluna de VENCIMENTOS
+    Estrutura: CÓD. | DESCRIÇÃO | REFERÊNCIA | VENCIMENTOS | DESCONTOS
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'horas_intrajornadas': 0.0,
+        'premio_assiduidade': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO (código 001)
+        if re.match(r'^\s*001\s+SALARIO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # HORAS INTRAJORNADAS (código 1222)
+        if 'HORAS INTRAJORNADAS' in linha_norm or re.match(r'^\s*1222\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['horas_intrajornadas'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # PREMIO ASSIDUIDADE (código 1947)
+        if 'PREMIO ASSIDUIDADE' in linha_norm or re.match(r'^\s*1947\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['premio_assiduidade'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # VALE ALIMENTACAO (código 2999)
+        if 'VALE ALIMENTACAO' in linha_norm or re.match(r'^\s*2999\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vale_alimentacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - RIBEIRÃO PRETO
@@ -3477,7 +3690,10 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'DATA DE CREDITO',  
         'TOTAL VENCIMENTOS', 
         'TOTAL DESCONTOS',
-        'VALOR LIQUIDO' 
+        'VALOR LIQUIDO',
+        'ORGAOS DE PROTECAO',
+        'DIVERSOS CONTA',
+        'DIVERSOS'
     ]
 
     cartoes_encontrados = {
@@ -4318,6 +4534,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'RIBEIRAO_PRETO':
         salario_base = extrair_salario_bruto_ribeirao_preto(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_ribeirao_preto(texto)
+    elif prefeitura == 'PONTA_GROSSA':
+        salario_base = extrair_salario_bruto_ponta_grossa(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_ponta_grossa(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -4416,6 +4635,9 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     if 'RIBEIRAO PRETO' in texto_norm or 'MUNICIPIO DE RIBEIRAO PRETO' in texto_norm or '56.024.581/0001-56' in texto_norm:
         return 'RIBEIRAO_PRETO'
     
+    if 'PONTA GROSSA' in texto_norm or 'PREFEITURA MUNICIPAL DE PONTA GROSSA' in texto_norm or '76175884000187' in texto_norm:
+        return 'PONTA_GROSSA'
+    
     return 'DESCONHECIDA'
 
 def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeitura: str) -> Dict:
@@ -4464,6 +4686,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_campos_jordao(texto)
     elif prefeitura == 'RIBEIRAO_PRETO':
         info_financeira = extrair_informacoes_ribeirao_preto(texto)
+    elif prefeitura == 'PONTA_GROSSA':  # ADICIONAR ESTA LINHA
+        info_financeira = extrair_informacoes_ponta_grossa(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
