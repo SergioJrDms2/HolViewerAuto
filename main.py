@@ -334,8 +334,183 @@ PREFEITURAS = {
     'LAGO_VERDE': {  
         'nome': 'Prefeitura de Lago Verde - MA',
         'descricao': 'Cidade: Lago Verde - Maranhão'
+    },
+    'TABOAO_SERRA': { 
+        'nome': 'Prefeitura de Taboão da Serra - SP',
+        'descricao': 'Cidade: Taboão da Serra - São Paulo'
     }
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - TABOÃO DA SERRA
+# ============================================================================
+
+def extrair_informacoes_taboao_serra(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Taboão da Serra - SP
+    Estrutura: Matrícula / Nome / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'MATRICULA' in linha_norm:
+            # Tenta extrair da mesma linha
+            match = re.search(r'(\d{6})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+                break
+            # Tenta próxima linha
+            elif i + 1 < len(linhas):
+                match = re.search(r'^(\d{6})', linhas[i + 1].strip())
+                if match:
+                    info['matricula'] = match.group(1)
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME' in linha_norm and i + 1 < len(linhas):
+            nome_candidato = linhas[i + 1].strip()
+            # Remove matrícula se estiver no início
+            nome_candidato = re.sub(r'^\d{6}\s*', '', nome_candidato)
+            if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                info['nome'] = nome_candidato
+                break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "VENCIMENTOS" no rodapé (total)
+        if linha_norm.strip().startswith('VENCIMENTOS') and 'DESCONTOS' in linha_norm:
+            # Próxima linha tem os valores
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 2:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+        
+        # Busca "VALOR TOTAL LIQUIDO"
+        if 'VALOR TOTAL LIQUIDO' in linha_norm or 'VALOR TOTAL LÍQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_taboao_serra(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de TABOÃO DA SERRA
+    Busca por "VENCIMENTOS" (código 0001)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "0001 VENCIMENTOS"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*0001\s+VENCIMENTOS', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "VENCIMENTO BASE" no cabeçalho
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO BASE' in linha_norm:
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if valores:
+                    valor_str = valores[0].replace('.', '').replace(',', '.')
+                    return float(valor_str)
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_taboao_serra(texto: str) -> Dict:
+    """
+    Extrai vencimentos de TABOÃO DA SERRA da coluna de VENCIMENTOS
+    Estrutura: CÓDIGO | HISTÓRICO | REFERÊNCIA | VENCIMENTOS | DESCONTOS
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'complemento_salario': 0.0,
+        'abono_salarial': 0.0,
+        'salario_familia': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTOS (código 0001)
+        if re.match(r'^\s*0001\s+VENCIMENTOS', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # COMPLEMENTO SAL. MINIMO (código 0297)
+        if 'COMPLEMENTO' in linha_norm and 'MINIMO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['complemento_salario'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ABONO SALARIAL (código 0400)
+        if 'ABONO SALARIAL' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['abono_salarial'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # SALARIO FAMILIA (código 0778)
+        if 'SALARIO FAMILIA' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['salario_familia'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - LAGO VERDE
@@ -2998,9 +3173,12 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'UBERABA':
         salario_base = extrair_salario_bruto_uberaba(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_uberaba(texto)
-    elif prefeitura == 'LAGO_VERDE':  
+    elif prefeitura == 'LAGO_VERDE':
         salario_base = extrair_salario_bruto_lago_verde(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_lago_verde(texto)
+    elif prefeitura == 'TABOAO_SERRA':  # ← ADICIONAR ESTE BLOCO
+        salario_base = extrair_salario_bruto_taboao_serra(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_taboao_serra(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -3028,9 +3206,13 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     if 'UBERABA' in texto_norm or 'PREFEITURA MUNICIPAL DE UBERABA' in texto_norm:
         return 'UBERABA'
     
-    # Indicadores de Lago Verde  # ← ADICIONAR ESTE BLOCO
+    # Indicadores de Lago Verde
     if 'LAGO VERDE' in texto_norm or 'PREFEITURA MUNICIPAL DE LAGO VERDE' in texto_norm or '06.021.174/0001-17' in texto_norm:
         return 'LAGO_VERDE'
+    
+    # Indicadores de Taboão da Serra  # ← ADICIONAR ESTE BLOCO
+    if 'TABOAO DA SERRA' in texto_norm or 'PREFEITURA MUNICIPAL DE TABOAO DA SERRA' in texto_norm or '46.523.122/0001-63' in texto_norm:
+        return 'TABOAO_SERRA'
     
     # Indicadores de Bauru
     if 'BAURU' in texto_norm or 'PREF MUNIC DE BAURU' in texto_norm or '46.137.410/0001-80' in texto_norm:
@@ -3106,8 +3288,10 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_bauru(texto)
     elif prefeitura == 'UBERABA':
         info_financeira = extrair_informacoes_uberaba(texto)
-    elif prefeitura == 'LAGO_VERDE': 
+    elif prefeitura == 'LAGO_VERDE':
         info_financeira = extrair_informacoes_lago_verde(texto)
+    elif prefeitura == 'TABOAO_SERRA':  
+        info_financeira = extrair_informacoes_taboao_serra(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
