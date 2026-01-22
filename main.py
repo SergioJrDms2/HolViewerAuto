@@ -205,7 +205,8 @@ CARTOES_NAO_COMPRADOS = [
     "QISTA",
     "PIX CARD",
     "C CONSIG",
-    "CAPITAL"
+    "CAPITAL",
+    "MAXIMA"
 ]
 
 # Lista completa para busca
@@ -322,11 +323,215 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Hortolândia - SP',
         'descricao': 'Cidade: Hortolândia - São Paulo'
     },
-    'BAURU': {  # ← NOVA PREFEITURA
+    'BAURU': {
         'nome': 'Prefeitura de Bauru - SP',
         'descricao': 'Cidade: Bauru - São Paulo'
+    },
+    'UBERABA': {  # ← ADICIONAR ESTA ENTRADA
+        'nome': 'Prefeitura de Uberaba - MG',
+        'descricao': 'Cidade: Uberaba - Minas Gerais'
     }
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - UBERABA
+# ============================================================================
+
+def extrair_informacoes_uberaba(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Uberaba
+    Estrutura: Matrícula / Nome / Banco / Agência / Conta / Proventos / Descontos
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'MATRICULA' in linha_norm:
+            # Tenta extrair da mesma linha
+            match = re.search(r'(\d{5,7}(?:-\d)?)', linha)
+            if match:
+                info['matricula'] = match.group(1)
+                break
+            # Tenta próxima linha
+            elif i + 1 < len(linhas):
+                match = re.search(r'^(\d{5,7}(?:-\d)?)', linhas[i + 1].strip())
+                if match:
+                    info['matricula'] = match.group(1)
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME' in linha_norm and i + 1 < len(linhas):
+            nome_candidato = linhas[i + 1].strip()
+            # Remove matrícula se estiver no início
+            nome_candidato = re.sub(r'^\d{5,7}(?:-\d)?\s*', '', nome_candidato)
+            # Remove referência/data se estiver junto
+            nome_candidato = re.sub(r'\s+\d{2}/\d{4}.*$', '', nome_candidato)
+            if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                info['nome'] = nome_candidato
+                break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Total de proventos"
+        if 'TOTAL DE PROVENTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['vencimentos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Total de descontos"
+        if 'TOTAL DE DESCONTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['descontos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Valor liquido" - CORRIGIDO
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm:
+            # Primeiro tenta na mesma linha
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                # Pega o último valor (ignora o 0,00)
+                for valor in reversed(valores):
+                    valor_float = float(valor.replace('.', '').replace(',', '.'))
+                    if valor_float > 0:
+                        info['liquido'] = valor_float
+                        break
+            
+            # Se não encontrou ou valor é 0, busca na próxima linha
+            if info['liquido'] == 0.0 and i + 1 < len(linhas):
+                proxima_linha = linhas[i + 1]
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', proxima_linha)
+                if valores:
+                    # Pega o primeiro valor significativo
+                    for valor in valores:
+                        valor_float = float(valor.replace('.', '').replace(',', '.'))
+                        if valor_float > 0:
+                            info['liquido'] = valor_float
+                            break
+    
+    # Estratégia alternativa: buscar linha que contém apenas um valor após "Valor líquido"
+    if info['liquido'] == 0.0:
+        for i, linha in enumerate(linhas):
+            # Busca linha que tem apenas um número (o valor líquido)
+            if i > 0:
+                linha_anterior = normalizar_texto(linhas[i - 1])
+                if 'VALOR LIQUIDO' in linha_anterior or 'VALOR LÍQUIDO' in linha_anterior:
+                    # Esta linha deve ter o valor líquido
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                    if valores:
+                        for valor in valores:
+                            valor_float = float(valor.replace('.', '').replace(',', '.'))
+                            if valor_float > 0:
+                                info['liquido'] = valor_float
+                                break
+                    if info['liquido'] > 0:
+                        break
+    
+    # Calcular líquido se ainda não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_uberaba(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de UBERABA
+    Busca por "VENCIMENTO" (código 1-001)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "VENCIMENTO" com código 1-001
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*1-001\s+VENCIMENTO', linha_norm) or 'VENCIMENTO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_uberaba(texto: str) -> Dict:
+    """
+    Extrai vencimentos de UBERABA da coluna de Proventos
+    Estrutura: Código | Descrição | Quantidade | Proventos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'adicional_noturno': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTO (código 1-001)
+        if re.match(r'^\s*1-001\s+VENCIMENTO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL NOTURNO (código 1-032)
+        if 'AD. NOTURNO' in linha_norm or 'ADICIONAL NOTURNO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_noturno'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # INSALUBRIDADE
+        if 'INSALUBR' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['insalubridade'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 
 # ============================================================================
@@ -2614,9 +2819,12 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'HORTOLANDIA':
         salario_base = extrair_salario_bruto_hortolandia(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_hortolandia(texto)
-    elif prefeitura == 'BAURU':  # ← ADICIONAR ESTE BLOCO
+    elif prefeitura == 'BAURU':
         salario_base = extrair_salario_bruto_bauru(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_bauru(texto)
+    elif prefeitura == 'UBERABA':  # ← ADICIONAR ESTE BLOCO
+        salario_base = extrair_salario_bruto_uberaba(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_uberaba(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -2637,11 +2845,14 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
 def detectar_prefeitura_holerite(texto: str) -> str:
     """
     Detecta qual prefeitura o holerite pertence
-    Retorna: 'MARINGA', 'POA', 'SOROCABA', 'COTIA', 'IMPERATRIZ', 'EMBU', 'HORTOLANDIA', 'BAURU' ou 'DESCONHECIDA'
     """
     texto_norm = normalizar_texto(texto)
     
-    # Indicadores de Bauru  # ← ADICIONAR ESTE BLOCO
+    # Indicadores de Uberaba  # ← ADICIONAR ESTE BLOCO
+    if 'UBERABA' in texto_norm or 'PREFEITURA MUNICIPAL DE UBERABA' in texto_norm:
+        return 'UBERABA'
+    
+    # Indicadores de Bauru
     if 'BAURU' in texto_norm or 'PREF MUNIC DE BAURU' in texto_norm or '46.137.410/0001-80' in texto_norm:
         return 'BAURU'
     
@@ -2692,7 +2903,7 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     if not texto.strip():
         return None
     
-    # REGIME ESPECÍFICO PARA BAURU
+    # REGIME ESPECÍFICO
     if prefeitura == 'BAURU':
         regime = 'INDEFINIDO'
     else:
@@ -2711,8 +2922,10 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_embu(texto)
     elif prefeitura == 'HORTOLANDIA':
         info_financeira = extrair_informacoes_hortolandia(texto)
-    elif prefeitura == 'BAURU':  # ← ADICIONAR ESTA LINHA
+    elif prefeitura == 'BAURU':
         info_financeira = extrair_informacoes_bauru(texto)
+    elif prefeitura == 'UBERABA':  # ← ADICIONAR ESTA LINHA
+        info_financeira = extrair_informacoes_uberaba(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
