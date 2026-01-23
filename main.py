@@ -398,8 +398,176 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Cuiabá - MT',
         'descricao': 'Cidade: Cuiabá - Mato Grosso'
     },
+    'ALEGO': {
+        'nome': 'Assembleia Legislativa do Estado de Goiás - ALEGO',
+        'descricao': 'Assembleia Legislativa - Goiás'
+    },
     
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - ALEGO
+# ============================================================================
+
+def extrair_informacoes_alego(texto: str) -> Dict:
+    """
+    Extrai informações específicas de ALEGO
+    Estrutura: Matrícula / Nome / Proventos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'MATRICULA' in linha_norm:
+            # Formato: 503895838
+            match = re.search(r'(\d{9})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{9})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        # Procura por linha com nome completo (antes de MATRICULA)
+        if 'MATRICULA' in linha_norm and i > 0:
+            # Nome está algumas linhas acima
+            for j in range(max(0, i-5), i):
+                nome_candidato = linhas[j].strip()
+                # Remove datas, números de CPF e outros padrões
+                nome_candidato = re.sub(r'\d{2}/\d{2}/\d{4}', '', nome_candidato)
+                nome_candidato = re.sub(r'\d{3}\.\d{3}\.\d{3}-\d{2}', '', nome_candidato)
+                nome_candidato = re.sub(r'CNPJ.*$', '', nome_candidato, flags=re.IGNORECASE)
+                nome_candidato = re.sub(r'DATA DE EMISSAO.*$', '', nome_candidato, flags=re.IGNORECASE)
+                nome_candidato = nome_candidato.strip()
+                
+                # Verifica se é um nome válido (mais de 2 palavras, sem números)
+                if (len(nome_candidato.split()) >= 2 and 
+                    not re.search(r'\d', nome_candidato) and
+                    len(nome_candidato) > 10):
+                    info['nome'] = nome_candidato
+                    break
+            if info['nome']:
+                break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Proventos" (total)
+        if linha_norm.strip().startswith('PROVENTOS') and 'DESCONTOS' in linha_norm and 'LIQUIDO' in linha_norm:
+            # Próxima linha tem os valores
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 3:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                    info['liquido'] = float(valores[2].replace('.', '').replace(',', '.'))
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_alego(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de ALEGO
+    Busca por "VENCIMENTOS" (código 110)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "110 VENCIMENTOS"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*110\s+VENCIMENTOS', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "VENCIMENTOS" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTOS' in linha_norm and 'DESCONTO' not in linha_norm and 'PROVENTOS' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_alego(texto: str) -> Dict:
+    """
+    Extrai vencimentos de ALEGO da coluna de Proventos
+    Estrutura: Cód. | Descrição | Parcela Inicial | Parcela Final | Quantidade | Proventos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'auxilio_alimentacao': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTOS (código 110)
+        if re.match(r'^\s*110\s+VENCIMENTOS', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # AUXÍLIO-ALIMENTAÇÃO (código 332)
+        if 'AUXILIO-ALIMENTACAO' in linha_norm or 'AUXILIO ALIMENTACAO' in linha_norm or re.match(r'^\s*332\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['auxilio_alimentacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - CUIABÁ
@@ -5767,6 +5935,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'CUIABA':  
         salario_base = extrair_salario_bruto_cuiaba(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_cuiaba(texto)
+    elif prefeitura == 'ALEGO':
+        salario_base = extrair_salario_bruto_alego(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_alego(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -5789,6 +5960,11 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     Detecta qual prefeitura o holerite pertence
     """
     texto_norm = normalizar_texto(texto)
+
+    if ('ALEGO' in texto_norm or 
+        '02.474.419/0001-00' in texto_norm or
+        'ASSEMBLEIA LEGISLATIVA' in texto_norm and 'GOIAS' in texto_norm):
+        return 'ALEGO' 
 
     if 'BARCARENA' in texto_norm or 'PREFEITURA MUNICIPAL DE BARCARENA' in texto_norm or '05.058.458/0001-15' in texto_norm:
         return 'BARCARENA'
@@ -5893,12 +6069,11 @@ def detectar_prefeitura_holerite(texto: str) -> str:
         'www.redencao.pa.gov.br' in texto_norm):
         return 'REDENCAO'  
 
-    if ('CUIABA' in texto_norm or 
-        'CUIABÁ' in texto_norm or
-        'PREFEITURA MUNICIPAL DE CUIABA' in texto_norm or
-        'CUIABA-PREV' in texto_norm or
-        'SECRETARIA MUNICIPAL DE SAUDE' in texto_norm and 'CUIABA' in texto_norm):
-        return 'CUIABA' 
+    if (('CUIABA' in texto_norm or 'CUIABÁ' in texto_norm) and 
+        ('PREFEITURA' in texto_norm or 'CUIABA-PREV' in texto_norm or 
+         'SECRETARIA MUNICIPAL' in texto_norm)):
+        return 'CUIABA'
+
     
     return 'DESCONHECIDA'
 
@@ -5964,6 +6139,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_redencao(texto)
     elif prefeitura == 'CUIABA':  
         info_financeira = extrair_informacoes_cuiaba(texto)
+    elif prefeitura == 'ALEGO':
+        info_financeira = extrair_informacoes_alego(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
