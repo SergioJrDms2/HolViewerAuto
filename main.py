@@ -390,9 +390,171 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Monte Alegre de Sergipe - SE',
         'descricao': 'Cidade: Monte Alegre de Sergipe - Sergipe'
     },
+    'REDENCAO': {  
+        'nome': 'Prefeitura de Redenção - PA',
+        'descricao': 'Cidade: Redenção - Pará'
+    },
     
 }
 
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - REDENÇÃO
+# ============================================================================
+
+def extrair_informacoes_redencao(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Redenção - PA
+    Estrutura: Matrícula / Nome / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA E NOME (mesma linha)
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        # Procura por matrícula de 6 dígitos seguida de nome
+        # Formato: "110338 KLEBIANNY KELLY ROCHA LEAO"
+        if re.match(r'^\d{6}\s+[A-Z]', linha):
+            match = re.search(r'^(\d{6})\s+([A-Z][A-Z\s]+?)(?:\s+-\s+|\s+CPF:|$)', linha)
+            if match:
+                info['matricula'] = match.group(1)
+                nome_candidato = match.group(2).strip()
+                # Remove possíveis códigos do final
+                nome_candidato = re.sub(r'\s+-\s+.*$', '', nome_candidato)
+                if len(nome_candidato) > 3:
+                    info['nome'] = nome_candidato
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca linha com os valores totais (penúltima ou última linha da tabela)
+        # Formato: "3.433,57 238,81" ou "Líquido >>> 3.194,76"
+        if 'LIQUIDO' in linha_norm and '>>>' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca linha anterior ao "Líquido >>>" que tem vencimentos e descontos
+        if i > 0:
+            linha_anterior = linhas[i-1]
+            if 'LIQUIDO' in linha_norm and '>>>' in linha_norm:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha_anterior)
+                if len(valores) >= 2:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+    
+    # Estratégia alternativa: buscar pelos rótulos específicos
+    if info['liquido'] == 0.0:
+        for i, linha in enumerate(linhas):
+            # Busca formato "SERVIDOR,IMPRIMA SUA CEDULA" (linha de separação antes dos totais)
+            if 'SERVIDOR' in linha and 'IMPRIMA' in linha:
+                # Valores estão 1-2 linhas acima
+                for j in range(max(0, i-3), i):
+                    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[j])
+                    if len(valores) >= 2:
+                        info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                        info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                        break
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_redencao(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de REDENÇÃO
+    Busca por "VENCIMENTO" (código 001)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "001 VENCIMENTO"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*001\s+VENCIMENTO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "Salário Base:" no rodapé
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO BASE' in linha_norm and ':' in linha_norm:
+            match = re.search(r'SALARIO BASE\s*:\s*(\d{1,3}(?:\.\d{3})*,\d{2})', linha_norm)
+            if match:
+                valor_str = match.group(1).replace('.', '').replace(',', '.')
+                return float(valor_str)
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_redencao(texto: str) -> Dict:
+    """
+    Extrai vencimentos de REDENÇÃO da coluna de Vencimentos
+    Estrutura: Cod. | Descrição | Referência | Vencimentos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTO (código 001)
+        if re.match(r'^\s*001\s+VENCIMENTO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # HORAS EXTRAS (código 012)
+        if 'HORAS EXTRAS' in linha_norm or re.match(r'^\s*012\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['horas_extras'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - MONTE ALEGRE DE SERGIPE
@@ -4550,7 +4712,8 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'DIVERSOS CONTA',
         'DIVERSOS',
         'LANCADOS',
-        'CAT'
+        'CAT',
+        'BANCO'
     ]
 
     cartoes_encontrados = {
@@ -5409,6 +5572,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'MONTE_ALEGRE_SE':
         salario_base = extrair_salario_bruto_monte_alegre_se(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_monte_alegre_se(texto)
+    elif prefeitura == 'REDENCAO': 
+        salario_base = extrair_salario_bruto_redencao(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_redencao(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -5527,7 +5693,13 @@ def detectar_prefeitura_holerite(texto: str) -> str:
         '13.113.287/0001-08' in texto_norm or 
         '11602838000171' in texto_norm or 
         'FUNDO MUN. DE SAUDE DE MONTE ALEGRE' in texto_norm):
-        return 'MONTE_ALEGRE_SE'    
+        return 'MONTE_ALEGRE_SE' 
+
+    if ('REDENCAO' in texto_norm or 
+        '29.989.385/0001-43' in texto_norm or 
+        'FUNDO DE MANUT E DESENV DA EDUC B. E DE VAL DOS PROFISS' in texto_norm or
+        'www.redencao.pa.gov.br' in texto_norm):
+        return 'REDENCAO'   
     
     return 'DESCONHECIDA'
 
@@ -5589,6 +5761,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_vinhedo(texto)
     elif prefeitura == 'MONTE_ALEGRE_SE':
         info_financeira = extrair_informacoes_monte_alegre_se(texto)
+    elif prefeitura == 'REDENCAO':  
+        info_financeira = extrair_informacoes_redencao(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
