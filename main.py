@@ -386,8 +386,195 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Vinhedo - SP',
         'descricao': 'Cidade: Vinhedo - São Paulo'
     },
+    'MONTE_ALEGRE_SE': {
+        'nome': 'Prefeitura de Monte Alegre de Sergipe - SE',
+        'descricao': 'Cidade: Monte Alegre de Sergipe - Sergipe'
+    },
     
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - MONTE ALEGRE DE SERGIPE
+# ============================================================================
+
+def extrair_informacoes_monte_alegre_se(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Monte Alegre de Sergipe - SE
+    Estrutura: Funcionário: [matrícula] [NOME] / Proventos / Descontos / Total Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA E NOME (mesma linha)
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        # Procura por "Funcionário:" seguido de número e nome
+        # Formato: "Funcionário: 3086 GEOVANE DOS SANTOS ARAGAO"
+        if 'FUNCIONARIO' in linha_norm:
+            # Tenta na mesma linha
+            match = re.search(r'FUNCIONARIO\s*:\s*(\d{4,6})\s+([A-Z][A-Z\s]+?)(?:\s+REF\.|\s+CODIGO|$)', linha_norm)
+            if match:
+                info['matricula'] = match.group(1)
+                info['nome'] = match.group(2).strip()
+                break
+            # Tenta próxima linha
+            elif i + 1 < len(linhas):
+                proxima_linha = linhas[i + 1].strip()
+                match = re.search(r'^(\d{4,6})\s+([A-Z][A-Z\s]+)', proxima_linha)
+                if match:
+                    info['matricula'] = match.group(1)
+                    nome_candidato = match.group(2).strip()
+                    # Remove possíveis códigos ou labels do final
+                    nome_candidato = re.sub(r'\s+(?:REF\.|CODIGO|DESCRICAO).*$', '', nome_candidato, flags=re.IGNORECASE)
+                    if len(nome_candidato) > 3:
+                        info['nome'] = nome_candidato
+                        break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Totais:" no rodapé (linha com resumo de proventos e descontos)
+        if linha_norm.strip().startswith('TOTAIS:') or 'TOTAIS:' in linha_norm:
+            # Os valores estão na mesma linha ou próxima
+            valores = re.findall(r'\d{1,3}(?:[.,\s]\d{3})*[.,]\d{2}|\d+[,\.]\d{2}', linha)
+            if len(valores) >= 2:
+                info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+            # Se não achou na mesma linha, tenta próxima
+            elif i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:[.,\s]\d{3})*[.,]\d{2}|\d+[,\.]\d{2}', linhas[i + 1])
+                if len(valores) >= 2:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Total Liquído a Receber:" (com ou sem acento)
+        if 'TOTAL LIQUIDO' in linha_norm or 'TOTAL LÍQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:[.,\s]\d{3})*[.,]\d{2}|\d+[,\.]\d{2}', linha)
+            if valores:
+                clean = [float(v.replace('.', '').replace(' ', '').replace('\xa0', '').replace(',', '.')) for v in valores]
+                info['liquido'] = max(clean)
+            # Tenta próxima linha se não achou
+            elif i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:[.,\s]\d{3})*[.,]\d{2}|\d+[,\.]\d{2}', linhas[i + 1])
+                if valores:
+                    clean = [float(v.replace('.', '').replace(' ', '').replace('\xa0', '').replace(',', '.')) for v in valores]
+                    info['liquido'] = max(clean)
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_monte_alegre_se(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de MONTE ALEGRE DE SERGIPE
+    Busca por "VENCIMENTOS" (código 1) ou "Salário Base:" no rodapé
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "Salário Base:" no rodapé
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO BASE' in linha_norm and ':' in linha_norm:
+            # Extrai o valor após os dois pontos
+            match = re.search(r'SALARIO BASE\s*:\s*(\d{1,3}(?:\.\d{3})*,\d{2})', linha_norm)
+            if match:
+                valor_str = match.group(1).replace('.', '').replace(',', '.')
+                return float(valor_str)
+    
+    # Prioridade 2: Buscar código "1 VENCIMENTOS" na tabela
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*1\s+VENCIMENTOS', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 3: Buscar "VENCIMENTOS" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if linha_norm.strip().startswith('VENCIMENTOS') and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_monte_alegre_se(texto: str) -> Dict:
+    """
+    Extrai vencimentos de MONTE ALEGRE DE SERGIPE da coluna de Proventos
+    Estrutura: Código | Descrição | Referência | Proventos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTOS (código 1)
+        if re.match(r'^\s*1\s+VENCIMENTOS', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL DE TEMPO
+        if 'ADICIONAL' in linha_norm and 'TEMPO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # INSALUBRIDADE
+        if 'INSALUBR' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['insalubridade'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 
 # ============================================================================
@@ -4362,7 +4549,8 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'ORGAOS DE PROTECAO',
         'DIVERSOS CONTA',
         'DIVERSOS',
-        'LANCADOS' 
+        'LANCADOS',
+        'CAT'
     ]
 
     cartoes_encontrados = {
@@ -5218,6 +5406,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'VINHEDO':
         salario_base = extrair_salario_bruto_vinhedo(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_vinhedo(texto)
+    elif prefeitura == 'MONTE_ALEGRE_SE':
+        salario_base = extrair_salario_bruto_monte_alegre_se(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_monte_alegre_se(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -5332,6 +5523,12 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     if 'VINHEDO' in texto_norm or 'PREFEITURA MUNICIPAL DE VINHEDO' in texto_norm:
         return 'VINHEDO'
     
+    if ('MONTE ALEGRE DE SERGIPE' in texto_norm or 
+        '13.113.287/0001-08' in texto_norm or 
+        '11602838000171' in texto_norm or 
+        'FUNDO MUN. DE SAUDE DE MONTE ALEGRE' in texto_norm):
+        return 'MONTE_ALEGRE_SE'    
+    
     return 'DESCONHECIDA'
 
 def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeitura: str) -> Dict:
@@ -5390,6 +5587,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_sao_jose_rio_preto(texto)
     elif prefeitura == 'VINHEDO': 
         info_financeira = extrair_informacoes_vinhedo(texto)
+    elif prefeitura == 'MONTE_ALEGRE_SE':
+        info_financeira = extrair_informacoes_monte_alegre_se(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
