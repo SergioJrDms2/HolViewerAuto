@@ -208,7 +208,8 @@ CARTOES_NAO_COMPRADOS = [
     "CAPITAL",
     "MAXIMA",
     "FY DIGITAL",
-    "CLICKBANK" 
+    "CLICKBANK",
+    "PIXCARD"
 ]
 
 # Lista completa para busca
