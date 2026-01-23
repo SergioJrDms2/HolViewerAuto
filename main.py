@@ -28,145 +28,159 @@ st.set_page_config(
     page_title="Analisador de Holerite",
     page_icon="💳",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded" 
 )
 
 # ============================================================================
 # CSS CUSTOMIZADO
 # ============================================================================
 
+# ============================================================================
+# CSS CUSTOMIZADO - TEMA ROXO MODERNO (ATUALIZADO)
+# ============================================================================
+
 st.markdown("""
     <style>
+        /* Importação da Fonte Inter */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         
+        /* --- GLOBAL --- */
         * {
             font-family: 'Inter', sans-serif;
         }
         
-        .main-header {
-            font-size: 2.8rem;
+        .stApp {
+            background-color: #FFFFFF;
+        }
+
+        /* --- SIDEBAR CUSTOMIZADA --- */
+        [data-testid="stSidebar"] {
+            background-color: #F8FAFC; /* Fundo cinza muito suave */
+            border-right: 1px solid #E2E8F0; /* Divisória sutil */
+            padding-top: 2rem;
+        }
+        
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+            color: #4C1D95; /* Roxo escuro para títulos na sidebar */
             font-weight: 700;
-            color: #1a3a52;
+        }
+        
+        /* Inputs na Sidebar (Selectbox, Text Input) */
+        [data-testid="stSidebar"] .stSelectbox > div > div {
+            background-color: #FFFFFF;
+            border: 1px solid #CBD5E1;
+            border-radius: 0.5rem;
+            color: #334155;
+        }
+
+        /* --- CABEÇALHO --- */
+        .main-header {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #7C3AED 0%, #4C1D95 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             text-align: center;
             margin-bottom: 0.5rem;
-            letter-spacing: -0.5px;
+            letter-spacing: -1px;
+            padding-bottom: 10px;
         }
         
         .main-subtitle {
             text-align: center;
-            font-size: 1rem;
-            color: #555;
-            margin-bottom: 2.5rem;
+            font-size: 1.1rem;
+            color: #64748B;
+            margin-bottom: 3rem;
             font-weight: 400;
-            letter-spacing: 0.3px;
         }
         
+        /* --- FILE UPLOADER COM HOVER DISCRETO --- */
+        [data-testid="stFileUploader"] {
+            padding: 2rem;
+            border-radius: 1rem;
+            background-color: #FFFFFF;
+            border: 2px dashed #E2E8F0; /* Borda cinza padrão */
+            transition: all 0.3s ease-in-out;
+            cursor: pointer;
+        }
+        
+        /* Efeito Hover Roxo */
+        [data-testid="stFileUploader"]:hover {
+            border-color: #8B5CF6; /* Roxo médio */
+            background-color: #F5F3FF; /* Roxo muito claro (Lilás) */
+        }
+        
+        [data-testid="stFileUploader"] section {
+            background-color: transparent !important; /* Garante que o fundo do hover funcione */
+        }
+
+        /* --- CARDS DE MÉTRICAS --- */
         .metric-card {
-            background: #f8f9fa;
+            background: #FFFFFF;
             padding: 1.5rem;
-            border-radius: 0.8rem;
-            border-left: 4px solid #1a3a52;
-            box-shadow: 0 2px 8px rgba(26, 58, 82, 0.08);
-            transition: all 0.3s ease;
+            border-radius: 1rem;
+            border: 1px solid #F1F5F9;
+            border-left: 5px solid #7C3AED;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            margin-bottom: 1rem;
         }
         
         .metric-card:hover {
-            box-shadow: 0 4px 12px rgba(26, 58, 82, 0.12);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(124, 58, 237, 0.1);
         }
         
-        .success-box {
-            background: linear-gradient(135deg, #e8f5e9 0%, #d4edda 100%);
-            border: 1px solid #81c784;
-            border-radius: 1rem;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.1);
+        /* --- CAIXAS DE STATUS (TONS PASTÉIS) --- */
+        .success-box, .warning-box, .info-box, .error-box {
+            padding: 1rem;
+            border-radius: 0.75rem;
+            margin: 1rem 0;
+            font-weight: 500;
         }
         
-        .warning-box {
-            background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
-            border: 1px solid #ffc107;
-            border-radius: 1rem;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.1);
-        }
+        .success-box { background-color: #ECFDF5; border-left: 4px solid #10B981; color: #065F46; }
+        .warning-box { background-color: #FFFBEB; border-left: 4px solid #F59E0B; color: #92400E; }
+        .info-box    { background-color: #EFF6FF; border-left: 4px solid #3B82F6; color: #1E40AF; }
+        .error-box   { background-color: #FEF2F2; border-left: 4px solid #EF4444; color: #991B1B; }
         
-        .info-box {
-            background: linear-gradient(135deg, #e3f2fd 0%, #d1ecf1 100%);
-            border: 1px solid #2196f3;
-            border-radius: 1rem;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.1);
-        }
-        
-        .error-box {
-            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-            border: 1px solid #f44336;
-            border-radius: 1rem;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.1);
-        }
-        
-        .section-header {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #1a3a52;
-            margin-top: 2rem;
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .divider {
-            height: 1px;
-            background: #ddd;
-            margin: 2rem 0;
-            border: none;
-        }
-        
-        .footer-text {
-            text-align: center;
-            color: #999;
-            padding: 2rem;
-            font-size: 0.95rem;
-        }
-        
+        /* --- BOTÕES --- */
         .stButton > button {
-            background: #401c5c;
+            background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%);
             color: white;
             border: none;
-            border-radius: 0.6rem;
-            padding: 0.65rem 1.5rem;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1.5rem;
             font-weight: 600;
+            box-shadow: 0 4px 6px rgba(124, 58, 237, 0.25);
             transition: all 0.3s ease;
-            box-shadow: 0 2px 8px rgba(26, 58, 82, 0.2);
+            width: 100%;
         }
         
         .stButton > button:hover {
-            background: #5b366f;
-            box-shadow: 0 4px 12px rgba(26, 58, 82, 0.3);
+            box-shadow: 0 6px 12px rgba(124, 58, 237, 0.35);
+            transform: translateY(-1px);
+        }
+
+        /* --- HEADERS DE SEÇÃO --- */
+        .section-header {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #334155;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #F1F5F9;
+            padding-bottom: 0.5rem;
         }
         
-        .stExpander {
-            border: 1px solid #e0e0e0;
-            border-radius: 0.8rem;
-            background: #fafafa;
-        }
-        
-        .stTabs [data-baseweb="tab"] {
-            padding: 0.75rem 1.5rem;
-            font-weight: 600;
-            color: #666;
-            border-radius: 0.8rem;
-        }
-        
-        .stTabs [aria-selected="true"] {
-            color: #667eea;
-            border-color: #667eea;
+        /* --- RODAPÉ --- */
+        .footer-text {
+            text-align: center;
+            color: #94A3B8;
+            padding: 3rem 0;
+            font-size: 0.875rem;
+            border-top: 1px solid #F1F5F9;
+            margin-top: 3rem;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -6376,10 +6390,19 @@ def main():
         
         st.markdown("---")
         st.info("Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote.", icon="ℹ️")
+
     
     # Conteúdo principal
     if modo == "Análise Individual":
         st.markdown("<h2 class='section-header'>Análise Individual de Holerite</h2>", unsafe_allow_html=True)
+            # Adicione isso logo após os headers principais na sua função main()
+        with st.expander("ℹ️ Como usar o sistema (Clique para expandir)", expanded=False):
+            st.markdown("""
+            1. **Upload**: Arraste seu arquivo PDF para a área de upload.
+            2. **Processamento**: O sistema irá extrair automaticamente os dados (Holerite, Margem, etc.).
+            3. **Análise**: Veja os cards coloridos com os resultados principais.
+            4. **Exportação**: Se disponível, baixe o relatório final.
+            """)
         st.info(f"Prefeitura selecionada: **{PREFEITURAS[prefeitura_selecionada]['nome']}**", icon="📍")
         
         arquivo_upload = st.file_uploader(
