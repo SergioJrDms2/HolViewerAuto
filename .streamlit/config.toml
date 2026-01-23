@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#7C3AED"    # Roxo vibrante para destaque
+backgroundColor = "#FFFFFF" # Fundo branco (Tema Claro)
+secondaryBackgroundColor = "#F3F0FF" # Fundo lilás bem claro para sidebar/inputs
+textColor = "#374151"       # Cinza escuro para texto (leitura confortável)
+font = "sans serif"
