@@ -382,8 +382,156 @@ PREFEITURAS = {
         'nome': 'Prefeitura de São José do Rio Preto - SP',
         'descricao': 'Cidade: São José do Rio Preto - São Paulo'
     },
+    'VINHEDO': { 
+        'nome': 'Prefeitura de Vinhedo - SP',
+        'descricao': 'Cidade: Vinhedo - São Paulo'
+    },
     
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - VINHEDO
+# ============================================================================
+
+def extrair_informacoes_vinhedo(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Vinhedo - SP
+    Estrutura: Funcionário / CPF / Banco / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA E NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        # Procura por "Funcionário" seguido de matrícula e nome
+        if 'FUNCIONARIO' in linha_norm:
+            # Próxima linha tem formato: "3685 CRISTIANE REGINA MARCONDES"
+            if i + 1 < len(linhas):
+                proxima_linha = linhas[i + 1].strip()
+                match = re.search(r'^(\d{4,6})\s+([A-Z][A-Z\s]+)', proxima_linha)
+                if match:
+                    info['matricula'] = match.group(1)
+                    nome_candidato = match.group(2).strip()
+                    if len(nome_candidato) > 3:
+                        info['nome'] = nome_candidato
+                        break
+    
+    money_re = r'(\d{1,3}(?:[.\s]\d{3})*,\d{2}|\d+,\d{2})'
+
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha).lower().replace('\xa0', ' ')
+
+        # Busca "Vencimentos" no rodapé
+        if 'vencimentos' in linha_norm and 'descontos' not in linha_norm and 'liq' not in linha_norm:
+            valores = re.findall(money_re, linha)
+            if not valores and i + 1 < len(linhas):
+                valores = re.findall(money_re, linhas[i + 1])
+            if valores:
+                info['vencimentos_total'] = float(valores[-1].replace('.', '').replace(' ', '').replace(',', '.'))
+
+        # Busca "Descontos" no rodapé
+        if 'descontos' in linha_norm and 'vencimentos' not in linha_norm and 'liq' not in linha_norm:
+            valores = re.findall(money_re, linha)
+            if not valores and i + 1 < len(linhas):
+                valores = re.findall(money_re, linhas[i + 1])
+            if valores:
+                info['descontos_total'] = float(valores[-1].replace('.', '').replace(' ', '').replace(',', '.'))
+
+        # Busca "Líquido" (aceita variações com/sem acento ou quebras)
+        if 'liq' in linha_norm:  # pega "liquido", "líquido", "liq uid o", etc.
+            valores = re.findall(money_re, linha)
+            if not valores and i + 1 < len(linhas):
+                valores = re.findall(money_re, linhas[i + 1])
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(' ', '').replace(',', '.'))
+
+    # Calcular líquido se não foi encontrado
+    if info.get('liquido', 0.0) == 0.0 and info.get('vencimentos_total', 0.0) > 0:
+        info['liquido'] = round(info['vencimentos_total'] - info.get('descontos_total', 0.0), 2)
+    
+    return info
+
+
+def extrair_salario_bruto_vinhedo(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de VINHEDO
+    Busca por "SALARIO BASE" (código 30)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar "SALARIO BASE" com código 30
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*30\s+SALARIO BASE', linha_norm) or 'SALARIO BASE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_vinhedo(texto: str) -> Dict:
+    """
+    Extrai vencimentos de VINHEDO da coluna de VENCIMENTOS
+    Estrutura: Código | Descrição | Referência | Valor
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'aux_transporte': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO BASE (código 30)
+        if re.match(r'^\s*30\s+SALARIO BASE', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # AUX TRANSPORTE (código 2495)
+        if 'AUX TRANSPORTE' in linha_norm or re.match(r'^\s*2495\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['aux_transporte'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 
 # ============================================================================
@@ -5067,6 +5215,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'SAO_JOSE_RIO_PRETO':
         salario_base = extrair_salario_bruto_sao_jose_rio_preto(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_sao_jose_rio_preto(texto)
+    elif prefeitura == 'VINHEDO':
+        salario_base = extrair_salario_bruto_vinhedo(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_vinhedo(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -5158,7 +5309,7 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     if 'VENCIMENTO CARGO COMISSIONADO' in texto_norm:
         return 'IMPERATRIZ'
     
-    if 'CAMPOS DO JORDAO' in texto_norm or 'MUNICIPIO DE CAMPOS DO JORDAO' in texto_norm or 'FPJ1035' in texto_norm:
+    if 'CAMPOS DO JORDAO' in texto_norm or 'MUNICIPIO DE CAMPOS DO JORDAO' in texto_norm:
         return 'CAMPOS_JORDAO'
     
     # Indicadores de Ribeirão Preto
@@ -5177,6 +5328,9 @@ def detectar_prefeitura_holerite(texto: str) -> str:
 
     if 'SAO JOSE DO RIO PRETO' in texto_norm or 'PREFEITURA MUNICIPAL DE SAO JOSE DO RIO PRETO' in texto_norm or '46.588.95/0001-40' in texto_norm or '46.588.950/0001-40' in texto_norm:
         return 'SAO_JOSE_RIO_PRETO'
+    
+    if 'VINHEDO' in texto_norm or 'PREFEITURA MUNICIPAL DE VINHEDO' in texto_norm:
+        return 'VINHEDO'
     
     return 'DESCONHECIDA'
 
@@ -5234,6 +5388,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_belterra(texto)
     elif prefeitura == 'SAO_JOSE_RIO_PRETO':
         info_financeira = extrair_informacoes_sao_jose_rio_preto(texto)
+    elif prefeitura == 'VINHEDO': 
+        info_financeira = extrair_informacoes_vinhedo(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
