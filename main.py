@@ -394,8 +394,197 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Redenção - PA',
         'descricao': 'Cidade: Redenção - Pará'
     },
+    'CUIABA': { 
+        'nome': 'Prefeitura de Cuiabá - MT',
+        'descricao': 'Cidade: Cuiabá - Mato Grosso'
+    },
     
 }
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - CUIABÁ
+# ============================================================================
+
+def extrair_informacoes_cuiaba(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Cuiabá - MT
+    Estrutura: Nome / Matrícula / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME' in linha_norm:
+            nome_candidato = linhas[i + 1].strip()
+            match = re.sub(r'\s+\d{7}.*$', '', nome_candidato)
+            if match:
+                info['nome'] = match
+                break
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{7})', linhas[i + 1])
+                if match:
+                    info['nome'] = match
+                    break
+
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'MATRICULA' in linha_norm:
+            # Formato: 4011069 (7 dígitos)
+            match = re.search(r'(\d{7})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+                break
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{7})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Total de Vencimentos"
+        if 'TOTAL DE VENCIMENTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['vencimentos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Total de Descontos"
+        if 'TOTAL DE DESCONTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['descontos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Valor Líquido" ou "Valor Liquido"
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Estratégia alternativa: buscar na linha de rodapé
+    if info['liquido'] == 0.0:
+        for linha in linhas[-10:]:  # Últimas 10 linhas
+            if re.search(r'\d{1,3}(?:\.\d{3})*,\d{2}\s+\d{1,3}(?:\.\d{3})*,\d{2}\s+\d{1,3}(?:\.\d{3})*,\d{2}', linha):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if len(valores) >= 3:
+                    info['vencimentos_total'] = float(valores[0].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                    info['liquido'] = float(valores[2].replace('.', '').replace(',', '.'))
+                    break
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_cuiaba(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de CUIABÁ
+    Busca por "VENCIMENTO - PROFISSIONAL" (código 4727)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "4727 VENCIMENTO - PROFISSIONAL"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*4727\s+VENCIMENTO', linha_norm) or 'VENCIMENTO - PROFISSIONAL' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar qualquer "VENCIMENTO" em coluna de vencimentos
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_cuiaba(texto: str) -> Dict:
+    """
+    Extrai vencimentos de CUIABÁ da coluna de Vencimentos
+    Estrutura: Código | Descrição | C/D | Referência | Parcela | Quantidade | Base de Cálculo | Vencimentos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'grat_desempenho': 0.0,  # Específico de Cuiabá
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTO - PROFISSIONAL (código 4727)
+        if re.match(r'^\s*4727\s+VENCIMENTO', linha_norm) or 'VENCIMENTO - PROFISSIONAL' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADIC. INSALUBRIDADE (código 1220)
+        if 'ADIC. INSALUBRIDADE' in linha_norm or 'ADICIONAL INSALUBRIDADE' in linha_norm or re.match(r'^\s*1220\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['insalubridade'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRAT. DESEMPENHO - PCCS (código 1231)
+        if 'GRAT. DESEMPENHO' in linha_norm or 'GRATIFICACAO DESEMPENHO' in linha_norm or re.match(r'^\s*1231\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['grat_desempenho'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO (qualquer outra)
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm and 'DESEMPENHO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 
 # ============================================================================
@@ -5575,6 +5764,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'REDENCAO': 
         salario_base = extrair_salario_bruto_redencao(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_redencao(texto)
+    elif prefeitura == 'CUIABA':  
+        salario_base = extrair_salario_bruto_cuiaba(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_cuiaba(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -5699,7 +5891,14 @@ def detectar_prefeitura_holerite(texto: str) -> str:
         '29.989.385/0001-43' in texto_norm or 
         'FUNDO DE MANUT E DESENV DA EDUC B. E DE VAL DOS PROFISS' in texto_norm or
         'www.redencao.pa.gov.br' in texto_norm):
-        return 'REDENCAO'   
+        return 'REDENCAO'  
+
+    if ('CUIABA' in texto_norm or 
+        'CUIABÁ' in texto_norm or
+        'PREFEITURA MUNICIPAL DE CUIABA' in texto_norm or
+        'CUIABA-PREV' in texto_norm or
+        'SECRETARIA MUNICIPAL DE SAUDE' in texto_norm and 'CUIABA' in texto_norm):
+        return 'CUIABA' 
     
     return 'DESCONHECIDA'
 
@@ -5763,6 +5962,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_monte_alegre_se(texto)
     elif prefeitura == 'REDENCAO':  
         info_financeira = extrair_informacoes_redencao(texto)
+    elif prefeitura == 'CUIABA':  
+        info_financeira = extrair_informacoes_cuiaba(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
@@ -6052,7 +6253,7 @@ def main():
                 col1, col2, col3, col4 = st.columns(4, gap="xlarge")
                 with col1:
                     nome_valor = (info.get('nome') or '').strip()
-                    nome_exibicao = (nome_valor.split()[0][:10] if nome_valor else 'N/A')
+                    nome_exibicao = (nome_valor.split()[0][:11] if nome_valor else 'N/A')
                     st.metric("👤 Nome", nome_exibicao)
                 
                 with col2:
