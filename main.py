@@ -207,7 +207,8 @@ CARTOES_NAO_COMPRADOS = [
     "C CONSIG",
     "CAPITAL",
     "MAXIMA",
-    "FY DIGITAL"
+    "FY DIGITAL",
+    "CLICKBANK" 
 ]
 
 # Lista completa para busca
