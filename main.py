@@ -378,8 +378,178 @@ PREFEITURAS = {
         'nome': 'Prefeitura de Belterra - PA',
         'descricao': 'Cidade: Belterra - Pará'
     },
+    'SAO_JOSE_RIO_PRETO': {
+        'nome': 'Prefeitura de São José do Rio Preto - SP',
+        'descricao': 'Cidade: São José do Rio Preto - São Paulo'
+    },
     
 }
+
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - SÃO JOSÉ DO RIO PRETO
+# ============================================================================
+
+def extrair_informacoes_sao_jose_rio_preto(texto: str) -> Dict:
+    """
+    Extrai informações específicas de São José do Rio Preto - SP
+    Estrutura: Matrícula / Nome / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'MATRICULA' in linha_norm:
+            # Formato: 75155
+            match = re.search(r'(\d{5})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{5})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME' in linha_norm and i + 1 < len(linhas):
+            proxima_linha = linhas[i + 1].strip()
+            # Remove matrícula do início
+            nome_candidato = re.sub(r'^\d{5}\s*', '', proxima_linha)
+            # Remove data de admissão do final
+            nome_candidato = re.sub(r'\s*\d{2}/\d{2}/\d{4}.*$', '', nome_candidato)
+            
+            if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                info['nome'] = nome_candidato.strip()
+                break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Total de Vencimentos"
+        if 'TOTAL DE VENCIMENTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                # Remove "R$" se presente
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['vencimentos_total'] = float(valor_str)
+        
+        # Busca "Total de Descontos"
+        if 'TOTAL DE DESCONTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['descontos_total'] = float(valor_str)
+        
+        # Busca "Valor Liquido"
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                valor_str = valores[-1].replace('.', '').replace(',', '.')
+                info['liquido'] = float(valor_str)
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_sao_jose_rio_preto(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de SÃO JOSÉ DO RIO PRETO
+    Busca por "VENCIMENTO" (código 1)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "1 VENCIMENTO"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*1\s+VENCIMENTO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "VENCIMENTO" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if linha_norm.strip().startswith('VENCIMENTO') or 'VENCIMENTO' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_sao_jose_rio_preto(texto: str) -> Dict:
+    """
+    Extrai vencimentos de SÃO JOSÉ DO RIO PRETO da coluna de VENCIMENTO
+    Estrutura: Evento | Descrição | Quantidade | Vencimento | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'auxilio_saude': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTO (código 1)
+        if re.match(r'^\s*1\s+VENCIMENTO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # AUXILIO SAUDE (código 1371)
+        if 'AUXILIO SAUDE' in linha_norm or re.match(r'^\s*1371\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['auxilio_saude'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - BELTERRA
@@ -4894,6 +5064,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'BELTERRA':
         salario_base = extrair_salario_bruto_belterra(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_belterra(texto)
+    elif prefeitura == 'SAO_JOSE_RIO_PRETO':
+        salario_base = extrair_salario_bruto_sao_jose_rio_preto(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_sao_jose_rio_preto(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -5001,6 +5174,9 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     # Indicadores de Belterra
     if 'BELTERRA' in texto_norm or 'PREFEITURA MUNICIPAL DE BELTERRA' in texto_norm or '01.614.112/0001-03' in texto_norm:
         return 'BELTERRA'
+
+    if 'SAO JOSE DO RIO PRETO' in texto_norm or 'PREFEITURA MUNICIPAL DE SAO JOSE DO RIO PRETO' in texto_norm or '46.588.95/0001-40' in texto_norm or '46.588.950/0001-40' in texto_norm:
+        return 'SAO_JOSE_RIO_PRETO'
     
     return 'DESCONHECIDA'
 
@@ -5056,6 +5232,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_camara_deputados(texto)
     elif prefeitura == 'BELTERRA':
         info_financeira = extrair_informacoes_belterra(texto)
+    elif prefeitura == 'SAO_JOSE_RIO_PRETO':
+        info_financeira = extrair_informacoes_sao_jose_rio_preto(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
