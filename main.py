@@ -374,8 +374,173 @@ PREFEITURAS = {
         'nome': 'Câmara dos Deputados',
         'descricao': 'Câmara dos Deputados - Brasília/DF'
     },
+    'BELTERRA': {
+        'nome': 'Prefeitura de Belterra - PA',
+        'descricao': 'Cidade: Belterra - Pará'
+    },
     
 }
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - BELTERRA
+# ============================================================================
+
+def extrair_informacoes_belterra(texto: str) -> Dict:
+    """
+    Extrai informações específicas de Belterra - PA
+    Estrutura: Matrícula / Nome / Vencimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'MATRICULA' in linha_norm:
+            # Formato: 2053-1
+            match = re.search(r'(\d{4}-\d)', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{4}-\d)', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME' in linha_norm and i + 1 < len(linhas):
+            proxima_linha = linhas[i + 1].strip()
+            # Remove matrícula do início (formato: 2053-1)
+            nome_candidato = re.sub(r'^\d{4}-\d\s*', '', proxima_linha)
+            # Remove informações adicionais do final
+            nome_candidato = re.sub(r'\s+\d{2}/\d{2}/\d{4}.*$', '', nome_candidato)
+            
+            if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                info['nome'] = nome_candidato.strip()
+                break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca "Total de Vencimentos"
+        if 'TOTAL DE VENCIMENTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['vencimentos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Total de Descontos"
+        if 'TOTAL DE DESCONTOS' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['descontos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        # Busca "Valor Liquido"
+        if 'VALOR LIQUIDO' in linha_norm or 'VALOR LÍQUIDO' in linha_norm:
+            valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+            if valores:
+                info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_belterra(texto: str) -> float:
+    """
+    Extrai o valor do salário base do contracheque de BELTERRA
+    Busca por "SALARIO BASE" (código 001)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "001 SALARIO BASE"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*001\s+SALARIO BASE', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "SALARIO BASE" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'SALARIO BASE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_belterra(texto: str) -> Dict:
+    """
+    Extrai vencimentos de BELTERRA da coluna de VENCIMENTOS
+    Estrutura: Cód. | Descrição | Referência | Vencimentos | Descontos
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'trienio': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # SALARIO BASE (código 001)
+        if re.match(r'^\s*001\s+SALARIO BASE', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO DE FUNÇÃO (código 268)
+        if 'GRATIFICACAO DE FUNCAO' in linha_norm or re.match(r'^\s*268\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # TRIENIO (código 356)
+        if 'TRIENIO' in linha_norm or re.match(r'^\s*356\s+', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['trienio'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - CÂMARA DOS DEPUTADOS
@@ -4726,6 +4891,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'CAMARA_DEPUTADOS':
         salario_base = extrair_salario_bruto_camara_deputados(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_camara_deputados(texto)
+    elif prefeitura == 'BELTERRA':
+        salario_base = extrair_salario_bruto_belterra(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_belterra(texto)
     else:
         # Fallback para POÁ
         salario_base = extrair_salario_bruto_poa(texto)
@@ -4829,6 +4997,10 @@ def detectar_prefeitura_holerite(texto: str) -> str:
     
     if 'CAMARA DOS DEPUTADOS' in texto_norm or 'SECRETARIO PARLAMENTAR' in texto_norm or 'DEMONSTRATIVO DE PAGAMENTO' in texto_norm and 'CAMARA' in texto_norm:
         return 'CAMARA_DEPUTADOS'
+
+    # Indicadores de Belterra
+    if 'BELTERRA' in texto_norm or 'PREFEITURA MUNICIPAL DE BELTERRA' in texto_norm or '01.614.112/0001-03' in texto_norm:
+        return 'BELTERRA'
     
     return 'DESCONHECIDA'
 
@@ -4882,6 +5054,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_ponta_grossa(texto)
     elif prefeitura == 'CAMARA_DEPUTADOS':
         info_financeira = extrair_informacoes_camara_deputados(texto)
+    elif prefeitura == 'BELTERRA':
+        info_financeira = extrair_informacoes_belterra(texto)
     else:
         info_financeira = extrair_informacoes_financeiras(texto)
     
