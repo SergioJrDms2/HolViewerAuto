@@ -6616,6 +6616,16 @@ def main():
             3. **Análise**: Veja os cards coloridos com os resultados principais.
             4. **Exportação**: Se disponível, baixe o relatório final.
             """)
+            st.markdown("""
+                <div class="warning-box">
+                    <h6 style="margin-top:0; color:#92400E;">⚠️ ATENÇÃO: FUNCIONALIDADE EM TESTES</h4>
+                    <p style="margin-bottom:0;">
+                        O cálculo automático de margem é uma estimativa e <strong>não deve ser considerado 100% preciso</strong>. 
+                        <br>
+                        Por favor, <strong>verifique sempre a margem real</strong> na gestora original antes de prosseguir com qualquer operação.
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
         st.info(f"Prefeitura selecionada: **{PREFEITURAS[prefeitura_selecionada]['nome']}**", icon="📍")
         
         arquivo_upload = st.file_uploader(
