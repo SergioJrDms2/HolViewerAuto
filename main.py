@@ -169,7 +169,6 @@ st.markdown("""
             color: #334155;
             margin-top: 2rem;
             margin-bottom: 1rem;
-            border-bottom: 2px solid #F1F5F9;
             padding-bottom: 0.5rem;
         }
         
@@ -210,12 +209,14 @@ CARTOES_CONHECIDOS = [
     "SANTANDER / OLÉ",
     "BIG CARD",
     "DAYC",
-    "IND"
+    "IND",
+    "PANAMERICANO",
+    "MASTER",
+    "CREDCESTA SAQUE",
 ]
 
 CARTOES_NAO_COMPRADOS = [
-    "MASTER",
-    "CREDCESTA",
+    "CREDCESTA COMPRA", 
     "QISTA",
     "PIX CARD",
     "C CONSIG",
@@ -4607,6 +4608,147 @@ def extrair_vencimentos_fixos_poa(texto: str) -> Dict:
 
     return vencimentos_fixos
 
+
+def calcular_margem_poa(texto: str, salario_base: float, vencimentos_fixos: Dict, 
+                        descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para POÁ seguindo as regras da planilha
+    
+    Regras POÁ (segunda linha da planilha dados.csv):
+    - Empréstimo: 35%
+    - Cartão Consignado: 15%
+    - Cartão Benefício: 15%
+    
+    Fórmula: Base de Cálculo = Salário Bruto - Descontos Compulsórios
+    
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos
+    """
+    
+    # Base de cálculo: Vencimentos totais - Descontos obrigatórios
+    salario_bruto = salario_base + vencimentos_fixos.get('total', 0.0)
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+    
+    base_calculo = salario_bruto - total_descontos_obrigatorios
+    
+    # Percentuais de POÁ (conforme planilha dados.csv - SEGUNDA LINHA)
+    percentual_emprestimo = 0.35  # 35%
+    percentual_cartao_consig = 0.15  # 15%
+    percentual_cartao_beneficio = 0.15  # 15%
+    
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+    
+    # Separação de cartões por categoria (para detalhamento)
+    cartoes_nossos = 0.0
+    cartoes_terceiros = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # UASPREV conta como empréstimo
+        if 'UASPREV' in linha_norm or 'Emprestimo STARCARD ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+        
+        # Verifica se é cartão (qualquer tipo)
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED', 'CART.'])
+        
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                # Classifica o cartão
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    # Cartão desconhecido (para estudar)
+                    cartoes_desconhecidos += valor
+            continue
+        
+        # Empréstimos genéricos (que não são cartões)
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+    
+    # Total de cartões (TODOS contam: nossos + terceiros + não comprados + desconhecidos)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+    
+    # Cálculo das margens
+    margem_emprestimo_total = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+    
+    # MARGEM DE CARTÃO CONSIGNADO (15%)
+    margem_cartao_consig_total = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+    
+    # MARGEM DE CARTÃO BENEFÍCIO (15%)
+    margem_cartao_beneficio_total = base_calculo * percentual_cartao_beneficio
+    # Cartão benefício compartilha o mesmo comprometimento (todos os cartões)
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+    
+    # Líquido recebido pelo cliente (conforme planilha)
+    liquido_recebido = salario_bruto - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    
+    # Percentual de liquidez (mínimo 30% segundo planilha)
+    percentual_liquidez = (liquido_recebido / salario_bruto * 100) if salario_bruto > 0 else 0
+    
+    # Validação de liquidez mínima
+    aprovado_liquidez = percentual_liquidez >= 30.0
+    
+    return {
+        'prefeitura': 'POA',
+        'salario_bruto': salario_bruto,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+        
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+        
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+        
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+        
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
 # ============================================================================
 # FUNÇÕES ESPECÍFICAS POR PREFEITURA - MARINGÁ
 # ============================================================================
@@ -5086,7 +5228,8 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'DIVERSOS',
         'LANCADOS',
         'CAT',
-        'BANCO'
+        'BENEFICIOS',
+        'CARTAO BENEFICIOS'
     ]
 
     cartoes_encontrados = {
@@ -6170,15 +6313,24 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     descontos_obrigatorios = dados_prefeitura['descontos_obrigatorios']
     valores_cartoes = extrair_valores_cartoes(texto, cartoes)
     
-    # Calcula margem disponível para cartão (15% do salário)
-    margem = calcular_margem_disponivel(
-        salario_base, 
-        vencimentos_fixos,
-        descontos_obrigatorios,
-        valores_cartoes,
-        percentual_permitido=0.15  
-    )
+    # Calcula margem disponível usando função específica da prefeitura
+    if prefeitura == 'POA':
+        margem = calcular_margem_poa(texto, salario_base, vencimentos_fixos, 
+                                      descontos_obrigatorios, cartoes)
+    else:
+        # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
+        valores_cartoes = extrair_valores_cartoes(texto, cartoes)
+        margem = calcular_margem_disponivel(
+            salario_base, 
+            vencimentos_fixos,
+            descontos_obrigatorios,
+            valores_cartoes,
+            percentual_permitido=0.15  
+        )
     
+    valores_cartoes = extrair_valores_cartoes(texto, cartoes)
+    
+    descontos_fixos_completos = extrair_descontos_fixos(texto)
     descontos_fixos_completos = extrair_descontos_fixos(texto)
     
     return {
@@ -6233,6 +6385,18 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                 # Adiciona oportunidades conhecidas
                 if resultado['cartoes_conhecidos']:
                     for cartao in resultado['cartoes_conhecidos']:
+                        # Extrai margem disponível (compatível com POÁ e outras prefeituras)
+                        if 'emprestimo' in margem:  # POÁ
+                            margem_disp = margem['cartao_consignado']['disponivel']
+                            margem_tot = margem['cartao_consignado']['margem_total']
+                            total_cart = margem['cartao_consignado']['comprometido']
+                            perc_util = (total_cart / margem_tot * 100) if margem_tot > 0 else 0
+                        else:  # Outras prefeituras
+                            margem_disp = margem.get('margem_disponivel', 0)
+                            margem_tot = margem.get('margem_total', 0)
+                            total_cart = margem.get('total_cartoes', 0)
+                            perc_util = margem.get('percentual_utilizado', 0)
+                        
                         resultados.append({
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
@@ -6241,10 +6405,10 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
                             'liquido': info.get('liquido', 'N/A'),
-                            'margem_disponivel': margem['margem_disponivel'],
-                            'margem_total': margem['margem_total'],
-                            'total_cartoes': margem['total_cartoes'],
-                            'percentual_utilizado': margem['percentual_utilizado'],
+                            'margem_disponivel': margem_disp,
+                            'margem_total': margem_tot,
+                            'total_cartoes': total_cart,
+                            'percentual_utilizado': perc_util,
                             'tipo_oportunidade': 'CONHECIDA',
                             'descricao': cartao,
                             'status': '✅ OPORTUNIDADE CONFIRMADA'
@@ -6253,6 +6417,18 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                 # Adiciona nossos contratos
                 if resultado['nossos_contratos']:
                     for cartao in resultado['nossos_contratos']:
+                        # Extrai margem disponível (compatível com POÁ e outras prefeituras)
+                        if 'emprestimo' in margem:  # POÁ
+                            margem_disp = margem['cartao_consignado']['disponivel']
+                            margem_tot = margem['cartao_consignado']['margem_total']
+                            total_cart = margem['cartao_consignado']['comprometido']
+                            perc_util = (total_cart / margem_tot * 100) if margem_tot > 0 else 0
+                        else:  # Outras prefeituras
+                            margem_disp = margem.get('margem_disponivel', 0)
+                            margem_tot = margem.get('margem_total', 0)
+                            total_cart = margem.get('total_cartoes', 0)
+                            perc_util = margem.get('percentual_utilizado', 0)
+                        
                         resultados.append({
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
@@ -6261,10 +6437,10 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
                             'liquido': info.get('liquido', 'N/A'),
-                            'margem_disponivel': margem['margem_disponivel'],
-                            'margem_total': margem['margem_total'],
-                            'total_cartoes': margem['total_cartoes'],
-                            'percentual_utilizado': margem['percentual_utilizado'],
+                            'margem_disponivel': margem_disp,
+                            'margem_total': margem_tot,
+                            'total_cartoes': total_cart,
+                            'percentual_utilizado': perc_util,
                             'tipo_oportunidade': 'NOSSOS CONTRATOS',
                             'descricao': cartao,
                             'status': '🏆 CLIENTE NOSSO'
@@ -6273,6 +6449,18 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                 # Adiciona cartões não comprados (NOVA SEÇÃO)
                 if resultado['cartoes_nao_comprados']:
                     for cartao in resultado['cartoes_nao_comprados']:
+                        # Extrai margem disponível (compatível com POÁ e outras prefeituras)
+                        if 'emprestimo' in margem:  # POÁ
+                            margem_disp = margem['cartao_consignado']['disponivel']
+                            margem_tot = margem['cartao_consignado']['margem_total']
+                            total_cart = margem['cartao_consignado']['comprometido']
+                            perc_util = (total_cart / margem_tot * 100) if margem_tot > 0 else 0
+                        else:  # Outras prefeituras
+                            margem_disp = margem.get('margem_disponivel', 0)
+                            margem_tot = margem.get('margem_total', 0)
+                            total_cart = margem.get('total_cartoes', 0)
+                            perc_util = margem.get('percentual_utilizado', 0)
+                        
                         resultados.append({
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
@@ -6281,10 +6469,10 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
                             'liquido': info.get('liquido', 'N/A'),
-                            'margem_disponivel': margem['margem_disponivel'],
-                            'margem_total': margem['margem_total'],
-                            'total_cartoes': margem['total_cartoes'],
-                            'percentual_utilizado': margem['percentual_utilizado'],
+                            'margem_disponivel': margem_disp,
+                            'margem_total': margem_tot,
+                            'total_cartoes': total_cart,
+                            'percentual_utilizado': perc_util,
                             'tipo_oportunidade': 'NAO COMPRADO',
                             'descricao': cartao,
                             'status': '🚫 NÃO COMPRAMOS'
@@ -6293,6 +6481,18 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                 # Adiciona cartões para estudar
                 if resultado['cartoes_desconhecidos']:
                     for cartao in resultado['cartoes_desconhecidos']:
+                        # Extrai margem disponível (compatível com POÁ e outras prefeituras)
+                        if 'emprestimo' in margem:  # POÁ
+                            margem_disp = margem['cartao_consignado']['disponivel']
+                            margem_tot = margem['cartao_consignado']['margem_total']
+                            total_cart = margem['cartao_consignado']['comprometido']
+                            perc_util = (total_cart / margem_tot * 100) if margem_tot > 0 else 0
+                        else:  # Outras prefeituras
+                            margem_disp = margem.get('margem_disponivel', 0)
+                            margem_tot = margem.get('margem_total', 0)
+                            total_cart = margem.get('total_cartoes', 0)
+                            perc_util = margem.get('percentual_utilizado', 0)
+                        
                         resultados.append({
                             'arquivo': resultado['arquivo'],
                             'nome': info.get('nome', 'N/A'),
@@ -6301,10 +6501,10 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                             'vencimentos': info.get('vencimentos_total', 0),
                             'descontos': info.get('descontos_total', 0),
                             'liquido': info.get('liquido', 'N/A'),
-                            'margem_disponivel': margem['margem_disponivel'],
-                            'margem_total': margem['margem_total'],
-                            'total_cartoes': margem['total_cartoes'],
-                            'percentual_utilizado': margem['percentual_utilizado'],
+                            'margem_disponivel': margem_disp,
+                            'margem_total': margem_tot,
+                            'total_cartoes': total_cart,
+                            'percentual_utilizado': perc_util,
                             'tipo_oportunidade': 'PARA ESTUDAR',
                             'descricao': cartao,
                             'status': '⚠️ VERIFICAR'
@@ -6312,6 +6512,18 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                 
                 # Se não tem oportunidades
                 if not resultado['cartoes_conhecidos'] and not resultado['cartoes_nao_comprados'] and not resultado['cartoes_desconhecidos']:
+                    # Extrai margem disponível (compatível com POÁ e outras prefeituras)
+                    if 'emprestimo' in margem:  # POÁ
+                        margem_disp = margem['cartao_consignado']['disponivel']
+                        margem_tot = margem['cartao_consignado']['margem_total']
+                        total_cart = margem['cartao_consignado']['comprometido']
+                        perc_util = (total_cart / margem_tot * 100) if margem_tot > 0 else 0
+                    else:  # Outras prefeituras
+                        margem_disp = margem.get('margem_disponivel', 0)
+                        margem_tot = margem.get('margem_total', 0)
+                        total_cart = margem.get('total_cartoes', 0)
+                        perc_util = margem.get('percentual_utilizado', 0)
+                    
                     resultados.append({
                         'arquivo': resultado['arquivo'],
                         'nome': info.get('nome', 'N/A'),
@@ -6320,10 +6532,10 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
                         'vencimentos': info.get('vencimentos_total', 0),
                         'descontos': info.get('descontos_total', 0),
                         'liquido': info.get('liquido', 'N/A'),
-                        'margem_disponivel': margem['margem_disponivel'],
-                        'margem_total': margem['margem_total'],
-                        'total_cartoes': margem['total_cartoes'],
-                        'percentual_utilizado': margem['percentual_utilizado'],
+                        'margem_disponivel': margem_disp,
+                        'margem_total': margem_tot,
+                        'total_cartoes': total_cart,
+                        'percentual_utilizado': perc_util,
                         'tipo_oportunidade': 'NENHUMA',
                         'descricao': 'Sem oportunidades identificadas',
                         'status': 'ℹ️ SEM OPORTUNIDADE'
@@ -6336,6 +6548,7 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
     status_text.empty()
     
     return pd.DataFrame(resultados)
+    
 
 # ============================================================================
 # INTERFACE STREAMLIT
@@ -6441,7 +6654,7 @@ def main():
                 margem = resultado.get('margem', {})
                 
                 # Informações do servidor em cards modernos
-                st.markdown("<h3 class='section-header'>👤 Informações do Servidor</h3>", unsafe_allow_html=True)
+                st.markdown("<h3 class='section-header'>Informações do Servidor</h3>", unsafe_allow_html=True)
                 info = resultado['info_financeira']
                 
                 # Corrigir: Garantir que liquido é float antes de formatar
@@ -6467,140 +6680,217 @@ def main():
                 with col4:
                     st.metric("💵 Líquido", f"R$ {liquido_valor:,.2f}")
                 
-                st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
                 # Analise de margem - EM MANUTENÇÃO
-                st.markdown("<h3 class='section-header'>💰 Análise de Margem para Cartão</h3>", unsafe_allow_html=True)
+
+                # st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                st.info("🔧 **Manutenção - Em Breve**\n\nEste módulo está em manutenção e será disponibilizado em breve.", icon="⚙️")
-                
+                # Verifica se é POÁ (implementado) ou outra prefeitura (em manutenção)
+                if prefeitura_selecionada != 'POA':
+                    st.info("🔧 **Manutenção - Em Breve**\n\nEste módulo está em manutenção para esta prefeitura e será disponibilizado em breve.", icon="⚙️")
+                elif margem.get('base_calculo', 0) > 0:
+                    # Cards principais
+                    # col1, col2, col3 = st.columns(3)
+                    
+                    # with col1:
+                    #     st.metric(
+                    #         "Salário Bruto",
+                    #         f"R$ {margem['salario_bruto']:,.2f}",
+                    #         help="Vencimentos totais"
+                    #     )
+                    
+                    # with col2:
+                    #     st.metric(
+                    #         "Base de Cálculo",
+                    #         f"R$ {margem['base_calculo']:,.2f}",
+                    #         help="Salário Bruto - Descontos Compulsórios"
+                    #     )
+                    
+                    
+                    # with col3:
+                    #     liquidez_color = "normal" if margem['aprovado_liquidez'] else "inverse"
+                    #     st.metric(
+                    #         "% Liquidez",
+                    #         f"{margem['percentual_liquidez']:.1f}%",
+                    #         delta=f"{'✅' if margem['aprovado_liquidez'] else '⚠️'} Mín: 30%",
+                    #         delta_color=liquidez_color,
+                    #         help="Percentual do salário que sobra após todos os descontos"
+                    #     )
+
+
+                    emp = margem['emprestimo']
+                    cc  = margem['cartao_consignado']
+
+                    # --- CSS global para os cards ---
+                    st.markdown("""
+                    <style>
+                    .card-row { display:flex; gap:1.5rem; flex-wrap:wrap; }
+                    .card {
+                    flex:1;
+                    min-width:280px;
+                    padding:1.25rem;
+                    border-radius:12px;
+                    border:1px solid rgba(0,0,0,0.06);
+                    background:#fff;
+                    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+                    }
+                    .card h4 { margin:0 0 0.75rem 0; font-size:1.05rem; }
+                    .small { font-size:0.82rem; color:#7b7f86; margin:0; }
+                    .value { font-weight:700; margin:0; font-size:1.5rem; }
+                    .sep { border-top:1px solid #f0f2f5; padding-top:0.9rem; margin-top:0.9rem; }
+                    .tag-blue { color:#1565c0; }
+                    .tag-purple { color:#6a1b9a; }
+                    .tag-orange { color:#f57c00; }
+                    .green { color:#2e7d32; }
+                    .red { color:#d32f2f; }
+                    </style>
+                    """, unsafe_allow_html=True)
+
+                    # --- Layout com st.columns para garantir alinhamento ---
+                    col1, col2 = st.columns([1,1], gap="large")
+
+                    with col1:
+                        st.markdown(f"""
+                        <div class="card">
+                        <h4>💵 Empréstimo ({emp['percentual']*100:.0f}%)</h4>
+
+                        <div style="display:flex; justify-content:space-between; gap:1rem;">
+                            <div>
+                            <p class="small">Margem Total</p>
+                            <p class="value tag-blue">R$ {emp['margem_total']:,.2f}</p>
+                            </div>
+                            <div>
+                            <p class="small">Comprometido</p>
+                            <p class="value tag-orange">R$ {emp['comprometido']:,.2f}</p>
+                            </div>
+                        </div>
+
+                        <div class="sep">
+                            <p class="small">Disponível</p>
+                            <p class="value { 'green' if emp['disponivel']>0 else 'red' }">
+                            R$ {emp['disponivel']:,.2f} {"✅" if emp['disponivel']>0 else "⚠️"}
+                            </p>
+                        </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    with col2:
+                        st.markdown(f"""
+                        <div class="card">
+                        <h4>💳 Cartão Consignado ({cc['percentual']*100:.0f}%)</h4>
+
+                        <div style="display:flex; justify-content:space-between; gap:1rem;">
+                            <div>
+                            <p class="small">Margem Total</p>
+                            <p class="value tag-purple">R$ {cc['margem_total']:,.2f}</p>
+                            </div>
+                            <div>
+                            <p class="small">Comprometido</p>
+                            <p class="value tag-orange">R$ {cc['comprometido']:,.2f}</p>
+                            </div>
+                        </div>
+
+                        <div class="sep">
+                            <p class="small">Disponível</p>
+                            <p class="value { 'green' if cc['disponivel']>0 else 'red' }">
+                            R$ {cc['disponivel']:,.2f} {"✅" if cc['disponivel']>0 else "⚠️"}
+                            </p>
+                        </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    st.markdown("&nbsp;")
+
+                    # Extrai variáveis do resultado armazenado
+                    vencimentos_fixos = resultado.get('vencimentos_fixos', {})
+                    descontos_obrigatorios = resultado.get('descontos_obrigatorios', {})
+
+                    with st.expander("📋 Ver composição detalhada"):
+                        # Cálculo da Base
+                        st.markdown("#### 💰 Cálculo da Base")
+                        st.write(f"**1. Salário Bruto:** R$ {margem['salario_bruto']:,.2f}")
+                        
+                        # Detalhamento dos Vencimentos
+                        if vencimentos_fixos:
+                            st.markdown("**Vencimentos Fixos:**")
+                            if vencimentos_fixos.get('vencimento_base', 0) > 0:
+                                st.write(f"• Vencimento Base: R$ {vencimentos_fixos['vencimento_base']:,.2f}")
+                            if vencimentos_fixos.get('adicional_tempo_servico', 0) > 0:
+                                st.write(f"• Adicional Tempo Serviço: R$ {vencimentos_fixos['adicional_tempo_servico']:,.2f}")
+                            if vencimentos_fixos.get('gratificacao', 0) > 0:
+                                st.write(f"• Gratificação: R$ {vencimentos_fixos['gratificacao']:,.2f}")
+                            if vencimentos_fixos.get('hora_ativ_extra_classe', 0) > 0:
+                                st.write(f"• Hora Atividade Extra: R$ {vencimentos_fixos['hora_ativ_extra_classe']:,.2f}")
+                            if vencimentos_fixos.get('vale_alimentacao', 0) > 0:
+                                st.write(f"• Vale Alimentação: R$ {vencimentos_fixos['vale_alimentacao']:,.2f}")
+                            if vencimentos_fixos.get('sexta_parte', 0) > 0:
+                                st.write(f"• Sexta Parte: R$ {vencimentos_fixos['sexta_parte']:,.2f}")
+                            if vencimentos_fixos.get('outros_fixos'):
+                                for item in vencimentos_fixos['outros_fixos']:
+                                    st.write(f"• {item.get('descricao', 'Outro')}: R$ {item.get('valor', 0):,.2f}")
+                            st.write(f"**Total Vencimentos Fixos: R$ {vencimentos_fixos.get('total', 0):,.2f}**")
+                        
+                        st.write(f"**2. (-) Descontos Compulsórios:** R$ {margem['descontos_compulsorios']:,.2f}")
+                        
+                        # Detalhamento dos Descontos Obrigatórios
+                        if descontos_obrigatorios:
+                            st.markdown("**Descontos Obrigatórios:**")
+                            if descontos_obrigatorios.get('inss', 0) > 0:
+                                st.write(f"• INSS: R$ {descontos_obrigatorios['inss']:,.2f}")
+                            if descontos_obrigatorios.get('irrf', 0) > 0:
+                                st.write(f"• IRRF: R$ {descontos_obrigatorios['irrf']:,.2f}")
+                            if descontos_obrigatorios.get('previdencia', 0) > 0:
+                                st.write(f"• Previdência: R$ {descontos_obrigatorios['previdencia']:,.2f}")
+                        
+                        st.write(f"**3. (=) Base de Cálculo:** R$ {margem['base_calculo']:,.2f}")
+                        
+                        st.markdown("---")
+                        
+                        # Empréstimos
+                        st.markdown("#### 💵 Empréstimos (35%)")
+                        st.write(f"• **Margem Total:** R$ {margem['emprestimo']['margem_total']:,.2f}")
+                        st.write(f"• **Comprometido:** R$ {margem['emprestimo']['comprometido']:,.2f}")
+                        
+                        # Detalhamento dos Empréstimos
+                        if margem['emprestimo']['comprometido'] > 0:
+                            st.markdown("**Empréstimos Identificados:**")
+                            linhas = resultado['texto_completo'].split('\n')
+                            for linha in linhas:
+                                linha_norm = normalizar_texto(linha)
+                                if 'UASPREV' in linha_norm or 'EMPRESTIMO' in linha_norm and not any(x in linha_norm for x in ['TOTAL', 'BASE', 'MARGEM']):
+                                    valor = extrair_valores_desconto(linha)
+                                    if valor > 0:
+                                        st.write(f"  - {linha.strip()[:60]}... → R$ {valor:,.2f}")
+                        
+                        st.write(f"• **Disponível:** R$ {margem['emprestimo']['disponivel']:,.2f}")
+                        
+                        st.markdown("---")
+                        
+                        # Cartões
+                        st.markdown("#### 💳 Cartões Consignados (15%)")
+                        st.write(f"• **Margem Total:** R$ {margem['cartao_consignado']['margem_total']:,.2f}")
+                        st.write(f"• **Comprometido:** R$ {margem['cartao_consignado']['comprometido']:,.2f}")
+                        
+                        # Detalhamento dos Cartões
+                        if margem.get('cartoes_nossos', 0) > 0:
+                            st.markdown("**Nossos Cartões:**")
+                            st.write(f"• Total: R$ {margem['cartoes_nossos']:,.2f}")
+                        
+                        if margem.get('cartoes_terceiros', 0) > 0:
+                            st.markdown("**Cartões de Terceiros:**")
+                            st.write(f"• Total: R$ {margem['cartoes_terceiros']:,.2f}")
+                        
+                        if margem.get('cartoes_nao_comprados', 0) > 0:
+                            st.markdown("**Cartões Não Comprados:**")
+                            st.write(f"• Total: R$ {margem['cartoes_nao_comprados']:,.2f}")
+                        
+                        if margem.get('cartoes_desconhecidos', 0) > 0:
+                            st.markdown("**Cartões Desconhecidos:**")
+                            st.write(f"• Total: R$ {margem['cartoes_desconhecidos']:,.2f}")
+                        
+                        st.write(f"• **Disponível:** R$ {margem['cartao_consignado']['disponivel']:,.2f}")
+
                 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-                 
-                # # CORREÇÃO: Verificar se há margem calculada usando as chaves corretas
-                # if margem.get('base_calculo', 0) > 0:
-                #     col1, col2, col3, col4 = st.columns(4)
-                    
-                #     with col1:
-                #         st.metric(
-                #             "Salário Base",
-                #             f"R$ {margem['salario_base']:,.2f}",
-                #             help="Vencimentos Estatutários"
-                #         )
-                    
-                #     with col2:
-                #         st.metric(
-                #             "Base de Cálculo",
-                #             f"R$ {margem['base_calculo']:,.2f}",
-                #             help="Base + Vencimentos Fixos - Descontos Obrigatórios"
-                #         )
-                    
-                #     with col3:
-                #         st.metric(
-                #             "Margem Total (15%)",
-                #             f"R$ {margem['margem_total']:,.2f}",
-                #             help="10% da base de cálculo para cartão"
-                #         )
-                    
-                #     with col4:
-                #         margem_disp = margem['margem_disponivel']
-                #         delta_color = "normal" if margem_disp >= 0 else "inverse"
-                #         st.metric(
-                #             "Margem Disponível",
-                #             f"R$ {margem_disp:,.2f}",
-                #             delta=f"{margem['percentual_utilizado']:.1f}% utilizado",
-                #             delta_color=delta_color,
-                #             help="Margem disponível após descontar cartões atuais"
-                #         )
-                    
-                #     # Informações complementares
-                #     st.markdown("---")
-                #     col1, col2, col3 = st.columns(3)
-                    
-                #     with col1:
-                #         st.metric(
-                #             "Vencimentos Fixos",
-                #             f"R$ {margem['total_vencimentos_fixos']:,.2f}",
-                #             help="Adicional Tempo + 6ª Parte + outros"
-                #         )
-                    
-                #     with col2:
-                #         st.metric(
-                #             "Descontos Obrigatórios",
-                #             f"R$ {margem['total_descontos_obrigatorios']:,.2f}",
-                #             help="INSS + IRRF + Previdência"
-                #         )
-                    
-                #     with col3:
-                #         st.metric(
-                #             "Comprometido com Cartões",
-                #             f"R$ {margem['total_cartoes']:,.2f}",
-                #             help="Total de descontos com cartões"
-                #         )
-                    
-                #     # Barra de progresso
-                #     st.markdown("---")
-                #     st.markdown("**Utilização da Margem de Cartão:**")
-                #     percentual = min(margem['percentual_utilizado'], 100)
-                    
-                #     if percentual <= 50:
-                #         cor = "🟢"
-                #         status_margem = "Ótima margem disponível"
-                #     elif percentual <= 80:
-                #         cor = "🟡"
-                #         status_margem = "Margem moderada"
-                #     elif percentual <= 100:
-                #         cor = "🟠"
-                #         status_margem = "Margem quase esgotada"
-                #     else:
-                #         cor = "🔴"
-                #         status_margem = "Margem excedida"
-                    
-                #     st.progress(min(percentual / 100, 1.0))
-                #     st.caption(f"{cor} {status_margem} - {percentual:.1f}% da margem comprometida")
-                    
-                #     # Detalhamento da composição da base
-                #     with st.expander("📋 Ver composição da base de cálculo"):
-                #         st.write("**Cálculo da Margem:**")
-                #         st.write(f"1. Salário Base: R$ {margem['salario_base']:,.2f}")
-                        
-                #         vencimentos_fixos = resultado.get('vencimentos_fixos', {})
-                #         if vencimentos_fixos.get('adicional_tempo_servico', 0) > 0:
-                #             st.write(f"2. Adicional Tempo Serviço: + R$ {vencimentos_fixos['adicional_tempo_servico']:,.2f}")
-                #         if vencimentos_fixos.get('sexta_parte', 0) > 0:
-                #             st.write(f"3. 6ª Parte: + R$ {vencimentos_fixos['sexta_parte']:,.2f}")
-                        
-                #         descontos_obrig = resultado.get('descontos_obrigatorios', {})
-                #         if descontos_obrig.get('inss', 0) > 0:
-                #             st.write(f"4. INSS: - R$ {descontos_obrig['inss']:,.2f}")
-                #         if descontos_obrig.get('irrf', 0) > 0:
-                #             st.write(f"5. IRRF: - R$ {descontos_obrig['irrf']:,.2f}")
-                #         if descontos_obrig.get('previdencia', 0) > 0:
-                #             st.write(f"6. Previdência: - R$ {descontos_obrig['previdencia']:,.2f}")
-                        
-                #         st.write("---")
-                #         st.write(f"**Base de Cálculo: R$ {margem['base_calculo']:,.2f}**")
-                #         st.write(f"**Margem para Cartão (10%): R$ {margem['margem_total']:,.2f}**")
-                    
-                #     # Detalhamento dos cartões
-                #     valores_cartoes = resultado.get('valores_cartoes', {})
-                #     if valores_cartoes.get('total', 0) > 0:
-                #         with st.expander("💳 Ver detalhamento dos cartões identificados"):
-                #             if valores_cartoes.get('nossos_contratos'):
-                #                 st.write("**🏆 Nossos Contratos:**")
-                #                 for item in valores_cartoes['nossos_contratos']:
-                #                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                            
-                #             if valores_cartoes.get('conhecidos'):
-                #                 st.write("**✅ Concorrentes:**")
-                #                 for item in valores_cartoes['conhecidos']:
-                #                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                            
-                #             if valores_cartoes.get('desconhecidos'):
-                #                 st.write("**⚠️ Outros:**")
-                #                 for item in valores_cartoes['desconhecidos']:
-                #                     st.write(f"- {item['descricao']}: R$ {item['valor']:,.2f}")
-                # else:
-                #     st.warning("⚠️ Não foi possível calcular a margem disponível. Verifique se o holerite contém informações completas de salário e descontos.")
                 
                 
                 # Nossos Contratos
