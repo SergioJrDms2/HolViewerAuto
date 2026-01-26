@@ -6815,90 +6815,105 @@ def main():
                     vencimentos_fixos = resultado.get('vencimentos_fixos', {})
                     descontos_obrigatorios = resultado.get('descontos_obrigatorios', {})
 
-                    with st.expander("📋 Ver composição detalhada"):
-                        # Cálculo da Base
-                        st.markdown("#### 💰 Cálculo da Base")
-                        st.write(f"**1. Salário Bruto:** R$ {margem['salario_bruto']:,.2f}")
+                    # --- Função auxiliar para criar linhas de extrato (Coloque antes do expander ou no início do arquivo) ---
+                    def item_extrato(label, valor, cor="default", negrito=False, divisor=True):
+                        cor_texto = "#374151"
+                        cor_valor = "#111827"
+                        if cor == "red": cor_valor = "#DC2626"
+                        elif cor == "green": cor_valor = "#059669"
+                        elif cor == "blue": cor_valor = "#4F46E5"
                         
-                        # Detalhamento dos Vencimentos
-                        if vencimentos_fixos:
-                            st.markdown("**Vencimentos Fixos:**")
-                            if vencimentos_fixos.get('vencimento_base', 0) > 0:
-                                st.write(f"• Vencimento Base: R$ {vencimentos_fixos['vencimento_base']:,.2f}")
-                            if vencimentos_fixos.get('adicional_tempo_servico', 0) > 0:
-                                st.write(f"• Adicional Tempo Serviço: R$ {vencimentos_fixos['adicional_tempo_servico']:,.2f}")
-                            if vencimentos_fixos.get('gratificacao', 0) > 0:
-                                st.write(f"• Gratificação: R$ {vencimentos_fixos['gratificacao']:,.2f}")
-                            if vencimentos_fixos.get('hora_ativ_extra_classe', 0) > 0:
-                                st.write(f"• Hora Atividade Extra: R$ {vencimentos_fixos['hora_ativ_extra_classe']:,.2f}")
-                            if vencimentos_fixos.get('vale_alimentacao', 0) > 0:
-                                st.write(f"• Vale Alimentação: R$ {vencimentos_fixos['vale_alimentacao']:,.2f}")
-                            if vencimentos_fixos.get('sexta_parte', 0) > 0:
-                                st.write(f"• Sexta Parte: R$ {vencimentos_fixos['sexta_parte']:,.2f}")
-                            if vencimentos_fixos.get('outros_fixos'):
-                                for item in vencimentos_fixos['outros_fixos']:
-                                    st.write(f"• {item.get('descricao', 'Outro')}: R$ {item.get('valor', 0):,.2f}")
-                            st.write(f"**Total Vencimentos Fixos: R$ {vencimentos_fixos.get('total', 0):,.2f}**")
+                        weight = "700" if negrito else "400"
+                        border = "border-bottom: 1px solid #F3F4F6;" if divisor else ""
                         
-                        st.write(f"**2. (-) Descontos Compulsórios:** R$ {margem['descontos_compulsorios']:,.2f}")
-                        
-                        # Detalhamento dos Descontos Obrigatórios
-                        if descontos_obrigatorios:
-                            st.markdown("**Descontos Obrigatórios:**")
-                            if descontos_obrigatorios.get('inss', 0) > 0:
-                                st.write(f"• INSS: R$ {descontos_obrigatorios['inss']:,.2f}")
-                            if descontos_obrigatorios.get('irrf', 0) > 0:
-                                st.write(f"• IRRF: R$ {descontos_obrigatorios['irrf']:,.2f}")
-                            if descontos_obrigatorios.get('previdencia', 0) > 0:
-                                st.write(f"• Previdência: R$ {descontos_obrigatorios['previdencia']:,.2f}")
-                        
-                        st.write(f"**3. (=) Base de Cálculo:** R$ {margem['base_calculo']:,.2f}")
-                        
-                        st.markdown("---")
-                        
-                        # Empréstimos
-                        st.markdown("#### 💵 Empréstimos (35%)")
-                        st.write(f"• **Margem Total:** R$ {margem['emprestimo']['margem_total']:,.2f}")
-                        st.write(f"• **Comprometido:** R$ {margem['emprestimo']['comprometido']:,.2f}")
-                        
-                        # Detalhamento dos Empréstimos
-                        if margem['emprestimo']['comprometido'] > 0:
-                            st.markdown("**Empréstimos Identificados:**")
-                            linhas = resultado['texto_completo'].split('\n')
-                            for linha in linhas:
-                                linha_norm = normalizar_texto(linha)
-                                if 'UASPREV' in linha_norm or 'EMPRESTIMO' in linha_norm and not any(x in linha_norm for x in ['TOTAL', 'BASE', 'MARGEM']):
-                                    valor = extrair_valores_desconto(linha)
-                                    if valor > 0:
-                                        st.write(f"  - {linha.strip()[:60]}... → R$ {valor:,.2f}")
-                        
-                        st.write(f"• **Disponível:** R$ {margem['emprestimo']['disponivel']:,.2f}")
-                        
-                        st.markdown("---")
-                        
-                        # Cartões
-                        st.markdown("#### 💳 Cartões Consignados (15%)")
-                        st.write(f"• **Margem Total:** R$ {margem['cartao_consignado']['margem_total']:,.2f}")
-                        st.write(f"• **Comprometido:** R$ {margem['cartao_consignado']['comprometido']:,.2f}")
-                        
-                        # Detalhamento dos Cartões
-                        if margem.get('cartoes_nossos', 0) > 0:
-                            st.markdown("**Nossos Cartões:**")
-                            st.write(f"• Total: R$ {margem['cartoes_nossos']:,.2f}")
-                        
-                        if margem.get('cartoes_terceiros', 0) > 0:
-                            st.markdown("**Cartões de Terceiros:**")
-                            st.write(f"• Total: R$ {margem['cartoes_terceiros']:,.2f}")
-                        
-                        if margem.get('cartoes_nao_comprados', 0) > 0:
-                            st.markdown("**Cartões Não Comprados:**")
-                            st.write(f"• Total: R$ {margem['cartoes_nao_comprados']:,.2f}")
-                        
-                        if margem.get('cartoes_desconhecidos', 0) > 0:
-                            st.markdown("**Cartões Desconhecidos:**")
-                            st.write(f"• Total: R$ {margem['cartoes_desconhecidos']:,.2f}")
-                        
-                        st.write(f"• **Disponível:** R$ {margem['cartao_consignado']['disponivel']:,.2f}")
+                        # IMPORTANTE: Tudo em uma linha ou sem indentação para evitar bug do Markdown
+                        return f'<div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; {border} font-size: 0.9rem; font-family: sans-serif;"><span style="color: {cor_texto};">{label}</span><span style="color: {cor_valor}; font-weight: {weight};">R$ {valor:,.2f}</span></div>'
+
+                    # --- Bloco do Expander Melhorado ---
+                    with st.expander("📋 Ver Composição Detalhada", expanded=False):
+    
+                        # CSS para os Cards
+                        st.markdown("""
+                        <style>
+                            .custom-card { background-color: #FFFFFF; padding: 15px; border-radius: 10px; border: 1px solid #E5E7EB; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 10px; }
+                            .card-header { color: #6D28D9; font-size: 1rem; font-weight: 700; margin-bottom: 12px; border-bottom: 2px solid #F3F4F6; padding-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+                            .section-label { font-size: 0.75rem; text-transform: uppercase; color: #9CA3AF; font-weight: 600; margin-top: 10px; margin-bottom: 5px; }
+                        </style>
+                        """, unsafe_allow_html=True)
+
+                        c1, c2, c3 = st.columns(3, gap="medium")
+
+                        # --- COLUNA 1: BASE ---
+                        with c1:
+                            # Montando HTML em uma única string sem indentação quebrada
+                            html_c1 = '<div class="custom-card"><div class="card-header">💰 Base de Cálculo</div>'
+                            html_c1 += item_extrato("Salário Bruto", margem['salario_bruto'], negrito=True)
+                            
+                            if vencimentos_fixos and vencimentos_fixos.get('total', 0) > 0:
+                                html_c1 += '<div class="section-label">Vencimentos Fixos</div>'
+                                campos = {'vencimento_base': 'Vencimento Base', 'adicional_tempo_servico': 'Adic. Tempo', 'gratificacao': 'Gratificação', 'hora_ativ_extra_classe': 'H.A. Extra', 'vale_alimentacao': 'Vale Alim.', 'sexta_parte': 'Sexta Parte'}
+                                for k, nome in campos.items():
+                                    if vencimentos_fixos.get(k, 0) > 0:
+                                        html_c1 += item_extrato(nome, vencimentos_fixos[k])
+                                
+                                if vencimentos_fixos.get('outros_fixos'):
+                                    for item in vencimentos_fixos['outros_fixos']:
+                                        html_c1 += item_extrato(item.get('descricao', 'Outro')[:20], item.get('valor', 0))
+
+                            html_c1 += '<div class="section-label">(-) Descontos</div>'
+                            html_c1 += item_extrato("Total Descontos", margem['descontos_compulsorios'], "red", divisor=False)
+                            
+                            html_c1 += '<div style="margin-top:10px; border-top: 1px dashed #ccc; padding-top:5px;">'
+                            html_c1 += item_extrato("BASE CÁLCULO", margem['base_calculo'], "blue", negrito=True, divisor=False)
+                            html_c1 += '</div></div>'
+                            
+                            st.markdown(html_c1, unsafe_allow_html=True)
+
+                        # --- COLUNA 2: EMPRÉSTIMOS ---
+                        with c2:
+                            html_c2 = '<div class="custom-card"><div class="card-header">💵 Empréstimos (35%)</div>'
+                            html_c2 += item_extrato("Permitido", margem['emprestimo']['margem_total'], "blue", negrito=True)
+                            html_c2 += item_extrato("Comprometido", margem['emprestimo']['comprometido'], "red")
+                            
+                            if margem['emprestimo']['comprometido'] > 0:
+                                html_c2 += '<div class="section-label">Contratos</div>'
+                                linhas = resultado['texto_completo'].split('\n')
+                                for linha in linhas:
+                                    ln = normalizar_texto(linha)
+                                    if ('UASPREV' in ln or 'EMPRESTIMO' in ln) and not any(x in ln for x in ['TOTAL', 'BASE', 'MARGEM']):
+                                        val = extrair_valores_desconto(linha)
+                                        if val > 0:
+                                            html_c2 += item_extrato(linha.strip()[:18]+"...", val)
+                            
+                            bg = "#ECFDF5" if margem['emprestimo']['disponivel'] > 0 else "#FEF2F2"
+                            cor = "green" if margem['emprestimo']['disponivel'] > 0 else "red"
+                            
+                            html_c2 += f'<div style="margin-top:10px; background:{bg}; padding:8px; border-radius:6px;">'
+                            html_c2 += item_extrato("DISPONÍVEL", margem['emprestimo']['disponivel'], cor, negrito=True, divisor=False)
+                            html_c2 += '</div></div>'
+                            
+                            st.markdown(html_c2, unsafe_allow_html=True)
+
+                        # --- COLUNA 3: CARTÕES ---
+                        with c3:
+                            html_c3 = '<div class="custom-card"><div class="card-header">💳 Cartões (15%)</div>'
+                            html_c3 += item_extrato("Permitido", margem['cartao_consignado']['margem_total'], "blue", negrito=True)
+                            html_c3 += item_extrato("Comprometido", margem['cartao_consignado']['comprometido'], "red")
+                            
+                            if margem['cartao_consignado']['comprometido'] > 0:
+                                html_c3 += '<div class="section-label">Detalhamento</div>'
+                                if margem.get('cartoes_nossos', 0) > 0: html_c3 += item_extrato("Nossos", margem['cartoes_nossos'])
+                                if margem.get('cartoes_terceiros', 0) > 0: html_c3 += item_extrato("Terceiros", margem['cartoes_terceiros'])
+                                if margem.get('cartoes_nao_comprados', 0) > 0: html_c3 += item_extrato("Não Comprados", margem['cartoes_nao_comprados'])
+
+                            bg = "#ECFDF5" if margem['cartao_consignado']['disponivel'] > 0 else "#FEF2F2"
+                            cor = "green" if margem['cartao_consignado']['disponivel'] > 0 else "red"
+                            
+                            html_c3 += f'<div style="margin-top:10px; background:{bg}; padding:8px; border-radius:6px;">'
+                            html_c3 += item_extrato("DISPONÍVEL", margem['cartao_consignado']['disponivel'], cor, negrito=True, divisor=False)
+                            html_c3 += '</div></div>'
+                            
+                            st.markdown(html_c3, unsafe_allow_html=True)
 
                 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
                 
