@@ -302,7 +302,7 @@ def extrair_regime_contrato(texto: str) -> str:
         return "COMISSIONADO"
     elif "COMISSAO" in texto_normalizado:
         return "COMISSIONADO"
-    elif "TEMPORARIO" in texto_normalizado or "TEMPORÁRIO" in texto_normalizado:
+    elif "TEMPORARIO" in texto_normalizado or "TEMPORÁRIO" in texto_normalizado or "Contrato Temporario" in texto_normalizado:
         return "TEMPORÁRIO"
     elif "CONTRATADO" in texto_normalizado: 
         return "CONTRATADO"
@@ -419,8 +419,181 @@ PREFEITURAS = {
         'nome': 'Assembleia Legislativa do Estado de Goiás - ALEGO',
         'descricao': 'Assembleia Legislativa - Goiás'
     },
+    'GOVERNO_GOIAS': {
+        'nome': 'Governo do Estado de Goiás',
+        'descricao': 'Estado de Goiás'
+    },
     
 }
+
+# ============================================================================
+# FUNÇÕES ESPECÍFICAS POR PREFEITURA - GOVERNO DE GOIÁS
+# ============================================================================
+
+def extrair_informacoes_governo_goias(texto: str) -> Dict:
+    """
+    Extrai informações específicas do Governo de Goiás
+    Estrutura: Vínculo (matrícula) / Nome / Rendimentos / Descontos / Líquido
+    """
+    info = {
+        'nome': '',
+        'matricula': '',
+        'vencimentos_total': 0.0,
+        'descontos_total': 0.0,
+        'liquido': 0.0
+    }
+    
+    linhas = texto.split('\n')
+    
+    # ============================================================
+    # EXTRAÇÃO DE MATRÍCULA (campo "Vínculo")
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'VINCULO' in linha_norm or 'VÍNCULO' in linha_norm:
+            # Formato: 588578, 625195 (6 dígitos)
+            match = re.search(r'(\d{6})', linha)
+            if match:
+                info['matricula'] = match.group(1)
+            elif i + 1 < len(linhas):
+                match = re.search(r'(\d{6})', linhas[i + 1])
+                if match:
+                    info['matricula'] = match.group(1)
+    
+    # ============================================================
+    # EXTRAÇÃO DE NOME
+    # ============================================================
+    for i, linha in enumerate(linhas[:50]):
+        linha_norm = normalizar_texto(linha)
+        
+        if 'NOME' in linha_norm and 'NOME ORGAO' not in linha_norm:
+            if i + 1 < len(linhas):
+                nome_candidato = linhas[i + 1].strip()
+                # Remove possíveis códigos/datas
+                nome_candidato = re.sub(r'\d{3}\.\d{3}\.\d{3}-\d{2}', '', nome_candidato)
+                nome_candidato = re.sub(r'\d{2}/\d{2}/\d{4}', '', nome_candidato)
+                nome_candidato = nome_candidato.strip()
+                
+                if len(nome_candidato) > 3 and not nome_candidato.isdigit():
+                    info['nome'] = nome_candidato
+                    break
+    
+    # ============================================================
+    # EXTRAÇÃO DE VALORES FINANCEIROS
+    # ============================================================
+    
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto(linha)
+        
+        # Busca linha com "Valor FGTS | Rendimentos | Descontos | Líquido"
+        if 'VALOR FGTS' in linha_norm and 'RENDIMENTOS' in linha_norm and 'DESCONTOS' in linha_norm and 'LIQUIDO' in linha_norm:
+            # Próxima linha tem os valores
+            if i + 1 < len(linhas):
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linhas[i + 1])
+                if len(valores) >= 3:
+                    # valores[0] = Valor FGTS (ignorar)
+                    # valores[1] = Rendimentos
+                    # valores[2] = Descontos
+                    # valores[3] = Líquido (se existir)
+                    info['vencimentos_total'] = float(valores[1].replace('.', '').replace(',', '.'))
+                    info['descontos_total'] = float(valores[2].replace('.', '').replace(',', '.'))
+                    if len(valores) >= 4:
+                        info['liquido'] = float(valores[3].replace('.', '').replace(',', '.'))
+        
+        # Estratégia alternativa: buscar separadamente
+        if not info['vencimentos_total']:
+            if 'RENDIMENTOS' in linha_norm and 'DESCONTOS' not in linha_norm and 'LIQUIDO' not in linha_norm and 'VALOR FGTS' not in linha_norm:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    info['vencimentos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        if not info['descontos_total']:
+            if 'DESCONTOS' in linha_norm and 'RENDIMENTOS' not in linha_norm and 'LIQUIDO' not in linha_norm and 'VALOR FGTS' not in linha_norm:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    info['descontos_total'] = float(valores[-1].replace('.', '').replace(',', '.'))
+        
+        if not info['liquido']:
+            if 'LIQUIDO' in linha_norm and 'VALOR LIMITE' not in linha_norm and 'RENDIMENTOS' not in linha_norm and 'DESCONTOS' not in linha_norm:
+                valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
+                if valores:
+                    info['liquido'] = float(valores[-1].replace('.', '').replace(',', '.'))
+    
+    # Calcular líquido se não foi encontrado
+    if info['liquido'] == 0.0 and info['vencimentos_total'] > 0:
+        info['liquido'] = info['vencimentos_total'] - info['descontos_total']
+    
+    return info
+
+
+def extrair_salario_bruto_governo_goias(texto: str) -> float:
+    """
+    Extrai o valor do salário base do Governo de Goiás
+    Busca por "VENCIMENTO" (código 100061)
+    """
+    linhas = texto.split('\n')
+    
+    # Prioridade 1: Buscar código "100061 VENCIMENTO"
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if re.match(r'^\s*100061\s+VENCIMENTO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    # Prioridade 2: Buscar "VENCIMENTO" em qualquer posição
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if 'VENCIMENTO' in linha_norm and 'DESCONTO' not in linha_norm and 'PROVENTOS' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                return valor
+    
+    return 0.0
+
+
+def extrair_vencimentos_fixos_governo_goias(texto: str) -> Dict:
+    """
+    Extrai vencimentos do Governo de Goiás da coluna de Proventos
+    Estrutura: Código | Descrição | QTDE | VALOR
+    """
+    linhas = texto.split('\n')
+
+    vencimentos_fixos = {
+        'vencimento_base': 0.0,
+        'adicional_tempo_servico': 0.0,
+        'gratificacao': 0.0,
+        'hora_ativ_extra_classe': 0.0,
+        'aula_suplementar': 0.0,
+        'vale_alimentacao': 0.0,
+        'sexta_parte': 0.0,
+        'horas_extras': 0.0,
+        'insalubridade': 0.0,
+        'outros_fixos': [],
+        'total': 0.0
+    }
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # VENCIMENTO (código 100061)
+        if re.match(r'^\s*100061\s+VENCIMENTO', linha_norm):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['vencimento_base'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRATIFICAÇÃO
+        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+    return vencimentos_fixos
 
 
 # ============================================================================
@@ -5229,7 +5402,9 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'LANCADOS',
         'CAT',
         'BENEFICIOS',
-        'CARTAO BENEFICIOS'
+        'CARTAO BENEFICIOS',
+        'VALOR LIMITE',
+        'PIS/PASEP'
     ]
 
     cartoes_encontrados = {
@@ -6094,6 +6269,9 @@ def analisar_holerite_por_prefeitura(texto: str, prefeitura: str) -> Dict:
     elif prefeitura == 'CUIABA':  
         salario_base = extrair_salario_bruto_cuiaba(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_cuiaba(texto)
+    elif prefeitura == 'GOVERNO_GOIAS':
+        salario_base = extrair_salario_bruto_governo_goias(texto)
+        vencimentos_fixos = extrair_vencimentos_fixos_governo_goias(texto)
     elif prefeitura == 'ALEGO':
         salario_base = extrair_salario_bruto_alego(texto)
         vencimentos_fixos = extrair_vencimentos_fixos_alego(texto)
@@ -6228,6 +6406,13 @@ def detectar_prefeitura_holerite(texto: str) -> str:
         'www.redencao.pa.gov.br' in texto_norm):
         return 'REDENCAO'  
 
+    if (('GOVERNO' in texto_norm and 'GOIAS' in texto_norm) or 
+        'SECRETARIA DE ESTADO DA ADMINISTRACAO' in texto_norm or
+        'SUPERINTENDENCIA DE SISTEMAS DE INFORMACAO' in texto_norm or
+        'www.administracao.go.gov.br' in texto_norm or
+        'folhapagamento.sistemas.go.gov.br' in texto_norm):
+        return 'GOVERNO_GOIAS'
+
     if (('CUIABA' in texto_norm or 'CUIABÁ' in texto_norm) and 
         ('PREFEITURA' in texto_norm or 'CUIABA-PREV' in texto_norm or 
          'SECRETARIA MUNICIPAL' in texto_norm)):
@@ -6298,6 +6483,8 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
         info_financeira = extrair_informacoes_redencao(texto)
     elif prefeitura == 'CUIABA':  
         info_financeira = extrair_informacoes_cuiaba(texto)
+    elif prefeitura == 'GOVERNO_GOIAS':
+        info_financeira = extrair_informacoes_governo_goias(texto)
     elif prefeitura == 'ALEGO':
         info_financeira = extrair_informacoes_alego(texto)
     else:
@@ -6697,7 +6884,7 @@ def main():
                 
                 # Verifica se é POÁ (implementado) ou outra prefeitura (em manutenção)
                 if prefeitura_selecionada != 'POA':
-                    st.info("🔧 **Manutenção - Em Breve**\n\nEste módulo está em manutenção para esta prefeitura e será disponibilizado em breve.", icon="⚙️")
+                    st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
                     # Cards principais
                     # col1, col2, col3 = st.columns(3)
