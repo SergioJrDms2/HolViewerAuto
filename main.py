@@ -227,6 +227,10 @@ CARTOES_NAO_COMPRADOS = [
     "PIXCARD"
 ]
 
+CARTOES_DESCONHECIDOS = [
+    "CREDIFIN - CARTAO SAQUE"
+]
+
 # Lista completa para busca
 TODOS_CARTOES = NOSSOS_PRODUTOS + CARTOES_CONHECIDOS
 
@@ -4781,6 +4785,161 @@ def extrair_vencimentos_fixos_poa(texto: str) -> Dict:
 
     return vencimentos_fixos
 
+def calcular_margem_sorocaba(texto: str, salario_base: float, vencimentos_fixos: Dict, 
+                              descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para SOROCABA seguindo as regras da planilha
+    
+    Regras SOROCABA (conforme print):
+    - Base de Cálculo: Soma dos proventos de natureza permanente ou fixas, deduzindo os consignados compulsórios
+    - Descontos/Proventos considerados: VENCIMENTO, ADIC. TEMPO SERVIÇO, IRRF, PREVIDÊNCIA
+    - Obs: Não considerar Vale Alimentação ou Ticket Refeição como base de cálculo
+    
+    Percentuais:
+    - Empréstimo: 35%
+    - Cartão Consignado: 5%
+    - Cartão Benefício: 5%
+    
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos
+    """
+    
+    # Base de cálculo: Vencimentos permanentes - Descontos compulsórios
+    # IMPORTANTE: NÃO incluir Vale Alimentação
+    salario_bruto = salario_base
+    
+    # Adiciona apenas vencimentos permanentes (exclui vale alimentação)
+    vencimentos_permanentes = 0.0
+    if vencimentos_fixos.get('adicional_tempo_servico', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['adicional_tempo_servico']
+    if vencimentos_fixos.get('gratificacao', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['gratificacao']
+    if vencimentos_fixos.get('hora_ativ_extra_classe', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['hora_ativ_extra_classe']
+    if vencimentos_fixos.get('sexta_parte', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['sexta_parte']
+    # NÃO incluir vale_alimentacao
+    
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+    
+    base_calculo = salario_bruto + vencimentos_permanentes - total_descontos_obrigatorios
+    
+    # Percentuais de SOROCABA
+    percentual_emprestimo = 0.35  # 35%
+    percentual_cartao_consig = 0.10  # 10%
+    percentual_cartao_beneficio = 0.05  # 5%
+    
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+    
+    # Separação de cartões por categoria
+    cartoes_nossos = 0.0
+    cartoes_terceiros = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # UASPREV conta como empréstimo
+        if 'UASPREV' in linha_norm or 'Emprestimo STARCARD ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+        
+        # Verifica se é cartão
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED ', 'CART.', 'CARTÃO'])
+        
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                # Classifica o cartão
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK', 'UASPREV']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    cartoes_desconhecidos += valor
+            continue
+        
+        # Empréstimos genéricos
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+    
+    # Total de cartões
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+    
+    # Cálculo das margens
+    margem_emprestimo_total = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+    
+    # MARGEM DE CARTÃO CONSIGNADO (5%)
+    margem_cartao_consig_total = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+    
+    # MARGEM DE CARTÃO BENEFÍCIO (5%)
+    margem_cartao_beneficio_total = base_calculo * percentual_cartao_beneficio
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+    
+    # Líquido recebido pelo cliente
+    salario_bruto_total = salario_bruto + vencimentos_permanentes
+    liquido_recebido = salario_bruto_total - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    
+    # Percentual de liquidez (mínimo 30%)
+    percentual_liquidez = (liquido_recebido / salario_bruto_total * 100) if salario_bruto_total > 0 else 0
+    
+    # Validação de liquidez mínima
+    aprovado_liquidez = percentual_liquidez >= 30.0
+    
+    return {
+        'prefeitura': 'SOROCABA',
+        'salario_bruto': salario_bruto_total,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+        
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+        
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+        
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+        
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
 
 def calcular_margem_poa(texto: str, salario_base: float, vencimentos_fixos: Dict, 
                         descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
@@ -4929,8 +5088,8 @@ def calcular_margem_cotia(texto: str, salario_base: float, vencimentos_fixos: Di
     
     Regras COTIA:
     - Empréstimo: 35%
-    - Cartão Consignado: 10%
-    - Cartão Benefício: 5%
+    - Cartão Consignado: 5%
+    - Cartão Benefício: 0%
     
     Fórmula: Base de Cálculo = Salário Bruto - Descontos Compulsórios
     
@@ -4945,8 +5104,8 @@ def calcular_margem_cotia(texto: str, salario_base: float, vencimentos_fixos: Di
     
     # Percentuais de COTIA
     percentual_emprestimo = 0.35  # 35%
-    percentual_cartao_consig = 0.05  # 10%
-    percentual_cartao_beneficio = 0.0  # 5%
+    percentual_cartao_consig = 0.05  # 5%
+    percentual_cartao_beneficio = 0.0  # 0%
     
     # Extrai empréstimos e cartões do holerite
     linhas = texto.split('\n')
@@ -5016,6 +5175,141 @@ def calcular_margem_cotia(texto: str, salario_base: float, vencimentos_fixos: Di
     
     return {
         'prefeitura': 'COTIA',
+        'salario_bruto': salario_bruto,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+        
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+        
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+        
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+        
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
+def calcular_margem_maringa(texto: str, salario_base: float, vencimentos_fixos: Dict, 
+                            descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para MARINGÁ seguindo as regras específicas
+    
+    Regras MARINGÁ:
+    - Base de cálculo: APENAS Salário Base (não soma vencimentos fixos!)
+    - Descontos compulsórios são subtraídos normalmente
+    - Empréstimo: 35%
+    - Cartão Consignado: 10%
+    - Cartão Benefício: 0%
+    
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos
+    """
+    
+    # Percentuais de MARINGÁ (CONFIRMADOS)
+    percentual_emprestimo = 0.35  # 35%
+    percentual_cartao_consig = 0.10  # 10%
+    percentual_cartao_beneficio = 0.0  # 0%
+    
+    # Base de cálculo MARINGÁ: APENAS Salário Base - Descontos Compulsórios
+    # (NÃO soma vencimentos fixos como POA/Cotia)
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+    base_calculo = salario_base - total_descontos_obrigatorios
+    
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+    
+    # Separação de cartões por categoria
+    cartoes_nossos = 0.0
+    cartoes_terceiros = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        if 'Emprestimo STARCARD ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+        
+        # Verifica se é cartão
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED', 'CART.', 'CARTÃO'])
+        
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                # Classifica o cartão
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK', 'UASPREV']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    cartoes_desconhecidos += valor
+            continue
+        
+        # Empréstimos genéricos
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+    
+    # Total de cartões
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+    
+    # Cálculo das margens
+    margem_emprestimo_total = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+    
+    margem_cartao_consig_total = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+    
+    margem_cartao_beneficio_total = base_calculo * percentual_cartao_beneficio
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+    
+    # Líquido recebido pelo cliente
+    salario_bruto = salario_base  # Em Maringá, salário bruto = salário base
+    liquido_recebido = salario_bruto - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    
+    # Percentual de liquidez (mínimo 30%)
+    percentual_liquidez = (liquido_recebido / salario_bruto * 100) if salario_bruto > 0 else 0
+    
+    # Validação de liquidez mínima
+    aprovado_liquidez = percentual_liquidez >= 30.0
+    
+    return {
+        'prefeitura': 'MARINGA',
         'salario_bruto': salario_bruto,
         'base_calculo': base_calculo,
         'descontos_compulsorios': total_descontos_obrigatorios,
@@ -5154,7 +5448,7 @@ def extrair_salario_bruto_maringa(texto: str) -> float:
     for i, linha in enumerate(linhas):
         linha_norm = normalizar_texto(linha)
         if 'SALARIO NORMAL' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
+            valor = extrair_valores_vencimento_maringa(linha)  # ← USA A FUNÇÃO ESPECÍFICA
             if valor > 0:
                 return valor
     
@@ -5162,7 +5456,7 @@ def extrair_salario_bruto_maringa(texto: str) -> float:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         if 'VENCIMENTOS' in linha_norm or 'REFERENCIA' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
+            valor = extrair_valores_vencimento_maringa(linha)  # ← USA A FUNÇÃO ESPECÍFICA
             if valor > 0:
                 return valor
     
@@ -5192,35 +5486,13 @@ def extrair_vencimentos_fixos_maringa(texto: str) -> Dict:
 
         # SALARIO NORMAL (vencimento base em Maringá)
         if 'SALARIO NORMAL' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
+            valor = extrair_valores_vencimento_maringa(linha)  # ← USA A FUNÇÃO ESPECÍFICA
             if valor > 0:
                 vencimentos_fixos['vencimento_base'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # HORA EXTRA / AULA EXTRA (pode ser escrito de várias formas)
-        if 'HORA ATIV' in linha_norm or ('AULA' in linha_norm and 'EXTRA' in linha_norm):
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['hora_ativ_extra_classe'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
 
-        # GRATIFICAÇÃO
-        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['gratificacao'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
-
-        # ADICIONAL / ADICIONAIS
-        if 'ADICIONAL' in linha_norm and 'DESCONTO' not in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['adicional_tempo_servico'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
 
     return vencimentos_fixos
 
@@ -5337,10 +5609,10 @@ def extrair_vencimentos_fixos_sorocaba(texto: str) -> Dict:
     vencimentos_fixos = {
         'vencimento_base': 0.0,
         'adicional_tempo_servico': 0.0,
+        'adicional_insalubridade': 0.0,
         'gratificacao': 0.0,
         'hora_ativ_extra_classe': 0.0,
         'aula_suplementar': 0.0,
-        'vale_alimentacao': 0.0,
         'sexta_parte': 0.0,
         'outros_fixos': [],
         'total': 0.0
@@ -5357,19 +5629,19 @@ def extrair_vencimentos_fixos_sorocaba(texto: str) -> Dict:
                 vencimentos_fixos['total'] += valor
             continue
 
-        # TICKET / VALE ALIMENTAÇÃO
-        if 'TICKET' in linha_norm or 'VALE ALIMENTACAO' in linha_norm or 'VALE ALIMENTAÇÃO' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['vale_alimentacao'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
-
         # ADICIONAL DE TEMPO
-        if 'ADICIONAL' in linha_norm and 'TEMPO' in linha_norm and 'DESCONTO' not in linha_norm:
+        if 'ADIC.TEMPO SERVICO' in linha_norm and 'TEMPO' in linha_norm and 'DESCONTO' not in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ADICIONAL INSALUBRIDADE
+        if 'ADIC. INSALUBRIDADE' in linha_norm and 'INSALUBRIDADE' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_insalubridade'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
@@ -5549,8 +5821,6 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
         'DIVERSOS',
         'LANCADOS',
         'CAT',
-        'BENEFICIOS',
-        'CARTAO BENEFICIOS',
         'VALOR LIMITE',
         'PIS/PASEP'
     ]
@@ -5715,6 +5985,34 @@ def extrair_valores_desconto(linha: str) -> float:
     if valores:
         valor_str = valores[-1].replace('.', '').replace(',', '.')
         return float(valor_str)
+    return 0.0
+
+def extrair_valores_vencimento_maringa(linha: str) -> float:
+    """
+    Extrai o valor da coluna VENCIMENTOS para holerites de MARINGÁ
+    
+    Estrutura Maringá: CÓD | DESCRIÇÃO | REFERÊNCIA | VENCIMENTOS | DESCONTOS
+    
+    Exemplo: "1 SALARIO NORMAL 180,00 3.647,56"
+    Deve pegar: 3.647,56 (não 180,00)
+    """
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    
+    # Se tem 3 ou mais valores: [referência, vencimento, desconto (opcional)]
+    # Queremos o segundo valor (índice -2 se tem desconto, ou -1 se não tem)
+    if len(valores) >= 3:
+        # Pega o segundo valor (vencimentos)
+        valor_str = valores[-2].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    elif len(valores) == 2:
+        # Se só tem 2 valores, o último é vencimentos
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    elif len(valores) == 1:
+        # Se só tem 1 valor, é esse mesmo
+        valor_str = valores[0].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    
     return 0.0
 
 def extrair_valores_cartoes(texto: str, cartoes_encontrados: Dict) -> Dict:
@@ -6655,6 +6953,12 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'COTIA':
         margem = calcular_margem_cotia(texto, salario_base, vencimentos_fixos, 
                                         descontos_obrigatorios, cartoes)
+    elif prefeitura == 'MARINGA': 
+        margem = calcular_margem_maringa(texto, salario_base, vencimentos_fixos, 
+                                        descontos_obrigatorios, cartoes)
+    elif prefeitura == 'SOROCABA':
+        margem = calcular_margem_sorocaba(texto, salario_base, vencimentos_fixos, 
+                                           descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -7033,7 +7337,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada != 'POA' and prefeitura_selecionada != 'COTIA':
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
@@ -7072,7 +7376,7 @@ def main():
                     with col1:
                         st.markdown(f"""
                         <div class="card">
-                        <h4>💵 Empréstimo ({emp['percentual']*100:.0f}%)</h4>
+                        <h4>💵 Empréstimo</h4>
 
                         <div style="display:flex; justify-content:space-between; gap:1rem;">
                             <div>
@@ -7097,7 +7401,7 @@ def main():
                     with col2:
                         st.markdown(f"""
                         <div class="card">
-                        <h4>💳 Cartão Consignado ({cc['percentual']*100:.0f}%)</h4>
+                        <h4>💳 Cartão Consignado</h4>
 
                         <div style="display:flex; justify-content:space-between; gap:1rem;">
                             <div>
@@ -7160,8 +7464,8 @@ def main():
                             html_c1 += item_extrato("Salário Bruto", margem['salario_bruto'], negrito=True)
                             
                             if vencimentos_fixos and vencimentos_fixos.get('total', 0) > 0:
-                                html_c1 += '<div class="section-label">Vencimentos Fixos</div>'
-                                campos = {'vencimento_base': 'Vencimento Base', 'adicional_tempo_servico': 'Adic. Tempo', 'adicional_risco_vida': 'Adic. Risco Vida', 'gratificacao': 'Gratificação', 'hora_ativ_extra_classe': 'H.A. Extra', 'vale_alimentacao': 'Vale Alim.', 'sexta_parte': 'Sexta Parte'}
+                                html_c1 += '<div class="section-label">(+) Vencimentos Fixos</div>'
+                                campos = {'vencimento_base': 'Vencimento Base', 'adicional_tempo_servico': 'Adic. Tempo', 'adicional_risco_vida': 'Adic. Risco Vida', 'gratificacao': 'Gratificação', 'adicional_insalubridade': 'Adic. Insalubridade', 'hora_ativ_extra_classe': 'H.A. Extra', 'vale_alimentacao': 'Vale Alim.', 'sexta_parte': 'Sexta Parte'}
                                 for k, nome in campos.items():
                                     if vencimentos_fixos.get(k, 0) > 0:
                                         html_c1 += item_extrato(nome, vencimentos_fixos[k])
@@ -7181,7 +7485,7 @@ def main():
 
                         # --- COLUNA 2: EMPRÉSTIMOS ---
                         with c2:
-                            html_c2 = '<div class="custom-card"><div class="card-header">💵 Empréstimos (35%)</div>'
+                            html_c2 = '<div class="custom-card"><div class="card-header">💵 Empréstimos</div>'
                             html_c2 += item_extrato("Permitido", margem['emprestimo']['margem_total'], "blue", negrito=True)
                             html_c2 += item_extrato("Comprometido", margem['emprestimo']['comprometido'], "red")
                             
@@ -7190,7 +7494,7 @@ def main():
                                 linhas = resultado['texto_completo'].split('\n')
                                 for linha in linhas:
                                     ln = normalizar_texto(linha)
-                                    if ('EMPRESTIMO' in ln) and not any(x in ln for x in ['TOTAL', 'BASE', 'MARGEM']):
+                                    if ('EMPRESTIMO' in ln or 'CONSIGNADO' in ln) and not any(x in ln for x in ['TOTAL', 'BASE', 'MARGEM']):
                                         val = extrair_valores_desconto(linha)
                                         if val > 0:
                                             html_c2 += item_extrato(linha.strip()[:18]+"...", val)
@@ -7206,7 +7510,7 @@ def main():
 
                         # --- COLUNA 3: CARTÕES ---
                         with c3:
-                            html_c3 = '<div class="custom-card"><div class="card-header">💳 Cartões (15%)</div>'
+                            html_c3 = '<div class="custom-card"><div class="card-header">💳 Cartões</div>'
                             html_c3 += item_extrato("Permitido", margem['cartao_consignado']['margem_total'], "blue", negrito=True)
                             html_c3 += item_extrato("Comprometido", margem['cartao_consignado']['comprometido'], "red")
                             
@@ -7215,6 +7519,7 @@ def main():
                                 if margem.get('cartoes_nossos', 0) > 0: html_c3 += item_extrato("Nossos", margem['cartoes_nossos'])
                                 if margem.get('cartoes_terceiros', 0) > 0: html_c3 += item_extrato("Terceiros", margem['cartoes_terceiros'])
                                 if margem.get('cartoes_nao_comprados', 0) > 0: html_c3 += item_extrato("Não Comprados", margem['cartoes_nao_comprados'])
+                                if margem.get('cartoes_desconhecidos', 0) > 0: html_c3 += item_extrato("Desconhecidos", margem['cartoes_desconhecidos'], "orange")
 
                             bg = "#ECFDF5" if margem['cartao_consignado']['disponivel'] > 0 else "#FEF2F2"
                             cor = "green" if margem['cartao_consignado']['disponivel'] > 0 else "red"
