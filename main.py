@@ -5828,7 +5828,7 @@ def identificar_cartoes_credito(texto: str) -> Dict[str, List[str]]:
     cartoes_encontrados = {
         'nossos_contratos': [],
         'conhecidos': [],
-        'nao_comprados': [],  # NOVA CATEGORIA
+        'nao_comprados': [],  
         'desconhecidos': []
     }
     
@@ -7201,15 +7201,38 @@ def main():
     with st.sidebar:
         st.image("https://www.starbank.tec.br/wp-content/uploads/2024/04/cropped-1.png", width=500)
         st.markdown("---")
-        
-        # SELEÇÃO DE PREFEITURA
+
+        # Lista de prefeituras com cálculo de margem implementado
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA']
+
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
             "Selecione a prefeitura",
             options=list(PREFEITURAS.keys()),
             format_func=lambda x: PREFEITURAS[x]['nome'],
-            help="Escolha a prefeitura do holerite para análise correta"
+            help="Escolha a prefeitura do holerite para análise correta",
+            label_visibility="collapsed"
         )
+
+        # Badge de prefeitura com margem
+        if prefeitura_selecionada in PREFEITURAS_COM_MARGEM:
+            st.markdown("""
+                <div style='
+                    display: inline-block;
+                    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+                    color: white;
+                    padding: 0.35rem 0.75rem;
+                    border-radius: 1rem;
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+                    margin-top: -0.5rem;
+                    margin-bottom: 0.5rem;
+                    letter-spacing: 0.5px;
+                '>
+                    🏷️ Cálculo de Margem Disponível!
+                </div>
+            """, unsafe_allow_html=True)
         
         prefeitura_info = PREFEITURAS[prefeitura_selecionada]
         st.info(f"📍 {prefeitura_info['descricao']}", icon="ℹ️")
