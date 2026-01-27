@@ -7235,9 +7235,8 @@ def main():
             """, unsafe_allow_html=True)
         
         prefeitura_info = PREFEITURAS[prefeitura_selecionada]
-        st.info(f"📍 {prefeitura_info['descricao']}", icon="ℹ️")
         
-        st.markdown("---")
+        st.markdown("&nbsp;")
 
         modo = st.radio(
             "Selecione o Modo",
