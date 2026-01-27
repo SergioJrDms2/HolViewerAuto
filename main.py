@@ -212,8 +212,7 @@ CARTOES_CONHECIDOS = [
     "IND",
     "PANAMERICANO",
     "MASTER",
-    "CREDCESTA SAQUE",
-    "CARTAO UASPREV"
+    "CREDCESTA SAQUE"
 ]
 
 CARTOES_NAO_COMPRADOS = [
@@ -4947,7 +4946,7 @@ def calcular_margem_cotia(texto: str, salario_base: float, vencimentos_fixos: Di
     # Percentuais de COTIA
     percentual_emprestimo = 0.35  # 35%
     percentual_cartao_consig = 0.05  # 10%
-    percentual_cartao_beneficio = 0.05  # 5%
+    percentual_cartao_beneficio = 0.0  # 5%
     
     # Extrai empréstimos e cartões do holerite
     linhas = texto.split('\n')
@@ -5432,7 +5431,7 @@ def extrair_informacoes_cotia(texto: str) -> Dict:
     if info['liquido'] == 0.0:
         for linha in linhas:
             linha_norm = normalizar_texto(linha)
-            if 'LIQUIDO' in linha_norm or 'LÍQUIDO' in linha_norm:
+            if 'LIQUIDO' in linha_norm or 'LÍQUIDO' in linha_norm or 'SALARIO HORA' in linha_norm:
                 valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', linha)
                 if valores:
                     valor_str = valores[-1].replace('.', '').replace(',', '.')
@@ -5463,7 +5462,7 @@ def extrair_salario_bruto_cotia(texto: str) -> float:
     # Prioridade 2: Buscar primeiro vencimento significativo
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
-        if 'VENCIMENTOS' in linha_norm:
+        if 'VENCIMENTOS' in linha_norm or 'SALARIO HORA' in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 return valor
@@ -5485,6 +5484,7 @@ def extrair_vencimentos_fixos_cotia(texto: str) -> Dict:
         'aula_suplementar': 0.0,
         'vale_alimentacao': 0.0,
         'sexta_parte': 0.0,
+        'adicional_risco_vida': 0.0,
         'outros_fixos': [],
         'total': 0.0
     }
@@ -5516,6 +5516,13 @@ def extrair_vencimentos_fixos_cotia(texto: str) -> Dict:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['hora_ativ_extra_classe'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+        
+        if any(p in linha_norm for p in ['ADICIONAL POR RISCO DE VIDA', 'RISCO DE VIDA']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_risco_vida'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
@@ -7154,7 +7161,7 @@ def main():
                             
                             if vencimentos_fixos and vencimentos_fixos.get('total', 0) > 0:
                                 html_c1 += '<div class="section-label">Vencimentos Fixos</div>'
-                                campos = {'vencimento_base': 'Vencimento Base', 'adicional_tempo_servico': 'Adic. Tempo', 'gratificacao': 'Gratificação', 'hora_ativ_extra_classe': 'H.A. Extra', 'vale_alimentacao': 'Vale Alim.', 'sexta_parte': 'Sexta Parte'}
+                                campos = {'vencimento_base': 'Vencimento Base', 'adicional_tempo_servico': 'Adic. Tempo', 'adicional_risco_vida': 'Adic. Risco Vida', 'gratificacao': 'Gratificação', 'hora_ativ_extra_classe': 'H.A. Extra', 'vale_alimentacao': 'Vale Alim.', 'sexta_parte': 'Sexta Parte'}
                                 for k, nome in campos.items():
                                     if vencimentos_fixos.get(k, 0) > 0:
                                         html_c1 += item_extrato(nome, vencimentos_fixos[k])
