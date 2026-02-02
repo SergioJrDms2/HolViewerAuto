@@ -202,7 +202,6 @@ CARTOES_CONHECIDOS = [
     "DAYCOVAL",
     "BMG",
     "PAN",
-    "VEMCARD",
     "MEUCASHCARD",
     "PINE",
     "BRADESCO",
@@ -224,7 +223,8 @@ CARTOES_NAO_COMPRADOS = [
     "MAXIMA",
     "FY DIGITAL",
     "CLICKBANK",
-    "PIXCARD"
+    "PIXCARD",
+    "VEMCARD"
 ]
 
 CARTOES_DESCONHECIDOS = [
