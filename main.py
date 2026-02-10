@@ -1386,7 +1386,9 @@ def extrair_salario_bruto_vinhedo(texto: str) -> float:
 def extrair_vencimentos_fixos_vinhedo(texto: str) -> Dict:
     """
     Extrai vencimentos de VINHEDO da coluna de VENCIMENTOS
-    Estrutura: Código | Descrição | Referência | Valor
+    
+    Para Vinhedo, a base de cálculo é a TOTALIDADE dos vencimentos, proventos e pensões
+    conforme especificação: "70% da totalidade dos vencimentos, proventos e pensões"
     """
     linhas = texto.split('\n')
 
@@ -1408,12 +1410,8 @@ def extrair_vencimentos_fixos_vinhedo(texto: str) -> Dict:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
 
-        # SALARIO BASE (código 30)
+        # SALARIO BASE (código 30) - já incluído no salario_base, não duplicar
         if re.match(r'^\s*30\s+SALARIO BASE', linha_norm):
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['vencimento_base'] = valor
-                vencimentos_fixos['total'] += valor
             continue
 
         # AUX TRANSPORTE (código 2495)
@@ -1429,6 +1427,38 @@ def extrair_vencimentos_fixos_vinhedo(texto: str) -> Dict:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+        
+        # Adicional de Tempo de Serviço
+        if 'ADICIONAL TEMPO' in linha_norm or 'ADIC' in linha_norm and 'TEMPO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+        
+        # Sexta Parte
+        if 'SEXTA PARTE' in linha_norm or '1/6' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['sexta_parte'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Horas Extras
+        if 'HORA EXTRA' in linha_norm or 'H.E' in linha_norm or 'H. EXTRA' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['horas_extras'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # Insalubridade
+        if 'INSALUB' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['insalubridade'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
@@ -5194,6 +5224,180 @@ def calcular_margem_poa(texto: str, salario_base: float, vencimentos_fixos: Dict
         # Status geral
         'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
         'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
+def calcular_margem_vinhedo(texto: str, salario_base: float, vencimentos_fixos: Dict, 
+                            descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para VINHEDO seguindo as regras da especificação
+    
+    Regras VINHEDO:
+    - Base de Cálculo: Totalidade dos vencimentos, proventos e pensões - Descontos compulsórios
+    - Margem Total: 70% da base
+    - Margem para Consignações Facultativas: 30% da base (empréstimos + cartões)
+    
+    Descontos Compulsórios:
+    a) Previdência Social
+    b) Pensões alimentícias
+    c) IRPF
+    d) Reposições e indenizações ao erário
+    e) Imposto Sindical, Contribuições e Mensalidades Sindicais
+    f) Vale Transporte
+    g) Outros mandados judiciais ou por força de lei
+    
+    Percentuais (dentro do limite de 30% facultativo):
+    - Empréstimo: 35% (da base, mas limitado a 30% somado com cartões)
+    - Cartão Consignado: 15% (da base, mas limitado a 30% somado com empréstimo)
+    - Cartão Benefício: 15% (da base, mas limitado a 30% somado com empréstimo)
+    
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos
+    """
+    
+    # Base de cálculo: TOTALIDADE dos vencimentos - Descontos obrigatórios
+    salario_bruto = salario_base + vencimentos_fixos.get('total', 0.0)
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+    
+    base_calculo = salario_bruto - total_descontos_obrigatorios
+    
+    # Percentuais de VINHEDO (seguindo estrutura de Poá)
+    # Nota: Estes percentuais são da base, mas o total não pode ultrapassar 30%
+    percentual_emprestimo = 0.35  # 35%
+    percentual_cartao_consig = 0.15  # 15%
+    percentual_cartao_beneficio = 0.15  # 15%
+    
+    # Limite de consignações facultativas conforme especificação
+    limite_consignacoes_facultativas = 0.30  # 30% da base
+    margem_facultativa_total = base_calculo * limite_consignacoes_facultativas
+    
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+    
+    # Separação de cartões por categoria (para detalhamento)
+    cartoes_nossos = 0.0
+    cartoes_terceiros = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # Verifica se é cartão (qualquer tipo)
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED ', 'CART.'])
+        
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                # Classifica o cartão
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    # Cartão desconhecido (para estudar)
+                    cartoes_desconhecidos += valor
+            continue
+        
+        # Empréstimos genéricos (que não são cartões)
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+    
+    # Total de cartões (TODOS contam: nossos + terceiros + não comprados + desconhecidos)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+    
+    # Total de consignações facultativas comprometidas
+    total_consignacoes_facultativas_comprometidas = emprestimos_atuais + total_cartoes
+    
+    # Cálculo das margens
+    margem_emprestimo_total = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+    
+    # MARGEM DE CARTÃO CONSIGNADO (15%)
+    margem_cartao_consig_total = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+    
+    # MARGEM DE CARTÃO BENEFÍCIO (15%)
+    margem_cartao_beneficio_total = base_calculo * percentual_cartao_beneficio
+    # Cartão benefício compartilha o mesmo comprometimento (todos os cartões)
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+    
+    # AJUSTE: Verificar se o total de consignações facultativas ultrapassa 30%
+    # Se ultrapassar, ajustar as margens disponíveis proporcionalmente
+    if total_consignacoes_facultativas_comprometidas > margem_facultativa_total:
+        # Já ultrapassou o limite de 30%, zerar margens disponíveis
+        margem_emprestimo_disponivel = 0
+        margem_cartao_consig_disponivel = 0
+        margem_cartao_beneficio_disponivel = 0
+    else:
+        # Calcular quanto ainda pode ser usado dentro do limite de 30%
+        saldo_facultativo = margem_facultativa_total - total_consignacoes_facultativas_comprometidas
+        
+        # Limitar as margens ao saldo facultativo disponível
+        margem_emprestimo_disponivel = min(margem_emprestimo_disponivel, saldo_facultativo)
+        margem_cartao_consig_disponivel = min(margem_cartao_consig_disponivel, saldo_facultativo)
+        margem_cartao_beneficio_disponivel = min(margem_cartao_beneficio_disponivel, saldo_facultativo)
+    
+    # Líquido recebido pelo cliente
+    liquido_recebido = salario_bruto - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    
+    # Percentual de liquidez (mínimo 30% - considerando margem total de 70%)
+    # Se 70% pode ser consignado, sobra 30% de liquidez mínima
+    percentual_liquidez = (liquido_recebido / salario_bruto * 100) if salario_bruto > 0 else 0
+    
+    # Validação de liquidez mínima
+    aprovado_liquidez = percentual_liquidez >= 30.0
+    
+    return {
+        'prefeitura': 'VINHEDO',
+        'salario_bruto': salario_bruto,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+        
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+        
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+        
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+        
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0,
+        
+        # Informação adicional específica de Vinhedo
+        'limite_consignacoes_facultativas': margem_facultativa_total,
+        'total_consignacoes_facultativas': total_consignacoes_facultativas_comprometidas
     }
 
 def calcular_margem_sao_jose_rio_preto(texto: str, salario_base: float, vencimentos_fixos: Dict, 
@@ -9241,6 +9445,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'SAO_JOSE_RIO_PRETO':
         margem = calcular_margem_sao_jose_rio_preto(texto, salario_base, vencimentos_fixos,
                                                      descontos_obrigatorios, cartoes)
+    elif prefeitura == 'VINHEDO':
+        margem = calcular_margem_vinhedo(texto, salario_base, vencimentos_fixos,
+                                         descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -9485,7 +9692,7 @@ def main():
         st.markdown("---")
 
         # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO']
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO', 'VINHEDO']
 
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
@@ -9641,7 +9848,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO']:
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO', 'VINHEDO']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
