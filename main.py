@@ -3923,44 +3923,48 @@ def extrair_informacoes_bauru(texto: str) -> Dict:
 
 def extrair_salario_bruto_bauru(texto: str) -> float:
     """
-    Extrai o valor do salário base do contracheque de BAURU
-    Busca por "SALARIO" (código 1)
+    Extrai o valor do salário base do contracheque de BAURU.
+    Usa extrair_valores_bauru (último valor) pois o campo Qtde.
+    (ex: 30,000) confunde o extrator genérico.
     """
     linhas = texto.split('\n')
-    
-    # Prioridade 1: Buscar "SALARIO" nas primeiras colunas
+
+    # Prioridade 1: linha com código + SALARIO (ex: "1 SALARIO 30,000 1.755,09")
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         if re.match(r'^\s*\d+\s+SALARIO\s+', linha_norm):
-            valor = extrair_valores_vencimento(linha)
+            valor = extrair_valores_bauru(linha)
             if valor > 0:
                 return valor
-    
-    # Prioridade 2: Buscar qualquer linha com "SALARIO"
+
+    # Prioridade 2: qualquer linha com SALARIO sem ser desconto
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
         if 'SALARIO' in linha_norm and 'DESCONTO' not in linha_norm:
-            valor = extrair_valores_vencimento(linha)
+            valor = extrair_valores_bauru(linha)
             if valor > 0:
                 return valor
-    
+
     return 0.0
 
 def extrair_vencimentos_fixos_bauru(texto: str) -> Dict:
     """
-    Extrai vencimentos de BAURU da coluna de VENCIMENTOS
-    Estrutura: Código | Descrição | Qtde | Vencimentos | Descontos
+    Extrai vencimentos de BAURU da coluna de VENCIMENTOS.
+    Usa extrair_valores_bauru (último valor) pois o campo Qtde.
+    (ex: 30,000) confunde o extrator genérico.
+
+    Proventos permanentes (base de cálculo):
+    SALÁRIO BASE, BIENIO, SEXTA PARTE, VANT PESS VL,
+    VANT PE L25/17, ATIV TRAB PEDAG
     """
     linhas = texto.split('\n')
 
     vencimentos_fixos = {
         'vencimento_base': 0.0,
         'adicional_tempo_servico': 0.0,
-        'gratificacao': 0.0,
-        'hora_ativ_extra_classe': 0.0,
-        'aula_suplementar': 0.0,
-        'vale_alimentacao': 0.0,
         'sexta_parte': 0.0,
+        'vantagens_pessoais': 0.0,
+        'ativ_trab_pedag': 0.0,
         'horas_extras': 0.0,
         'insalubridade': 0.0,
         'outros_fixos': [],
@@ -3970,39 +3974,60 @@ def extrair_vencimentos_fixos_bauru(texto: str) -> Dict:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
 
-        # SALÁRIO (código 1)
+        # SALÁRIO BASE (código 1)
         if re.match(r'^\s*\d+\s+SALARIO\s+', linha_norm):
-            valor = extrair_valores_vencimento(linha)
+            valor = extrair_valores_bauru(linha)
             if valor > 0:
                 vencimentos_fixos['vencimento_base'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # BIENIO
+        # BIENIO / TRIÊNIO / QUINQUÊNIO
         if 'BIENIO' in linha_norm or 'TRIENIO' in linha_norm or 'QUINQUENIO' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
+            valor = extrair_valores_bauru(linha)
             if valor > 0:
-                vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['adicional_tempo_servico'] += valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # GRATIFICAÇÃO / VANTAGEM
-        if 'VANTAG' in linha_norm or 'GRAT' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
+        # SEXTA PARTE
+        if 'SEXTA PARTE' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_bauru(linha)
             if valor > 0:
-                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # ABONO
+        # VANT PESS VL / VANT PE L25/17 / VANTAG PESSOAL
+        if ('VANT PESS' in linha_norm or 'VANT PE' in linha_norm or
+                'VANTAG PESSOAL' in linha_norm or 'VANTAG PESS' in linha_norm) and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_bauru(linha)
+            if valor > 0:
+                vencimentos_fixos['vantagens_pessoais'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # ATIV TRAB PEDAG
+        if ('ATIV TRAB' in linha_norm or 'ATIVIDADE TRAB' in linha_norm or
+                'ATIV. TRAB' in linha_norm) and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_bauru(linha)
+            if valor > 0:
+                vencimentos_fixos['ativ_trab_pedag'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # INSALUBRIDADE (captura para referência, fora da spec de Bauru)
+        if 'INSALUBRIDADE' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_bauru(linha)
+            if valor > 0:
+                vencimentos_fixos['insalubridade'] = valor
+            continue
+
+        # ABONO (NÃO é provento permanente — NÃO soma no total)
         if 'ABONO' in linha_norm and 'DESCONTO' not in linha_norm:
-            valor = extrair_valores_vencimento(linha)
+            valor = extrair_valores_bauru(linha)
             if valor > 0:
-                vencimentos_fixos['outros_fixos'].append({
-                    'descricao': 'ABONO',
-                    'valor': valor
-                })
-                vencimentos_fixos['total'] += valor
+                vencimentos_fixos['outros_fixos'].append({'descricao': 'ABONO', 'valor': valor})
             continue
 
     return vencimentos_fixos
@@ -4358,6 +4383,14 @@ def extrair_vencimentos_fixos_hortolandia(texto: str) -> Dict:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['adicional_tempo_servico'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # SEXTA PARTE
+        if 'SEXTA PARTE' in linha_norm and 'DESCONTO' not in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
@@ -5076,6 +5109,307 @@ def calcular_margem_poa(texto: str, salario_base: float, vencimentos_fixos: Dict
         'liquidez_minima': 30.0,
         'aprovado_liquidez': aprovado_liquidez,
         
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
+def calcular_margem_hortolandia(texto: str, salario_base: float, vencimentos_fixos: Dict,
+                                  descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para HORTOLÂNDIA seguindo as regras da prefeitura.
+
+    Regras HORTOLÂNDIA:
+    - Base de Cálculo: Soma dos proventos de natureza permanente ou fixas,
+      deduzindo os consignados compulsórios (Art. 3°)
+    - Proventos considerados: SALARIO, ADICIONAL POR TEMPO, SEXTA PARTE,
+      GRAT. FIXA, INSALUBRIDADE
+    - Descontos compulsórios: Previdência, IRRF, Pensão alimentícia judicial,
+      Descontos por decisão judicial, Obrigações decorrentes de decisão judicial
+      ou administrativa, Reposição e indenização ao erário
+
+    Percentuais:
+    - Empréstimo:          35%
+    - Cartão Consignado:   15%
+    - Cartão Benefício:    15%
+
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos.
+    """
+
+    # Base de cálculo: somente proventos permanentes/fixos conforme especificação.
+    # NÃO inclui horas_extras (não é provento de natureza permanente).
+    proventos_permanentes = (
+        salario_base
+        + vencimentos_fixos.get('adicional_tempo_servico', 0.0)
+        + vencimentos_fixos.get('sexta_parte', 0.0)
+        + vencimentos_fixos.get('gratificacao', 0.0)
+        + vencimentos_fixos.get('insalubridade', 0.0)
+    )
+
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+
+    base_calculo = proventos_permanentes - total_descontos_obrigatorios
+
+    # Percentuais de HORTOLÂNDIA
+    percentual_emprestimo       = 0.35  # 35%
+    percentual_cartao_consig    = 0.15  # 15%
+    percentual_cartao_beneficio = 0.15  # 15%
+
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais   = 0.0
+    cartoes_nossos       = 0.0
+    cartoes_terceiros    = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # UASPREV / ANTICIPAY conta como empréstimo
+        if 'UASPREV' in linha_norm or 'EMPRESTIMO STARCARD ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+
+        # Verifica se é cartão (qualquer tipo)
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED', 'CART.'])
+
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    cartoes_desconhecidos += valor
+            continue
+
+        # Empréstimos genéricos (que não são cartões)
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+
+    # Total de cartões (TODOS contam)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+
+    # Cálculo das margens
+    margem_emprestimo_total       = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel  = margem_emprestimo_total - emprestimos_atuais
+
+    margem_cartao_consig_total       = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel  = margem_cartao_consig_total - total_cartoes
+
+    margem_cartao_beneficio_total       = base_calculo * percentual_cartao_beneficio
+    margem_cartao_beneficio_disponivel  = margem_cartao_beneficio_total - total_cartoes
+
+    # Líquido recebido pelo servidor
+    liquido_recebido = proventos_permanentes - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+
+    percentual_liquidez = (liquido_recebido / proventos_permanentes * 100) if proventos_permanentes > 0 else 0
+    aprovado_liquidez   = percentual_liquidez >= 30.0
+
+    return {
+        'prefeitura': 'HORTOLANDIA',
+        'salario_bruto': proventos_permanentes,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
+def calcular_margem_bauru(texto: str, salario_base: float, vencimentos_fixos: Dict,
+                           descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para BAURU seguindo as regras da prefeitura.
+
+    Proventos permanentes (base de cálculo):
+    SALÁRIO BASE, BIENIO, SEXTA PARTE, VANT PESS VL,
+    VANT PE L25/17, ATIV TRAB PEDAG
+
+    Descontos compulsórios:
+    IRRF, PREVIDÊNCIA, PLANO DE SAUDE
+
+    Percentuais:
+    - Empréstimo:          35%
+    - Cartão Consignado:   15%
+    - Cartão Benefício:    15%
+
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos.
+    """
+
+    # Proventos permanentes conforme especificação de Bauru
+    proventos_permanentes = (
+        salario_base
+        + vencimentos_fixos.get('adicional_tempo_servico', 0.0)  # BIENIO
+        + vencimentos_fixos.get('sexta_parte', 0.0)
+        + vencimentos_fixos.get('vantagens_pessoais', 0.0)       # VANT PESS VL + VANT PE L25/17
+        + vencimentos_fixos.get('ativ_trab_pedag', 0.0)
+    )
+
+    # Descontos compulsórios: IRRF + Previdência (globais) + Plano de Saúde (específico Bauru)
+    plano_saude = 0.0
+    linhas = texto.split('\n')
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        if any(kw in linha_norm for kw in ['PL SAUDE', 'PLANO SAUDE', 'PLANO DE SAUDE', 'HAPVID']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                plano_saude += valor
+
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0) + plano_saude
+
+    base_calculo = proventos_permanentes - total_descontos_obrigatorios
+
+    # Percentuais de BAURU
+    percentual_emprestimo       = 0.35  # 35%
+    percentual_cartao_consig    = 0.15  # 15%
+    percentual_cartao_beneficio = 0.15  # 15%
+
+    # Extrai empréstimos e cartões do holerite
+    emprestimos_atuais    = 0.0
+    cartoes_nossos        = 0.0
+    cartoes_terceiros     = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # UASPREV / ANTICIPAY conta como empréstimo
+        if 'UASPREV' in linha_norm or 'EMPRESTIMO STARCARD ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+
+        # Ignora linhas de Plano de Saúde já contabilizadas como desconto compulsório
+        if any(kw in linha_norm for kw in ['PL SAUDE', 'PLANO SAUDE', 'PLANO DE SAUDE', 'HAPVID']):
+            continue
+
+        # Verifica se é cartão
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED', 'CART.'])
+
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    cartoes_desconhecidos += valor
+            continue
+
+        # Empréstimos genéricos (que não são cartões)
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+
+    # Total de cartões (TODOS contam)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+
+    # Cálculo das margens
+    margem_emprestimo_total      = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+
+    margem_cartao_consig_total      = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+
+    margem_cartao_beneficio_total      = base_calculo * percentual_cartao_beneficio
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+
+    # Líquido recebido pelo servidor
+    liquido_recebido = proventos_permanentes - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+
+    percentual_liquidez = (liquido_recebido / proventos_permanentes * 100) if proventos_permanentes > 0 else 0
+    aprovado_liquidez   = percentual_liquidez >= 30.0
+
+    return {
+        'prefeitura': 'BAURU',
+        'salario_bruto': proventos_permanentes,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'plano_saude': plano_saude,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+
         # Status geral
         'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
         'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
@@ -6124,6 +6458,18 @@ def extrair_valores_desconto(linha: str) -> float:
         return float(valor_str)
     return 0.0
 
+def extrair_valores_bauru(linha: str) -> float:
+    """
+    Para Bauru: estrutura Código | Descrição | Qtde. | Vencimentos/Descontos
+    A Qtde. (ex: 30,000) confunde o extrator genérico pois o regex captura
+    '30,00' de dentro de '30,000'. A solução é sempre pegar o ÚLTIMO valor.
+    """
+    valores = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}', linha)
+    if valores:
+        valor_str = valores[-1].replace('.', '').replace(',', '.')
+        return float(valor_str)
+    return 0.0
+
 def extrair_valores_vencimento_maringa(linha: str) -> float:
     """
     Extrai o valor da coluna VENCIMENTOS para holerites de MARINGÁ
@@ -7099,6 +7445,12 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'EMBU':
         margem = calcular_margem_embu(texto, salario_base, vencimentos_fixos, 
                                      descontos_obrigatorios, cartoes)
+    elif prefeitura == 'HORTOLANDIA': 
+        margem = calcular_margem_hortolandia(texto, salario_base, vencimentos_fixos,
+                                              descontos_obrigatorios, cartoes)
+    elif prefeitura == 'BAURU':  
+        margem = calcular_margem_bauru(texto, salario_base, vencimentos_fixos,
+                                        descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -7343,7 +7695,7 @@ def main():
         st.markdown("---")
 
         # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU']
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU']
 
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
@@ -7499,7 +7851,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU']:
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
