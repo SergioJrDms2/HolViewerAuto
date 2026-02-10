@@ -915,8 +915,11 @@ def extrair_vencimentos_fixos_cuiaba(texto: str) -> Dict:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
 
-        # VENCIMENTO - PROFISSIONAL (código 4727)
-        if re.match(r'^\s*4727\s+VENCIMENTO', linha_norm) or 'VENCIMENTO - PROFISSIONAL' in linha_norm:
+        # VENCIMENTO/SUBSÍDIO (códigos 4727, 6463, etc.)
+        if (re.match(r'^\s*(4727|6463)\s+', linha_norm) or 
+            'VENCIMENTO - PROFISSIONAL' in linha_norm or 
+            'SUBSIDIO - PROFESSOR' in linha_norm or
+            'SUBSIDIO - PROF' in linha_norm):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['vencimento_base'] = valor
@@ -946,6 +949,27 @@ def extrair_vencimentos_fixos_cuiaba(texto: str) -> Dict:
                 vencimentos_fixos['gratificacao'] += valor
                 vencimentos_fixos['total'] += valor
             continue
+
+        # ADICIONAL POR TEMPO DE SERVIÇO
+        if any(termo in linha_norm for termo in ['ADICIONAL TEMPO', 'TEMPO DE SERVICO', 'TEMPO SERVICO', 'QUINQUENIO', 'ANUENIO']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_tempo_servico'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # SEXTA PARTE
+        if 'SEXTA PARTE' in linha_norm or '6A PARTE' in linha_norm or '6 PARTE' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['sexta_parte'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # NÃO INCLUIR proventos indenizatórios/variáveis:
+        # - DIARIAS, AJUDA-DE-CUSTO, SALARIO-FAMILIA, AUXILIO-NATALIDADE
+        # - AUXILIO-FUNERAL, ADICIONAL DE FERIAS
+        # Estes já são naturalmente excluídos por não terem match nos padrões acima
 
     return vencimentos_fixos
 
@@ -5574,6 +5598,178 @@ def calcular_margem_redencao(texto: str, salario_base: float, vencimentos_fixos:
         'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
     }
 
+def calcular_margem_cuiaba(texto: str, salario_base: float, vencimentos_fixos: Dict, 
+                          descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para CUIABÁ seguindo as regras especificadas
+    
+    Regras CUIABÁ (conforme legislação municipal):
+    - Base de Cálculo: Remuneração líquida do servidor = soma de vencimentos com 
+      os adicionais de caráter individual e demais vantagens permanentes, 
+      subtraídas os descontos obrigatórios
+    
+    - NÃO INCLUIR (§3° - caráter eventual/indenizatório):
+      I – diárias
+      II – ajuda-de-custo
+      III – indenização de despesa de transporte
+      IV – salário-família
+      V – auxílio-natalidade
+      VI – auxílio-funeral
+      VII – adicional de férias
+      VIII – qualquer outro auxílio/adicional de caráter indenizatório
+    
+    - INCLUIR (proventos permanentes):
+      * Subsídio/Vencimento base
+      * Gratificações fixas
+      * Insalubridade permanente
+      * Adicional por tempo de serviço
+    
+    Percentuais estimados (confirmar com a prefeitura):
+    - Empréstimo: 30%
+    - Cartão Consignado: 5%
+    - Cartão Benefício: 5%
+    
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos
+    """
+    
+    # Base de cálculo: Vencimentos permanentes - Descontos obrigatórios
+    # IMPORTANTE: NÃO incluir diárias, auxílios indenizatórios, adicional de férias
+    salario_bruto = salario_base
+    
+    # Adiciona apenas vencimentos permanentes (exclui indenizatórios/eventuais)
+    vencimentos_permanentes = 0.0
+    if vencimentos_fixos.get('adicional_tempo_servico', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['adicional_tempo_servico']
+    if vencimentos_fixos.get('gratificacao', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['gratificacao']
+    if vencimentos_fixos.get('grat_desempenho', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['grat_desempenho']
+    if vencimentos_fixos.get('sexta_parte', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['sexta_parte']
+    if vencimentos_fixos.get('insalubridade', 0) > 0:
+        vencimentos_permanentes += vencimentos_fixos['insalubridade']
+    # NÃO incluir: diárias, auxílios (natalidade, funeral, família), adicional de férias
+    
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+    
+    base_calculo = salario_bruto + vencimentos_permanentes - total_descontos_obrigatorios
+    
+    # Percentuais de CUIABÁ (ajustar se houver documentação oficial)
+    percentual_emprestimo = 0.30  # 30%
+    percentual_cartao_consig = 0.05  # 5%
+    percentual_cartao_beneficio = 0.05  # 5%
+    
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+    
+    # Separação de cartões por categoria
+    cartoes_nossos = 0.0
+    cartoes_terceiros = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # Verifica se é cartão (qualquer tipo)
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED ', 'CART.', 'CREDCESTA'])
+        
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                # Classifica o cartão
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    # Cartão desconhecido (para estudar)
+                    cartoes_desconhecidos += valor
+            continue
+        
+        # Empréstimos genéricos (que não são cartões)
+        # Incluir bancos: DAYCOVAL, Banco Industrial, Santander, Taormina, etc.
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST',
+                                                   'DAYCOVAL', 'BANCO INDUSTRIAL', 'SANTANDER', 'TAORMINA']):
+            # Pular se já foi detectado como cartão
+            if not eh_cartao:
+                valor = extrair_valores_desconto(linha)
+                if valor > 0:
+                    emprestimos_atuais += valor
+    
+    # Total de cartões (TODOS contam: nossos + terceiros + não comprados + desconhecidos)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+    
+    # Cálculo das margens
+    margem_emprestimo_total = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+    
+    # MARGEM DE CARTÃO CONSIGNADO (5%)
+    margem_cartao_consig_total = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+    
+    # MARGEM DE CARTÃO BENEFÍCIO (5%)
+    margem_cartao_beneficio_total = base_calculo * percentual_cartao_beneficio
+    # Cartão benefício compartilha o mesmo comprometimento (todos os cartões)
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+    
+    # Líquido recebido pelo cliente
+    liquido_recebido = salario_bruto + vencimentos_permanentes - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    
+    # Percentual de liquidez (mínimo 30%)
+    percentual_liquidez = (liquido_recebido / (salario_bruto + vencimentos_permanentes) * 100) if (salario_bruto + vencimentos_permanentes) > 0 else 0
+    
+    # Validação de liquidez mínima
+    aprovado_liquidez = percentual_liquidez >= 30.0
+    
+    return {
+        'prefeitura': 'CUIABA',
+        'salario_bruto': salario_bruto + vencimentos_permanentes,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+        
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+        
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+        
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+        
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
 def calcular_margem_vinhedo(texto: str, salario_base: float, vencimentos_fixos: Dict, 
                             descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
     """
@@ -9956,6 +10152,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'REDENCAO':
         margem = calcular_margem_redencao(texto, salario_base, vencimentos_fixos,
                                          descontos_obrigatorios, cartoes)
+    elif prefeitura == 'CUIABA':
+        margem = calcular_margem_cuiaba(texto, salario_base, vencimentos_fixos,
+                                       descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -10200,7 +10399,7 @@ def main():
         st.markdown("---")
 
         # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO', 'VINHEDO', 'MONTE_ALEGRE_SE', 'REDENCAO']
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO', 'VINHEDO', 'MONTE_ALEGRE_SE', 'REDENCAO', 'CUIABA']
 
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
@@ -10356,7 +10555,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO', 'VINHEDO', 'MONTE_ALEGRE_SE', 'REDENCAO']:
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO', 'VINHEDO', 'MONTE_ALEGRE_SE', 'REDENCAO', 'CUIABA']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
