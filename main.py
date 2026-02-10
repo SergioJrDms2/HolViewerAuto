@@ -2462,22 +2462,27 @@ def extrair_salario_bruto_campos_jordao(texto: str) -> float:
 
 def extrair_vencimentos_fixos_campos_jordao(texto: str) -> Dict:
     """
-    Extrai vencimentos de CAMPOS DO JORDÃO da coluna de VENCIMENTOS
-    Estrutura: Código | Descrição | Parcela | Referência | Valor
+    Extrai vencimentos PERMANENTES de CAMPOS DO JORDÃO conforme especificação.
+
+    BASE DE CÁLCULO = SOMA DOS PROVENTOS DE NATUREZA PERMANENTE OU FIXAS
+    deduzindo os consignados compulsórios.
+
+    INCLUI APENAS (proventos permanentes):
+    - 30  - SALARIO
+    - 1210 - ADICIONAL POR TEMPO (Adicional de Tempo de Serviço)
+    - 1370 - SEXTA PARTE
+
+    EXCLUÍDOS (não entram na base):
+    - 190  - SALARIO FAMILIA (eventual/temporário)
+    - 4900 - ABONO (eventual)
+    - Horas extras, insalubridade, gratificações eventuais etc.
     """
     linhas = texto.split('\n')
 
     vencimentos_fixos = {
         'vencimento_base': 0.0,
         'adicional_tempo_servico': 0.0,
-        'gratificacao': 0.0,
-        'hora_ativ_extra_classe': 0.0,
-        'aula_suplementar': 0.0,
-        'vale_alimentacao': 0.0,
         'sexta_parte': 0.0,
-        'horas_extras': 0.0,
-        'insalubridade': 0.0,
-        'abono': 0.0,
         'outros_fixos': [],
         'total': 0.0
     }
@@ -2485,37 +2490,42 @@ def extrair_vencimentos_fixos_campos_jordao(texto: str) -> Dict:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
 
-        # SALARIO (vencimento base)
-        if linha_norm.strip().startswith('SALARIO') and 'DESCONTO' not in linha_norm:
+        # SALARIO (código 30) — provento permanente base
+        # Exclui SALARIO FAMILIA (código 190) verificando ausência de 'FAMILIA'
+        if re.search(r'^\s*30\s+SALARIO', linha_norm) or (
+            'SALARIO' in linha_norm
+            and 'FAMILIA' not in linha_norm
+            and 'DESCONTO' not in linha_norm
+            and re.match(r'^\s*30\b', linha_norm)
+        ):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['vencimento_base'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # ADICIONAL TEMPO SERVICO (código 1310)
-        if 'ADICIONAL TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO' in linha_norm:
+        # ADICIONAL POR TEMPO (código 1210)
+        if re.search(r'^\s*1210\b', linha_norm) or (
+            'ADICIONAL' in linha_norm and 'TEMPO' in linha_norm and 'DESCONTO' not in linha_norm
+        ):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['adicional_tempo_servico'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # ABONO (código 4900)
-        if 'ABONO' in linha_norm and 'DESCONTO' not in linha_norm:
+        # SEXTA PARTE (código 1370)
+        if re.search(r'^\s*1370\b', linha_norm) or (
+            'SEXTA PARTE' in linha_norm and 'DESCONTO' not in linha_norm
+        ):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
-                vencimentos_fixos['abono'] = valor
+                vencimentos_fixos['sexta_parte'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # GRATIFICAÇÃO
-        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['gratificacao'] += valor
-                vencimentos_fixos['total'] += valor
-            continue
+        # EXCLUÍDOS EXPLICITAMENTE — não somar ao total:
+        # SALARIO FAMILIA (190), ABONO (4900), horas extras, insalubridade, etc.
 
     return vencimentos_fixos
 
@@ -5157,6 +5167,149 @@ def calcular_margem_poa(texto: str, salario_base: float, vencimentos_fixos: Dict
         'liquidez_minima': 30.0,
         'aprovado_liquidez': aprovado_liquidez,
         
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
+def calcular_margem_campos_jordao(texto: str, salario_base: float, vencimentos_fixos: Dict,
+                                   descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para CAMPOS DO JORDÃO.
+
+    BASE DE CÁLCULO:
+      Soma dos proventos de natureza permanente ou fixas
+      (cód. 30 SALARIO + cód. 1210 ADICIONAL POR TEMPO + cód. 1370 SEXTA PARTE)
+      deduzindo os consignados compulsórios (INSS/RGPS, IRRF, etc.)
+
+    Percentuais:
+    - Empréstimo:         35%
+    - Cartão Consignado:  15%
+    - Cartão Benefício:   15%
+
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos.
+    """
+
+    # Base: vencimentos fixos (apenas os permanentes) - descontos obrigatórios
+    # salario_base já está dentro de vencimentos_fixos['vencimento_base'],
+    # mas somamos para garantir consistência com o padrão das demais prefeituras.
+    salario_bruto = salario_base + vencimentos_fixos.get('total', 0.0)
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+
+    base_calculo = salario_bruto - total_descontos_obrigatorios
+
+    # Percentuais de CAMPOS DO JORDÃO
+    percentual_emprestimo       = 0.35   # 35%
+    percentual_cartao_consig    = 0.15   # 15%
+    percentual_cartao_beneficio = 0.15   # 15%
+
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+
+    cartoes_nossos        = 0.0
+    cartoes_terceiros     = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # CRESSEM EMPRESTIMO conta como empréstimo consignado
+        if 'CRESSEM EMPRESTIMO' in linha_norm or 'CRESSEM INTEGRALIZACAO' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+
+        # UASPREV e similares também contam como empréstimo
+        if 'UASPREV' in linha_norm or 'ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+
+        # Verifica se é cartão (qualquer tipo)
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED ', 'CART.'])
+
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    cartoes_desconhecidos += valor
+            continue
+
+        # Empréstimos genéricos (que não são cartões nem CRESSEM)
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            if 'CRESSEM' not in linha_norm:
+                valor = extrair_valores_desconto(linha)
+                if valor > 0:
+                    emprestimos_atuais += valor
+
+    # Total de cartões (TODOS contam)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+
+    # Cálculo das margens
+    margem_emprestimo_total      = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+
+    margem_cartao_consig_total      = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+
+    margem_cartao_beneficio_total      = base_calculo * percentual_cartao_beneficio
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+
+    # Líquido e liquidez
+    liquido_recebido    = salario_bruto - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    percentual_liquidez = (liquido_recebido / salario_bruto * 100) if salario_bruto > 0 else 0
+    aprovado_liquidez   = percentual_liquidez >= 30.0
+
+    return {
+        'prefeitura': 'CAMPOS_JORDAO',
+        'salario_bruto': salario_bruto,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+
         # Status geral
         'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
         'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
@@ -8367,6 +8520,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'BARCARENA':
         margem = calcular_margem_barcarena(texto, salario_base, vencimentos_fixos,
                                            descontos_obrigatorios, cartoes)
+    elif prefeitura == 'CAMPOS_JORDAO':
+        margem = calcular_margem_campos_jordao(texto, salario_base, vencimentos_fixos,
+                                               descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -8611,7 +8767,7 @@ def main():
         st.markdown("---")
 
         # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA']
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO']
 
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
@@ -8767,7 +8923,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA']:
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
