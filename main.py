@@ -1552,12 +1552,20 @@ def extrair_salario_bruto_sao_jose_rio_preto(texto: str) -> float:
 def extrair_vencimentos_fixos_sao_jose_rio_preto(texto: str) -> Dict:
     """
     Extrai vencimentos de SÃO JOSÉ DO RIO PRETO da coluna de VENCIMENTO
-    Estrutura: Evento | Descrição | Quantidade | Vencimento | Descontos
+    
+    Para o cálculo de margem de São José do Rio Preto, considera-se:
+    - VENCIMENTO
+    - ADIC. FIXO (Adicional Fixo)
+    - GRAT. FIXA (Gratificação Fixa)
+    
+    IMPORTANTE: Auxílio Saúde NÃO entra no cálculo de margem.
     """
     linhas = texto.split('\n')
 
     vencimentos_fixos = {
         'vencimento_base': 0.0,
+        'adicional_fixo': 0.0,
+        'gratificacao_fixa': 0.0,
         'adicional_tempo_servico': 0.0,
         'gratificacao': 0.0,
         'hora_ativ_extra_classe': 0.0,
@@ -1566,7 +1574,7 @@ def extrair_vencimentos_fixos_sao_jose_rio_preto(texto: str) -> Dict:
         'sexta_parte': 0.0,
         'horas_extras': 0.0,
         'insalubridade': 0.0,
-        'auxilio_saude': 0.0,
+        'auxilio_saude': 0.0,  # Não entra no cálculo de margem
         'outros_fixos': [],
         'total': 0.0
     }
@@ -1575,27 +1583,35 @@ def extrair_vencimentos_fixos_sao_jose_rio_preto(texto: str) -> Dict:
         linha_norm = normalizar_texto(linha)
 
         # VENCIMENTO (código 1)
-        if re.match(r'^\s*1\s+VENCIMENTO', linha_norm):
+        if re.match(r'^\s*1\s+VENCIMENTO', linha_norm) or (re.match(r'^\s*1\s+', linha_norm) and 'VENCIMENTO' in linha_norm):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['vencimento_base'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # AUXILIO SAUDE (código 1371)
+        # ADIC. FIXO (Adicional Fixo)
+        if 'ADIC. FIXO' in linha_norm or 'ADICIONAL FIXO' in linha_norm or 'ADIC FIXO' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['adicional_fixo'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # GRAT. FIXA (Gratificação Fixa)
+        if 'GRAT. FIXA' in linha_norm or 'GRATIFICACAO FIXA' in linha_norm or 'GRAT FIXA' in linha_norm:
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao_fixa'] = valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # AUXILIO SAUDE - NÃO entra no cálculo de margem (apenas para registro)
         if 'AUXILIO SAUDE' in linha_norm or re.match(r'^\s*1371\s+', linha_norm):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['auxilio_saude'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
-
-        # GRATIFICAÇÃO
-        if 'GRAT' in linha_norm and 'DESCONTO' not in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['gratificacao'] += valor
-                vencimentos_fixos['total'] += valor
+                # NÃO adiciona ao total!
             continue
 
     return vencimentos_fixos
@@ -5137,6 +5153,145 @@ def calcular_margem_poa(texto: str, salario_base: float, vencimentos_fixos: Dict
     
     return {
         'prefeitura': 'POA',
+        'salario_bruto': salario_bruto,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+        
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+        
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+        
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+        
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
+def calcular_margem_sao_jose_rio_preto(texto: str, salario_base: float, vencimentos_fixos: Dict, 
+                                        descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para SÃO JOSÉ DO RIO PRETO seguindo as especificações
+    
+    Regras SÃO JOSÉ DO RIO PRETO:
+    - Base de Cálculo: Soma dos proventos permanentes - Descontos Compulsórios
+    - Proventos: VENCIMENTO + ADIC. FIXO + GRAT. FIXA
+    - OBS: Auxílio Saúde NÃO entra no cálculo de margem
+    - Descontos: Previdência (Própria + Geral), IRRF, Obrigações judiciais, 
+                 Reposição ao erário, Contribuição sindical
+    - Empréstimo: 35%
+    - Cartão Consignado: 15%
+    - Cartão Benefício: 15%
+    
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos
+    """
+    
+    # Base de cálculo: Salário base + Vencimentos permanentes - Descontos obrigatórios
+    # IMPORTANTE: vencimentos_fixos já considera apenas proventos permanentes (sem Auxílio Saúde)
+    salario_bruto = salario_base + vencimentos_fixos.get('total', 0.0)
+    
+    # Descontos compulsórios
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+    
+    base_calculo = salario_bruto - total_descontos_obrigatorios
+    
+    # Percentuais de SÃO JOSÉ DO RIO PRETO
+    percentual_emprestimo = 0.35  # 35%
+    percentual_cartao_consig = 0.15  # 15%
+    percentual_cartao_beneficio = 0.15  # 15%
+    
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+    
+    # Separação de cartões por categoria (para detalhamento)
+    cartoes_nossos = 0.0
+    cartoes_terceiros = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # Verifica se é cartão (qualquer tipo)
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED ', 'CART.'])
+        
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                # Classifica o cartão
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    # Cartão desconhecido (para estudar)
+                    cartoes_desconhecidos += valor
+            continue
+        
+        # Empréstimos genéricos (que não são cartões)
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+    
+    # Total de cartões (TODOS contam: nossos + terceiros + não comprados + desconhecidos)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+    
+    # Cálculo das margens
+    margem_emprestimo_total = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+    
+    # MARGEM DE CARTÃO CONSIGNADO (15%)
+    margem_cartao_consig_total = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+    
+    # MARGEM DE CARTÃO BENEFÍCIO (15%)
+    margem_cartao_beneficio_total = base_calculo * percentual_cartao_beneficio
+    # Cartão benefício compartilha o mesmo comprometimento (todos os cartões)
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+    
+    # Líquido recebido pelo cliente
+    liquido_recebido = salario_bruto - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    
+    # Percentual de liquidez (mínimo 30%)
+    percentual_liquidez = (liquido_recebido / salario_bruto * 100) if salario_bruto > 0 else 0
+    
+    # Validação de liquidez mínima
+    aprovado_liquidez = percentual_liquidez >= 30.0
+    
+    return {
+        'prefeitura': 'SAO_JOSE_RIO_PRETO',
         'salario_bruto': salario_bruto,
         'base_calculo': base_calculo,
         'descontos_compulsorios': total_descontos_obrigatorios,
@@ -9083,6 +9238,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'BELTERRA':
         margem = calcular_margem_belterra(texto, salario_base, vencimentos_fixos,
                                           descontos_obrigatorios, cartoes)
+    elif prefeitura == 'SAO_JOSE_RIO_PRETO':
+        margem = calcular_margem_sao_jose_rio_preto(texto, salario_base, vencimentos_fixos,
+                                                     descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -9327,7 +9485,7 @@ def main():
         st.markdown("---")
 
         # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA']
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO']
 
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
@@ -9483,7 +9641,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA']:
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
