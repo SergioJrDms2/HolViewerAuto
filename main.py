@@ -2640,8 +2640,21 @@ def extrair_salario_bruto_barcarena(texto: str) -> float:
 
 def extrair_vencimentos_fixos_barcarena(texto: str) -> Dict:
     """
-    Extrai vencimentos de BARCARENA da coluna de RENDIMENTOS
-    Estrutura: Código | Descrição | Referência | Rendimentos | Descontos
+    Extrai vencimentos PERMANENTES/FIXOS de BARCARENA conforme especificação
+    (Lei Complementar nº 002/94, de 01 de agosto de 1994)
+
+    BASE DE CÁLCULO INCLUI APENAS:
+    - Salário (Salário Mensal)
+    - Adicional por tempo de serviço
+    - Gratificações FIXAS (ex: Grat. Reg. de Classe, Grat. de Magistério)
+
+    EXCLUÍDOS (não entram na base):
+    - Substituição
+    - Grat. por Prestação de Serviço Extraordinário
+    - Grat. por Prestação de Serviço Noturno
+    - Encargo de Professor/Auxiliar em Curso Oficialmente Instituído
+    - Grat. por Exercício em Condições Insalubres, Perigosas ou Penosas
+    - Grat. por Execução de Trabalho com Risco de Vida
     """
     linhas = texto.split('\n')
 
@@ -2649,12 +2662,6 @@ def extrair_vencimentos_fixos_barcarena(texto: str) -> Dict:
         'vencimento_base': 0.0,
         'adicional_tempo_servico': 0.0,
         'gratificacao': 0.0,
-        'hora_ativ_extra_classe': 0.0,
-        'aula_suplementar': 0.0,
-        'vale_alimentacao': 0.0,
-        'sexta_parte': 0.0,
-        'horas_extras': 0.0,
-        'insalubridade': 0.0,
         'outros_fixos': [],
         'total': 0.0
     }
@@ -2662,37 +2669,34 @@ def extrair_vencimentos_fixos_barcarena(texto: str) -> Dict:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
 
-        # SALARIO MENSAL (código 2)
-        if re.match(r'^\s*2\s+SALARIO MENSAL', linha_norm):
+        # SALÁRIO MENSAL (código 1) — provento permanente base
+        if 'SALARIO MENSAL' in linha_norm and 'DESCONTO' not in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['vencimento_base'] = valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # GRAT.REG.DE CLASSE (código 12)
-        if 'GRAT.REG.DE CLASSE' in linha_norm or 'GRAT REG DE CLASSE' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['gratificacao'] += valor
-                vencimentos_fixos['total'] += valor
-            continue
-
-        # GRAT.DE MAGISTÉRIO (código 19)
-        if 'GRAT.DE MAGISTERIO' in linha_norm or 'GRAT DE MAGISTERIO' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['gratificacao'] += valor
-                vencimentos_fixos['total'] += valor
-            continue
-
-        # ADIC TEMPO SERVIÇO (código 35)
+        # ADICIONAL TEMPO DE SERVIÇO — permanente
         if 'ADIC TEMPO SERVICO' in linha_norm or 'ADICIONAL TEMPO SERVICO' in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
                 vencimentos_fixos['adicional_tempo_servico'] = valor
                 vencimentos_fixos['total'] += valor
             continue
+
+        # GRATIFICAÇÕES FIXAS (ex: Grat. Reg. de Classe, Grat. de Magistério)
+        # EXCLUIR as variáveis: extraordinário, noturno, insalubridade, risco de vida, substituição
+        if any(p in linha_norm for p in ['GRAT.REG.DE CLASSE', 'GRAT REG DE CLASSE',
+                                          'GRAT.DE MAGISTERIO', 'GRAT DE MAGISTERIO']):
+            valor = extrair_valores_vencimento(linha)
+            if valor > 0:
+                vencimentos_fixos['gratificacao'] += valor
+                vencimentos_fixos['total'] += valor
+            continue
+
+        # EXPLICITAMENTE EXCLUÍDOS — não somar ao total:
+        # Serv. Extraordinário, Serv. Noturno, Insalubridade, Risco de Vida, Substituição, Encargos de Curso
 
     return vencimentos_fixos
 
@@ -5285,6 +5289,141 @@ def calcular_margem_salto(texto: str, salario_base: float, vencimentos_fixos: Di
         'liquidez_minima': 30.0,
         'aprovado_liquidez': aprovado_liquidez,
         
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
+def calcular_margem_barcarena(texto: str, salario_base: float, vencimentos_fixos: Dict,
+                               descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para BARCARENA seguindo as regras da
+    Lei Complementar nº 002/94 de 01/08/1994.
+
+    BASE DE CÁLCULO:
+      Salário Mensal + Adicional Tempo de Serviço + Gratificações Fixas
+      (-) Descontos compulsórios (INSS/RPPS, IRRF, Pensão judicial, etc.)
+
+    Percentuais:
+    - Empréstimo:         35%
+    - Cartão Consignado:  15%
+    - Cartão Benefício:   15%
+
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos.
+    """
+
+    # Base de cálculo: vencimentos fixos - descontos obrigatórios
+    # (salario_base já está incluído em vencimentos_fixos['vencimento_base'],
+    #  mas para garantir consistência somamos salario_base + restante de vencimentos_fixos)
+    salario_bruto = salario_base + vencimentos_fixos.get('total', 0.0)
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+
+    base_calculo = salario_bruto - total_descontos_obrigatorios
+
+    # Percentuais de BARCARENA
+    percentual_emprestimo       = 0.35   # 35%
+    percentual_cartao_consig    = 0.15   # 15%
+    percentual_cartao_beneficio = 0.15   # 15%
+
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+
+    cartoes_nossos       = 0.0
+    cartoes_terceiros    = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # UASPREV e similares contam como empréstimo
+        if 'UASPREV' in linha_norm or 'ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+
+        # Verifica se é cartão (qualquer tipo)
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED ', 'CART.'])
+
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    cartoes_desconhecidos += valor
+            continue
+
+        # Empréstimos genéricos (que não são cartões)
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+
+    # Total de cartões (TODOS contam)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+
+    # Cálculo das margens
+    margem_emprestimo_total     = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+
+    margem_cartao_consig_total     = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+
+    margem_cartao_beneficio_total     = base_calculo * percentual_cartao_beneficio
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+
+    # Líquido e liquidez
+    liquido_recebido    = salario_bruto - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    percentual_liquidez = (liquido_recebido / salario_bruto * 100) if salario_bruto > 0 else 0
+    aprovado_liquidez   = percentual_liquidez >= 30.0
+
+    return {
+        'prefeitura': 'BARCARENA',
+        'salario_bruto': salario_bruto,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+
         # Status geral
         'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
         'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
@@ -8225,6 +8364,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'ITAITUBA':
         margem = calcular_margem_itaituba(texto, salario_base, vencimentos_fixos,
                                          descontos_obrigatorios, cartoes)
+    elif prefeitura == 'BARCARENA':
+        margem = calcular_margem_barcarena(texto, salario_base, vencimentos_fixos,
+                                           descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -8469,7 +8611,7 @@ def main():
         st.markdown("---")
 
         # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA']
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA']
 
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
@@ -8625,7 +8767,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA']:
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
