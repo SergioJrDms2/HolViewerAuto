@@ -2268,25 +2268,32 @@ def extrair_salario_bruto_ribeirao_preto(texto: str) -> float:
 
 def extrair_vencimentos_fixos_ribeirao_preto(texto: str) -> Dict:
     """
-    Extrai vencimentos de RIBEIRÃO PRETO da coluna de VENCIMENTOS
-    Estrutura: Código | Descrição | Qtde. | Vencimentos | Descontos
+    Extrai vencimentos PERMANENTES de RIBEIRÃO PRETO conforme especificação.
+
+    BASE DE CÁLCULO = SOMA DOS PROVENTOS DE NATUREZA PERMANENTE OU FIXAS
+    deduzindo os consignados compulsórios.
+
+    INCLUI APENAS (proventos permanentes/fixos):
+    - cód. 7  - AULAS P.(TDA)      → Salário base permanente
+    - cód. 8  - TDC (.PERMANENT)   → Adicional permanente
+    - cód. 9  - TDI (.PERMANENT)   → Adicional permanente
+    - Acréscimos e insalubridade quando permanentes
+    - Todas as GRATIFICAÇÕES FIXAS
+
+    EXCLUÍDOS (proventos eventuais/variáveis):
+    - cód. 37  - AULAS E.(TDA)      → Eventuais
+    - cód. 38  - TDC (.EVENTUAIS)   → Eventuais
+    - cód. 39  - TDI (.EVENTUAIS)   → Eventuais
+    - cód. 184 - AULA EXTRAORDIN    → Extras (variável)
     """
     linhas = texto.split('\n')
 
     vencimentos_fixos = {
         'vencimento_base': 0.0,
-        'adicional_tempo_servico': 0.0,
-        'gratificacao': 0.0,
-        'hora_ativ_extra_classe': 0.0,
-        'aula_suplementar': 0.0,
-        'vale_alimentacao': 0.0,
-        'sexta_parte': 0.0,
-        'horas_extras': 0.0,
+        'tdc_permanente': 0.0,
+        'tdi_permanente': 0.0,
         'insalubridade': 0.0,
-        'tdc': 0.0,
-        'tdi': 0.0,
-        'aulas_eventuais': 0.0,
-        'aula_extraordinaria': 0.0,
+        'gratificacao': 0.0,
         'outros_fixos': [],
         'total': 0.0
     }
@@ -2294,7 +2301,7 @@ def extrair_vencimentos_fixos_ribeirao_preto(texto: str) -> Dict:
     for linha in linhas:
         linha_norm = normalizar_texto(linha)
 
-        # AULAS P.(TDA) (vencimento base)
+        # cód. 7 — AULAS P.(TDA): Salário base permanente ✅
         if 'AULAS P.(TDA)' in linha_norm or 'AULAS P (TDA)' in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
@@ -2302,53 +2309,54 @@ def extrair_vencimentos_fixos_ribeirao_preto(texto: str) -> Dict:
                 vencimentos_fixos['total'] += valor
             continue
 
-        # TDC (.PERMANENT
+        # cód. 8 — TDC (.PERMANENT): Adicional permanente ✅
         if 'TDC (.PERMANENT' in linha_norm or 'TDC (PERMANENT' in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
-                vencimentos_fixos['tdc'] += valor
+                vencimentos_fixos['tdc_permanente'] += valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # TDI (.PERMANENT
+        # cód. 9 — TDI (.PERMANENT): Adicional permanente ✅
         if 'TDI (.PERMANENT' in linha_norm or 'TDI (PERMANENT' in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
-                vencimentos_fixos['tdi'] += valor
+                vencimentos_fixos['tdi_permanente'] += valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # AULAS E.(TDA)
-        if 'AULAS E.(TDA)' in linha_norm or 'AULAS E (TDA)' in linha_norm:
+        # INSALUBRIDADE permanente ✅
+        if 'INSALUBR' in linha_norm and 'DESCONTO' not in linha_norm:
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
-                vencimentos_fixos['aulas_eventuais'] += valor
+                vencimentos_fixos['insalubridade'] += valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # TDC (.EVENTUAIS
-        if 'TDC (.EVENTUAIS' in linha_norm or 'TDC (EVENTUAIS' in linha_norm:
+        # GRATIFICAÇÕES FIXAS ✅ (exceto eventuais/extras)
+        if ('GRAT' in linha_norm and 'DESCONTO' not in linha_norm
+                and 'EVENTUAL' not in linha_norm and 'EXTRA' not in linha_norm):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
-                vencimentos_fixos['tdc'] += valor
+                vencimentos_fixos['gratificacao'] += valor
                 vencimentos_fixos['total'] += valor
             continue
 
-        # TDI (.EVENTUAIS
-        if 'TDI (.EVENTUAIS' in linha_norm or 'TDI (EVENTUAIS' in linha_norm:
+        # ACRÉSCIMO permanente ✅
+        if ('ACRESC' in linha_norm and 'DESCONTO' not in linha_norm
+                and 'EVENTUAL' not in linha_norm):
             valor = extrair_valores_vencimento(linha)
             if valor > 0:
-                vencimentos_fixos['tdi'] += valor
+                vencimentos_fixos['outros_fixos'].append({
+                    'descricao': linha.strip()[:30],
+                    'valor': valor
+                })
                 vencimentos_fixos['total'] += valor
             continue
 
-        # AULA EXTRAORDIN (Aula Extraordinária)
-        if 'AULA EXTRAORDIN' in linha_norm:
-            valor = extrair_valores_vencimento(linha)
-            if valor > 0:
-                vencimentos_fixos['aula_extraordinaria'] = valor
-                vencimentos_fixos['total'] += valor
-            continue
+        # EXCLUÍDOS EXPLICITAMENTE — não somar ao total:
+        # cód. 37 AULAS E.(TDA), cód. 38 TDC(.EVENTUAIS),
+        # cód. 39 TDI(.EVENTUAIS), cód. 184 AULA EXTRAORDIN
 
     return vencimentos_fixos
 
@@ -5447,6 +5455,139 @@ def calcular_margem_salto(texto: str, salario_base: float, vencimentos_fixos: Di
         'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
     }
 
+def calcular_margem_ribeirao_preto(texto: str, salario_base: float, vencimentos_fixos: Dict,
+                                    descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para RIBEIRÃO PRETO.
+
+    BASE DE CÁLCULO:
+      Soma dos proventos de natureza permanente ou fixas
+      (AULAS P.(TDA) + TDC/TDI permanentes + Insalubridade + Gratif. Fixas)
+      deduzindo os consignados compulsórios (INSS, IRRF, Previdência, etc.)
+
+    Percentuais (conforme campo "Marg." impresso no próprio holerite):
+    - Empréstimo:         40%
+    - Cartão Consignado:  10%
+    - Cartão Benefício:   10%
+
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos.
+    """
+
+    # Base: vencimentos fixos (apenas permanentes) - descontos obrigatórios
+    salario_bruto = salario_base + vencimentos_fixos.get('total', 0.0)
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+
+    base_calculo = salario_bruto - total_descontos_obrigatorios
+
+    # Percentuais de RIBEIRÃO PRETO (confirmados pelo próprio holerite)
+    percentual_emprestimo       = 0.40   # 40%
+    percentual_cartao_consig    = 0.10   # 10%
+    percentual_cartao_beneficio = 0.10   # 10%
+
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+
+    cartoes_nossos        = 0.0
+    cartoes_terceiros     = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+
+        # UASPREV e similares contam como empréstimo
+        if 'UASPREV' in linha_norm or 'ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+
+        # Verifica se é cartão (qualquer tipo)
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED ', 'CART.'])
+
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    cartoes_desconhecidos += valor
+            continue
+
+        # Empréstimos genéricos (que não são cartões)
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+
+    # Total de cartões (TODOS contam)
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+
+    # Cálculo das margens
+    margem_emprestimo_total      = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+
+    margem_cartao_consig_total      = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+
+    margem_cartao_beneficio_total      = base_calculo * percentual_cartao_beneficio
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+
+    # Líquido e liquidez
+    liquido_recebido    = salario_bruto - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    percentual_liquidez = (liquido_recebido / salario_bruto * 100) if salario_bruto > 0 else 0
+    aprovado_liquidez   = percentual_liquidez >= 30.0
+
+    return {
+        'prefeitura': 'RIBEIRAO_PRETO',
+        'salario_bruto': salario_bruto,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
 def calcular_margem_barcarena(texto: str, salario_base: float, vencimentos_fixos: Dict,
                                descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
     """
@@ -8523,6 +8664,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'CAMPOS_JORDAO':
         margem = calcular_margem_campos_jordao(texto, salario_base, vencimentos_fixos,
                                                descontos_obrigatorios, cartoes)
+    elif prefeitura == 'RIBEIRAO_PRETO':
+        margem = calcular_margem_ribeirao_preto(texto, salario_base, vencimentos_fixos,
+                                                descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -8767,7 +8911,7 @@ def main():
         st.markdown("---")
 
         # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO']
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO']
 
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
@@ -8923,7 +9067,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO']:
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
