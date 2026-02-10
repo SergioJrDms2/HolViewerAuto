@@ -5081,6 +5081,143 @@ def calcular_margem_poa(texto: str, salario_base: float, vencimentos_fixos: Dict
         'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
     }
 
+def calcular_margem_embu(texto: str, salario_base: float, vencimentos_fixos: Dict, 
+                         descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
+    """
+    Calcula margem consignável para EMBU DAS ARTES seguindo as regras da planilha
+    
+    Regras EMBU DAS ARTES:
+    - Base: Proventos de natureza permanente - Consignações compulsórias
+    - Empréstimo: 35%
+    - Cartão Consignado: 5%
+    - Cartão Benefício: 5%
+    
+    TODOS os cartões contam: nossos, terceiros, não comprados e desconhecidos
+    """
+    
+    # Base de cálculo: Vencimentos permanentes - Descontos obrigatórios
+    salario_bruto = salario_base + vencimentos_fixos.get('total', 0.0)
+    total_descontos_obrigatorios = descontos_obrigatorios.get('total', 0.0)
+    
+    base_calculo = salario_bruto - total_descontos_obrigatorios
+    
+    # Percentuais de EMBU
+    percentual_emprestimo = 0.35  # 35%
+    percentual_cartao_consig = 0.05  # 5%
+    percentual_cartao_beneficio = 0.05  # 5%
+    
+    # Extrai empréstimos e cartões do holerite
+    linhas = texto.split('\n')
+    emprestimos_atuais = 0.0
+    
+    # Separação de cartões por categoria
+    cartoes_nossos = 0.0
+    cartoes_terceiros = 0.0
+    cartoes_nao_comprados = 0.0
+    cartoes_desconhecidos = 0.0
+    
+    for linha in linhas:
+        linha_norm = normalizar_texto(linha)
+        
+        # UASPREV conta como empréstimo
+        if 'UASPREV' in linha_norm or 'Emprestimo STARCARD ANTICIPAY' in linha_norm:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+            continue
+        
+        # Verifica se é cartão
+        eh_cartao = any(kw in linha_norm for kw in ['CARTAO', 'CRED ', 'CART.', 'CARTÃO'])
+        
+        if eh_cartao:
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                # Classifica o cartão
+                if any(produto in linha_norm for produto in ['STARCARD', 'ANTICIPAY', 'STARBANK', 'UASPREV']):
+                    cartoes_nossos += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_NAO_COMPRADOS):
+                    cartoes_nao_comprados += valor
+                elif any(cartao in linha_norm for cartao in CARTOES_CONHECIDOS):
+                    cartoes_terceiros += valor
+                else:
+                    cartoes_desconhecidos += valor
+            continue
+        
+        # Empréstimos genéricos
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+            valor = extrair_valores_desconto(linha)
+            if valor > 0:
+                emprestimos_atuais += valor
+    
+    # Total de cartões
+    total_cartoes = cartoes_nossos + cartoes_terceiros + cartoes_nao_comprados + cartoes_desconhecidos
+    
+    # Cálculo das margens
+    margem_emprestimo_total = base_calculo * percentual_emprestimo
+    margem_emprestimo_disponivel = margem_emprestimo_total - emprestimos_atuais
+    
+    # MARGEM DE CARTÃO CONSIGNADO (5%)
+    margem_cartao_consig_total = base_calculo * percentual_cartao_consig
+    margem_cartao_consig_disponivel = margem_cartao_consig_total - total_cartoes
+    
+    # MARGEM DE CARTÃO BENEFÍCIO (5%)
+    margem_cartao_beneficio_total = base_calculo * percentual_cartao_beneficio
+    margem_cartao_beneficio_disponivel = margem_cartao_beneficio_total - total_cartoes
+    
+    # Líquido recebido pelo cliente
+    liquido_recebido = salario_bruto - total_descontos_obrigatorios - emprestimos_atuais - total_cartoes
+    
+    # Percentual de liquidez (mínimo 30%)
+    percentual_liquidez = (liquido_recebido / salario_bruto * 100) if salario_bruto > 0 else 0
+    
+    # Validação de liquidez mínima
+    aprovado_liquidez = percentual_liquidez >= 30.0
+    
+    return {
+        'prefeitura': 'EMBU',
+        'salario_bruto': salario_bruto,
+        'base_calculo': base_calculo,
+        'descontos_compulsorios': total_descontos_obrigatorios,
+        'emprestimos_atuais': emprestimos_atuais,
+        'cartoes_atuais': total_cartoes,
+        
+        # Detalhamento de cartões
+        'cartoes_nossos': cartoes_nossos,
+        'cartoes_terceiros': cartoes_terceiros,
+        'cartoes_nao_comprados': cartoes_nao_comprados,
+        'cartoes_desconhecidos': cartoes_desconhecidos,
+        
+        # Margens por tipo
+        'emprestimo': {
+            'percentual': percentual_emprestimo,
+            'margem_total': margem_emprestimo_total,
+            'comprometido': emprestimos_atuais,
+            'disponivel': margem_emprestimo_disponivel
+        },
+        'cartao_consignado': {
+            'percentual': percentual_cartao_consig,
+            'margem_total': margem_cartao_consig_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_consig_disponivel
+        },
+        'cartao_beneficio': {
+            'percentual': percentual_cartao_beneficio,
+            'margem_total': margem_cartao_beneficio_total,
+            'comprometido': total_cartoes,
+            'disponivel': margem_cartao_beneficio_disponivel
+        },
+        
+        # Liquidez
+        'liquido_recebido': liquido_recebido,
+        'percentual_liquidez': percentual_liquidez,
+        'liquidez_minima': 30.0,
+        'aprovado_liquidez': aprovado_liquidez,
+        
+        # Status geral
+        'tem_margem_emprestimo': margem_emprestimo_disponivel > 0,
+        'tem_margem_cartao': margem_cartao_consig_disponivel > 0 or margem_cartao_beneficio_disponivel > 0
+    }
+
 def calcular_margem_cotia(texto: str, salario_base: float, vencimentos_fixos: Dict, 
                           descontos_obrigatorios: Dict, cartoes_encontrados: Dict) -> Dict:
     """
@@ -6959,6 +7096,9 @@ def analisar_holerite_streamlit(arquivo_bytes: bytes, nome_arquivo: str, prefeit
     elif prefeitura == 'SOROCABA':
         margem = calcular_margem_sorocaba(texto, salario_base, vencimentos_fixos, 
                                            descontos_obrigatorios, cartoes)
+    elif prefeitura == 'EMBU':
+        margem = calcular_margem_embu(texto, salario_base, vencimentos_fixos, 
+                                     descontos_obrigatorios, cartoes)
     else:
         # Outras prefeituras mantêm cálculo genérico (será removido quando implementarmos cada uma)
         valores_cartoes = extrair_valores_cartoes(texto, cartoes)
@@ -7203,7 +7343,7 @@ def main():
         st.markdown("---")
 
         # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA']
+        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU']
 
         st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
         prefeitura_selecionada = st.selectbox(
@@ -7359,7 +7499,7 @@ def main():
 
                 #st.markdown("<h3 class='section-header'>💰 Análise de Margem Consignável</h3>", unsafe_allow_html=True)
                 
-                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA']:
+                if prefeitura_selecionada not in ['POA', 'COTIA', 'MARINGA', 'SOROCABA', 'EMBU']:
                     st.info("🔧 **Manutenção - Em Breve**\n\nO módulo de Calculo de Margem sendo construído para esta prefeitura e será disponibilizado em breve.")
                 elif margem.get('base_calculo', 0) > 0:
 
