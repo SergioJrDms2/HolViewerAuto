@@ -19,21 +19,20 @@ import plotly.graph_objects as go
 from typing import Dict, List
 import re as _re
 import unicodedata
+from feedback_page import render_feedback_page
+from ui_pages import render_individual_header, render_lote_header
+from sidebar import render_sidebar
 
 # ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
 # ============================================================================
 
 st.set_page_config(
-    page_title="Analisador de Holerite",
+    page_title="StarCheck - Analisador de Holerite",
     page_icon="💳",
     layout="wide",
     initial_sidebar_state="expanded" 
 )
-
-# ============================================================================
-# CSS CUSTOMIZADO
-# ============================================================================
 
 # ============================================================================
 # CSS CUSTOMIZADO - TEMA ROXO MODERNO (ATUALIZADO)
@@ -10771,100 +10770,14 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
 # ============================================================================
 
 def main():
-    # Sidebar com seleção de prefeitura
-    with st.sidebar:
-        st.image("https://www.starbank.tec.br/wp-content/uploads/2024/04/cropped-1.png", width=500)
-        st.markdown("---")
-
-        # Lista de prefeituras com cálculo de margem implementado
-        PREFEITURAS_COM_MARGEM = ['POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU', 'TABOAO_SERRA', 'SALTO', 'TUPA', 'ITAITUBA', 'BARCARENA', 'CAMPOS_JORDAO', 'RIBEIRAO_PRETO', 'PONTA_GROSSA', 'CAMARA_DEPUTADOS', 'BELTERRA', 'SAO_JOSE_RIO_PRETO', 'VINHEDO', 'MONTE_ALEGRE_SE', 'REDENCAO', 'CUIABA', 'ALEGO', 'GOVERNO_GOIAS']
-
-        st.markdown("<h3 style='color: #1a3a52;'>Prefeitura</h3>", unsafe_allow_html=True)
-        prefeitura_selecionada = st.selectbox(
-            "Selecione a prefeitura",
-            options=list(PREFEITURAS.keys()),
-            format_func=lambda x: PREFEITURAS[x]['nome'],
-            help="Escolha a prefeitura do holerite para análise correta",
-            label_visibility="collapsed"
-        )
-
-        # Badge de prefeitura com margem
-        if prefeitura_selecionada in PREFEITURAS_COM_MARGEM:
-            st.markdown("""
-                <div style='
-                    display: inline-block;
-                    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-                    color: white;
-                    padding: 0.35rem 0.75rem;
-                    border-radius: 1rem;
-                    font-size: 0.75rem;
-                    font-weight: 600;
-                    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
-                    margin-top: -0.5rem;
-                    margin-bottom: 0.5rem;
-                    letter-spacing: 0.5px;
-                '>
-                    🏷️ Cálculo de Margem Disponível!
-                </div>
-            """, unsafe_allow_html=True)
-        
-        prefeitura_info = PREFEITURAS[prefeitura_selecionada]
-        
-        st.markdown("&nbsp;")
-
-        modo = st.radio(
-            "Selecione o Modo",
-            ["Análise Individual", "Análise em Lote"],
-            help="Escolha entre analisar um único PDF ou múltiplos PDFs",
-        )
-        
-        st.markdown("---")
-        st.markdown("<h3 style='color: #1a3a52;'>Nossos Produtos</h3>", unsafe_allow_html=True)
-        with st.expander("Ver lista completa", expanded=False):
-            for produto in NOSSOS_PRODUTOS:
-                st.markdown(f"<div style='padding: 0.5rem; color: #1a3a52;'><strong>{produto}</strong></div>", unsafe_allow_html=True)
-        
-        st.markdown("<h3 style='color: #1a3a52; margin-top: 1.5rem;'>Cartões Concorrentes</h3>", unsafe_allow_html=True)
-        with st.expander("Ver lista completa", expanded=False):
-            cols = st.columns(2)
-            for idx, cartao in enumerate(CARTOES_CONHECIDOS):
-                with cols[idx % 2]:
-                    st.markdown(f"<div style='padding: 0.25rem;'>{cartao}</div>", unsafe_allow_html=True)
-
-
-        st.markdown("<h3 style='color: #1a3a52; margin-top: 1.5rem;'>Cartões Que Não Compramos</h3>", unsafe_allow_html=True)
-        with st.expander("Ver lista completa", expanded=False):
-            cols = st.columns(2)
-            for idx, cartao in enumerate(CARTOES_NAO_COMPRADOS):
-                with cols[idx % 2]:
-                    st.markdown(f"<div style='padding: 0.25rem;'>{cartao}</div>", unsafe_allow_html=True)
-        
-        st.markdown("---")
-        st.info("Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote.", icon="ℹ️")
+    prefeitura_selecionada, modo = render_sidebar(
+        PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS
+    )
 
     
     # Conteúdo principal
     if modo == "Análise Individual":
-        st.markdown("<h2 class='section-header'>StarCheck - Análise Individual</h2>", unsafe_allow_html=True)
-            # Adicione isso logo após os headers principais na sua função main()
-        with st.expander("ℹ️ Como usar o sistema (Clique para expandir)", expanded=False):
-            st.markdown("""
-            1. **Upload**: Arraste seu arquivo PDF para a área de upload.
-            2. **Processamento**: O sistema irá extrair automaticamente os dados (Holerite, Margem, etc.).
-            3. **Análise**: Veja os cards coloridos com os resultados principais.
-            4. **Exportação**: Se disponível, baixe o relatório final.
-            """)
-            st.markdown("""
-                <div class="warning-box">
-                    <h6 style="margin-top:0; color:#92400E;">⚠️ ATENÇÃO: FUNCIONALIDADE EM TESTES</h4>
-                    <p style="margin-bottom:0;">
-                        O cálculo automático de margem é uma estimativa e <strong>não deve ser considerado 100% preciso</strong>. 
-                        <br>
-                        Por favor, <strong>verifique sempre a margem real</strong> na gestora original antes de prosseguir com qualquer operação.
-                    </p>
-                </div>
-            """, unsafe_allow_html=True)
-        st.info(f"Prefeitura selecionada: **{PREFEITURAS[prefeitura_selecionada]['nome']}**", icon="📍")
+        render_individual_header(prefeitura_selecionada, PREFEITURAS)
         
         arquivo_upload = st.file_uploader(
             "Faça upload do PDF do holerite",
@@ -11278,10 +11191,12 @@ def main():
                         """, unsafe_allow_html=True)
                 else:
                     st.success("Todos os cartões estão na lista conhecida.")
+
+    elif modo == "Feedback":
+        render_feedback_page()
     
     else:  # Análise em Lote
-        st.markdown("<h2 class='section-header'>StarCheck - Análise em Lote</h2>", unsafe_allow_html=True)
-        st.info(f"Prefeitura selecionada: **{PREFEITURAS[prefeitura_selecionada]['nome']}**", icon="📍")
+        render_lote_header(prefeitura_selecionada, PREFEITURAS)
         
         arquivos_upload = st.file_uploader(
             "Faça upload dos PDFs dos holerites",
@@ -11584,15 +11499,7 @@ def main():
                             use_container_width=True
                         )
 
-    # Footer
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-    st.markdown("""
-        <div class='footer-text'>
-            <p style='font-size: 1.1rem; font-weight: 600; color: #1a3a52; margin-bottom: 0.5rem;'>Analisador de Holerite</p>
-            <p style='color: #999;'>v2.0 | Sistema de Análise de Oportunidades de Crédito</p>
-            <p style='color: #bbb; font-size: 0.85rem; margin-top: 1rem;'>Desenvolvido para maximizar suas oportunidades</p>
-        </div>
-    """, unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
