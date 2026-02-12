@@ -79,7 +79,7 @@ TEMAS = {
 
 AVATARES = [
     # Tradicionais e Profissionais
-    "👤", "🧑‍💼", "👨‍💻", "👩‍💻", "👩‍🔬", "👨‍🎨",
+    "👤", "🧑‍💼", "👨‍💻", "👩‍💻", "👩‍🔬", "👨‍🎨", "🧑‍🚀",
     # Fofos e Animais
     "🐱", "🐶", "🦊", "🐼", "🐨", "🦁", "🐯", "🦄", "🐰", "🐣", "🐸", "🐧", "🐙", "🐝",
     # Fantasia e Diversão
