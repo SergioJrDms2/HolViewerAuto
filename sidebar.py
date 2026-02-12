@@ -1,15 +1,20 @@
 """
 sidebar.py — Sidebar redesenhada do Analisador de Holerite
 Design branco com gradiente roxo claro para combinar com a plataforma
+COM INTEGRAÇÃO DAS INFORMAÇÕES DO USUÁRIO
 
 USO no main.py:
     from sidebar import render_sidebar
+    from auth import render_user_info_sidebar
 
-    # Substitui todo o bloco `with st.sidebar:` pelo código abaixo:
+    # No início do main(), após autenticação:
     prefeitura_selecionada, modo = render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS)
 """
 
 import streamlit as st
+from auth import render_auth_page, render_user_info_sidebar
+import base64
+import os
 
 PREFEITURAS_COM_MARGEM = [
     'POA', 'MARINGA', 'SOROCABA', 'COTIA', 'EMBU', 'HORTOLANDIA', 'BAURU',
@@ -99,6 +104,24 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO
             box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
         }
 
+        /* Botões (incluindo logout) */
+        [data-testid="stSidebar"] .stButton > button {
+            background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 0.65rem !important;
+            padding: 0.6rem 1rem !important;
+            font-weight: 600 !important;
+            font-size: 0.85rem !important;
+            box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25) !important;
+            transition: all 0.25s ease !important;
+            width: 100% !important;
+        }
+        [data-testid="stSidebar"] .stButton > button:hover {
+            box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35) !important;
+            transform: translateY(-1px) !important;
+        }
+
         /* Expanders */
         [data-testid="stSidebar"] .streamlit-expanderHeader {
             background: #FFFFFF !important;
@@ -153,27 +176,38 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO
         """, unsafe_allow_html=True)
 
         # ── Logo ──────────────────────────────────────────────────────────
-        st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
-        st.image("https://www.starbank.tec.br/wp-content/uploads/2024/04/cropped-1.png", width=500)
-        st.markdown("""
-            <div style='text-align:center; margin-top:-1rem; margin-bottom:1.5rem;'>
-                <span style='
-                    background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
-                    border: none;
-                    color: white;
-                    font-size: 0.7rem;
-                    font-weight: 700;
-                    letter-spacing: 1.2px;
-                    text-transform: uppercase;
-                    padding: 0.35rem 1rem;
-                    border-radius: 1.5rem;
-                    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
-                '>StarCheck</span>
+        st.markdown("<div style='height:1.5rem;'></div>", unsafe_allow_html=True)
+
+        def get_img_as_base64(file_path):
+            with open(file_path, "rb") as f:
+                data = f.read()
+            return base64.b64encode(data).decode()
+
+        # Ajuste o caminho se necessário
+        image_path = "assets/LogoStarcheck.png" 
+
+        try:
+            img_base64 = get_img_as_base64(image_path)
+            img_src = f"data:image/png;base64,{img_base64}"
+        except Exception:
+            img_src = "" 
+
+        st.markdown(f"""
+            <div style='text-align: center; color: white;'>
+                <img src='{img_src}' style='width: 200px;'>
             </div>
         """, unsafe_allow_html=True)
 
+
+        render_user_info_sidebar()
+
+        # ✨ INFORMAÇÕES DO USUÁRIO (COMPACTO) ✨
+        # Importar: from auth import render_user_info_sidebar
+        # Descomentar linha abaixo após importar:
+        # render_user_info_sidebar()
+
         # ── Divisor ───────────────────────────────────────────────────────
-        st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 0 0 1.5rem 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='border: none; height: 2px; margin-top: 1rem; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 0 0 1.5rem 0;'>", unsafe_allow_html=True)
 
         # ── Prefeitura ────────────────────────────────────────────────────
         st.markdown("""
@@ -202,8 +236,6 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO
             help="Escolha a prefeitura do holerite para análise correta",
             label_visibility="collapsed"
         )
-
-
 
         # ── Divisor ───────────────────────────────────────────────────────
         st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
@@ -365,7 +397,6 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO
                     letter-spacing: 0.8px;
                     font-weight: 600;
                 '>v2.0 · StarCheck</span> 
-
             </div>
         """, unsafe_allow_html=True)
 
