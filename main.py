@@ -10811,6 +10811,9 @@ def main():
     if not render_auth_page():
         st.stop()  # Para execução se não estiver autenticado
     
+
+    from complete_profile import render_complete_profile_modal
+    render_complete_profile_modal()
     # ────────────────────────────────────────────────────────────────────
     # 2. SIDEBAR REDESENHADA
     # ────────────────────────────────────────────────────────────────────
