@@ -13,6 +13,7 @@ USO no main.py:
 
 import streamlit as st
 from auth import render_auth_page, render_user_info_sidebar
+from admin import load_cartoes
 import base64
 import os
 
@@ -25,10 +26,17 @@ PREFEITURAS_COM_MARGEM = [
 ]
 
 
-def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS):
+def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, CARTOES_NAO_COMPRADOS=None):
     """
     Renderiza a sidebar completa e retorna (prefeitura_selecionada, modo).
+    Os parâmetros de cartões são mantidos por compatibilidade, mas as listas
+    são sempre carregadas diretamente do Supabase via load_cartoes().
     """
+    # Busca sempre do Supabase — garante dados atualizados para todos os usuários
+    NOSSOS_PRODUTOS       = load_cartoes("nossos_produtos")
+    CARTOES_CONHECIDOS    = load_cartoes("cartoes_conhecidos")
+    CARTOES_NAO_COMPRADOS = load_cartoes("cartoes_nao_comprados")
+
     with st.sidebar:
 
         # ── CSS exclusivo da sidebar ──────────────────────────────────────
