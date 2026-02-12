@@ -50,7 +50,7 @@ def validar_email(email: str) -> bool:
     username = email.split('@')[0]
     
     # Verifica se o username termina com .starbank ou .startec
-    dominios_autorizados = ['.starbank', '.startec']
+    dominios_autorizados = ['.starbank', '.startec', "@starbank", "@starbank.tec.br", "@starbank.tec"]
     return any(username.endswith(dominio) for dominio in dominios_autorizados)
 
 
