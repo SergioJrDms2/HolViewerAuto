@@ -39,19 +39,28 @@ def get_supabase_client() -> Client:
 # ============================================================================
 
 def validar_email(email: str) -> bool:
-    """Valida formato do email e domínio autorizado (.starbank ou .startec no username)."""
+    """Valida formato do email e domínio autorizado (@starbank, @starbank.tec, @starbank.tec.br)."""
     email = email.strip().lower()
+    
     # Valida formato básico do email
     padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     if not re.match(padrao, email):
         return False
     
     # Separa username e domínio
-    username = email.split('@')[0]
+    try:
+        username, dominio = email.split('@')
+    except ValueError:
+        return False
     
-    # Verifica se o username termina com .starbank ou .startec
-    dominios_autorizados = ['.starbank', '.startec', "@starbank", "@starbank.tec.br", "@starbank.tec"]
-    return any(username.endswith(dominio) for dominio in dominios_autorizados)
+    # Verifica se o domínio é um dos autorizados
+    dominios_autorizados = [
+        'starbank',
+        'starbank.tec',
+        'starbank.tec.br'
+    ]
+    
+    return dominio in dominios_autorizados
 
 
 def validar_senha(senha: str) -> tuple[bool, str]:
