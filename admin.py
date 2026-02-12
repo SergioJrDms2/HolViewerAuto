@@ -13,7 +13,7 @@ from auth import get_supabase_client
 # ============================================================================
 
 ADMIN_EMAIL         = "admin.starbank@gmail.com"
-ADMIN_PASSWORD_HASH = hashlib.sha256("123456".encode()).hexdigest()
+ADMIN_PASSWORD_HASH = hashlib.sha256("8650234".encode()).hexdigest()
 TABLE               = "cartoes_config"
 
 CATEGORIAS = {
