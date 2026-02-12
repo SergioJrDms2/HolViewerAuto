@@ -198,7 +198,6 @@ NOSSOS_PRODUTOS = [
 # Cartões de terceiros (concorrentes)
 CARTOES_CONHECIDOS = [
     "NIO",
-    "DAYCOVAL",
     "BMG",
     "PAN",
     "MEUCASHCARD",
@@ -223,7 +222,8 @@ CARTOES_NAO_COMPRADOS = [
     "FY DIGITAL",
     "CLICKBANK",
     "PIXCARD",
-    "VEMCARD"
+    "VEMCARD",
+    "DAYCOVAL"
 ]
 
 CARTOES_DESCONHECIDOS = [
