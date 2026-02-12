@@ -167,13 +167,6 @@ def render_admin_login():
         </style>
     """, unsafe_allow_html=True)
     
-    st.markdown("""
-        <div class='login-container'>
-            <div class='login-icon'>🔐</div>
-            <h2 class='login-title'>Painel Administrativo</h2>
-            <p class='login-subtitle'>Acesso restrito — StarBank</p>
-        </div>
-    """, unsafe_allow_html=True)
 
     _, col, _ = st.columns([1, 2, 1])
     with col:
