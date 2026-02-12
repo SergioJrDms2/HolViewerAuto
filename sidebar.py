@@ -1,7 +1,7 @@
 """
 sidebar.py — Sidebar redesenhada do Analisador de Holerite
 Design branco com gradiente roxo claro para combinar com a plataforma
-COM INTEGRAÇÃO DAS INFORMAÇÕES DO USUÁRIO
+COM INTEGRAÇÃO DAS INFORMAÇÕES DO USUÁRIO E CONFIGURAÇÕES DE PERFIL
 
 USO no main.py:
     from sidebar import render_sidebar
@@ -200,11 +200,7 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO
 
 
         render_user_info_sidebar()
-
-        # ✨ INFORMAÇÕES DO USUÁRIO (COMPACTO) ✨
-        # Importar: from auth import render_user_info_sidebar
-        # Descomentar linha abaixo após importar:
-        # render_user_info_sidebar()
+        
 
         # ── Divisor ───────────────────────────────────────────────────────
         st.markdown("<hr style='border: none; height: 2px; margin-top: 1rem; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 0 0 1.5rem 0;'>", unsafe_allow_html=True)
@@ -262,8 +258,8 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO
 
         modo = st.radio(
             "Selecione o Modo",
-            ["Análise Individual", "Análise em Lote", "Feedback"],
-            help="Escolha entre analisar um único PDF, múltiplos PDFs ou enviar feedback",
+            ["Análise Individual", "Análise em Lote", "Feedback", "Perfil"],
+            help="Escolha entre analisar um único PDF, múltiplos PDFs, enviar feedback ou configurar seu perfil",
             label_visibility="collapsed"
         )
 
@@ -396,7 +392,7 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO
                     color: #A78BFA; 
                     letter-spacing: 0.8px;
                     font-weight: 600;
-                '>v2.0 · StarCheck</span> 
+                '>v2.1 · StarCheck</span> 
             </div>
         """, unsafe_allow_html=True)
 
