@@ -253,7 +253,7 @@ def render_profile_settings():
         </style>
     """, unsafe_allow_html=True)
     
-    st.markdown("<h1 class='profile-header'>⚙️ Configurações de Perfil</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='profile-header'>Configurações de Perfil</h1>", unsafe_allow_html=True)
     st.markdown("<p class='profile-subtitle'>Personalize sua experiência no StarCheck</p>", unsafe_allow_html=True)
     
     # Carregar preferências atuais
