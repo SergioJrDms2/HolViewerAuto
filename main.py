@@ -24,6 +24,7 @@ from ui_pages import render_individual_header, render_lote_header
 from sidebar import render_sidebar
 from auth import render_auth_page, render_user_info_sidebar
 from profile_settings import render_profile_settings
+from admin import render_admin_page, init_db, load_cartoes
 
 # ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -234,8 +235,36 @@ CARTOES_DESCONHECIDOS = [
     "CREDIFIN - CARTAO SAQUE",
     "FY DIGITAL"
 ]
+
 # Lista completa para busca
 TODOS_CARTOES = NOSSOS_PRODUTOS + CARTOES_CONHECIDOS
+
+# ============================================================================
+# CARREGAMENTO DINÂMICO DOS CARTÕES (BANCO DE DADOS)
+# ============================================================================
+
+def refresh_cartoes_from_db():
+    """
+    Atualiza as listas globais de cartões a partir do banco de dados SQLite.
+    Se o banco não existir ou falhar, mantém os valores padrão definidos acima.
+    """
+    global NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS
+    global CARTOES_DESCONHECIDOS, TODOS_CARTOES
+    try:
+        init_db()  # Garante que o banco existe e está populado
+        nos      = load_cartoes("nossos_produtos")
+        conhec   = load_cartoes("cartoes_conhecidos")
+        nao_comp = load_cartoes("cartoes_nao_comprados")
+        desconhe = load_cartoes("cartoes_desconhecidos")
+
+        if nos or conhec:  # Só atualiza se o banco retornou dados
+            NOSSOS_PRODUTOS       = nos
+            CARTOES_CONHECIDOS    = conhec
+            CARTOES_NAO_COMPRADOS = nao_comp
+            CARTOES_DESCONHECIDOS = desconhe
+            TODOS_CARTOES         = NOSSOS_PRODUTOS + CARTOES_CONHECIDOS
+    except Exception:
+        pass  # Mantém valores padrão em caso de falha
 
 # ============================================================================
 # FUNÇÕES DE EXTRAÇÃO DE TEXTO
@@ -10767,6 +10796,7 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
     
     return pd.DataFrame(resultados)
     
+    
 
 # ============================================================================
 # INTERFACE STREAMLIT
@@ -10774,6 +10804,7 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
 
 def main():
     
+    refresh_cartoes_from_db()
     # ────────────────────────────────────────────────────────────────────
     # 1. AUTENTICAÇÃO (DEVE SER A PRIMEIRA COISA)
     # ────────────────────────────────────────────────────────────────────
@@ -10790,6 +10821,30 @@ def main():
         CARTOES_CONHECIDOS, 
         CARTOES_NAO_COMPRADOS
     )
+
+    # ────────────────────────────────────────────────────────────────────
+    # 1.5 BOTÃO DE ADMIN NA SIDEBAR
+    # ────────────────────────────────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("---")
+        if st.button(
+            "⚙️ Painel Admin",
+            use_container_width=True,
+            help="Acesso ao painel administrativo (requer credenciais)",
+            key="btn_admin_panel"
+        ):
+            st.session_state["show_admin_page"] = not st.session_state.get("show_admin_page", False)
+            # Ao abrir o admin, reseta o login de admin para forçar auth
+            if st.session_state.get("show_admin_page") and not st.session_state.get("admin_logged_in"):
+                st.session_state["admin_logged_in"] = False
+            st.rerun()
+
+    # ────────────────────────────────────────────────────────────────────
+    # 1.6 PÁGINA ADMIN (redireciona se ativa)
+    # ────────────────────────────────────────────────────────────────────
+    if st.session_state.get("show_admin_page", False):
+        render_admin_page()
+        st.stop()
     
     
     # Conteúdo principal
