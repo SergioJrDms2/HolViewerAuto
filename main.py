@@ -30,10 +30,11 @@ from auth import render_auth_page, render_user_info_sidebar
 
 st.set_page_config(
     page_title="StarCheck - Analisador de Holerite",
-    page_icon="💳",
+    page_icon="assets/favicon.png", # Caminho para sua imagem
     layout="wide",
-    initial_sidebar_state="expanded" 
+    initial_sidebar_state="expanded"
 )
+
 
 # ============================================================================
 # CSS CUSTOMIZADO - TEMA ROXO MODERNO (ATUALIZADO)
