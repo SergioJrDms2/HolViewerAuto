@@ -23,6 +23,7 @@ from feedback_page import render_feedback_page
 from ui_pages import render_individual_header, render_lote_header
 from sidebar import render_sidebar
 from auth import render_auth_page, render_user_info_sidebar
+from profile_settings import render_profile_settings
 
 # ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -34,7 +35,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 
 # ============================================================================
 # CSS CUSTOMIZADO - TEMA ROXO MODERNO (ATUALIZADO)
@@ -10790,8 +10790,6 @@ def main():
         CARTOES_NAO_COMPRADOS
     )
     
-
-
     
     # Conteúdo principal
     if modo == "Análise Individual":
@@ -11209,6 +11207,9 @@ def main():
                         """, unsafe_allow_html=True)
                 else:
                     st.success("Todos os cartões estão na lista conhecida.")
+
+    elif modo == "Perfil":
+        render_profile_settings()
 
     elif modo == "Feedback":
         render_feedback_page()
