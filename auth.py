@@ -39,9 +39,19 @@ def get_supabase_client() -> Client:
 # ============================================================================
 
 def validar_email(email: str) -> bool:
-    """Valida formato do email."""
+    """Valida formato do email e domínio autorizado (.starbank ou .startec no username)."""
+    email = email.strip().lower()
+    # Valida formato básico do email
     padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(padrao, email.strip()))
+    if not re.match(padrao, email):
+        return False
+    
+    # Separa username e domínio
+    username = email.split('@')[0]
+    
+    # Verifica se o username termina com .starbank ou .startec
+    dominios_autorizados = ['.starbank', '.startec']
+    return any(username.endswith(dominio) for dominio in dominios_autorizados)
 
 
 def validar_senha(senha: str) -> tuple[bool, str]:
@@ -56,6 +66,15 @@ def validar_senha(senha: str) -> tuple[bool, str]:
     return True, ""
 
 
+def extrair_nome_curto(nome_completo: str) -> str:
+    """
+    Extrai apenas o primeiro nome.
+    Exemplo: "João da Silva Santos" -> "João"
+    """
+    palavras = nome_completo.strip().split()
+    return palavras[0] if palavras else nome_completo.strip()
+
+
 def fazer_cadastro(email: str, senha: str, nome: str, setor: str) -> tuple[bool, str]:
     """
     Cadastra um novo usuário no Supabase Auth e salva dados adicionais.
@@ -64,13 +83,16 @@ def fazer_cadastro(email: str, senha: str, nome: str, setor: str) -> tuple[bool,
     try:
         supabase = get_supabase_client()
         
+        # Extrai apenas primeiro e segundo nome
+        nome_formatado = extrair_nome_curto(nome)
+        
         # Cria usuário no Supabase Auth
         response = supabase.auth.sign_up({
             "email": email,
             "password": senha,
             "options": {
                 "data": {
-                    "nome": nome,
+                    "nome": nome_formatado,
                     "setor": setor,
                     "data_cadastro": datetime.now().isoformat()
                 }
@@ -232,7 +254,7 @@ def render_auth_page():
             with st.form("form_login", clear_on_submit=False):
                 email_login = st.text_input(
                     "📧 Email",
-                    placeholder="seu@email.com",
+                    placeholder="seunome.starbank@gmail.com",
                     key="email_login"
                 )
                 senha_login = st.text_input(
@@ -249,7 +271,7 @@ def render_auth_page():
                     if not email_login or not senha_login:
                         st.error("⚠️ Preencha todos os campos.")
                     elif not validar_email(email_login):
-                        st.error("⚠️ Email inválido.")
+                        st.error("⚠️ Email inválido. Use o formato: seunome.starbank@email.com ou seunome.startec@email.com")
                     else:
                         with st.spinner("Autenticando..."):
                             sucesso, mensagem, user_data = fazer_login(email_login, senha_login)
@@ -275,7 +297,7 @@ def render_auth_page():
                 )
                 email_cadastro = st.text_input(
                     "📧 Email",
-                    placeholder="seu@email.com",
+                    placeholder="Seu email institucional",
                     key="email_cadastro"
                 )
                 setor_cadastro = st.text_input(
@@ -309,7 +331,7 @@ def render_auth_page():
                     if not nome_cadastro or len(nome_cadastro.strip()) < 3:
                         erros.append("Nome deve ter pelo menos 3 caracteres")
                     if not email_cadastro or not validar_email(email_cadastro):
-                        erros.append("Email inválido")
+                        erros.append("Email inválido. Use seu email institucional.")
                     if not setor_cadastro or len(setor_cadastro.strip()) < 2:
                         erros.append("Setor é obrigatório")
                     
@@ -415,4 +437,3 @@ def render_user_info_sidebar():
         </div>
         """
         st.markdown(html, unsafe_allow_html=True)
-        
