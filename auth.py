@@ -19,6 +19,7 @@ from auth_styles import apply_auth_styles
 import streamlit as st
 import base64
 import os
+from profile_settings import carregar_preferencias, TEMAS
 
 
 # ============================================================================
@@ -352,19 +353,62 @@ def render_user_info_sidebar():
         user = st.session_state.usuario
         nome = user.get('nome', 'Usuário')
         setor = user.get('setor', 'N/A')
-        inicial = nome[0].upper()
         
-        # Card com informações do usuário
+        # 1. Carregar as preferências reais do banco/sessão
+        prefs = carregar_preferencias()
+        
+        # 2. Buscar a configuração do tema escolhido (ou usar o padrão se falhar)
+        tema_config = TEMAS.get(prefs['tema'], TEMAS['Roxo Padrão'])
+        avatar = prefs['avatar'] # Pega o emoji escolhido
+        
+        # Card com informações dinâmicas (Gradient e Avatar agora são variáveis)
         html = f"""
-        <div style="background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%); border-radius: 0.75rem; padding: 0.65rem 0.85rem; margin: 1rem 0 0.5rem 0; box-shadow: 0 3px 10px rgba(139, 92, 246, 0.25); display: flex; align-items: center; gap: 0.65rem;">
-            <div style="width: 32px; height: 32px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 0.9rem; border: 1.5px solid rgba(255, 255, 255, 0.3); flex-shrink: 0;">
-                {inicial}
+        <div style="
+            background: {tema_config['gradient']}; 
+            border-radius: 0.75rem; 
+            padding: 0.65rem 0.85rem; 
+            margin: 1rem 0 0.5rem 0; 
+            box-shadow: 0 3px 10px {tema_config['shadow']}; 
+            display: flex; 
+            align-items: center; 
+            gap: 0.65rem;
+        ">
+            <div style="
+                width: 32px; 
+                height: 32px; 
+                background: rgba(255, 255, 255, 0.25); 
+                border-radius: 50%; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                font-weight: 700; 
+                color: white; 
+                font-size: 1.1rem; 
+                border: 1.5px solid rgba(255, 255, 255, 0.3); 
+                flex-shrink: 0;
+            ">
+                {avatar}
             </div>
             <div style="flex: 1; min-width: 0;">
-                <div style="font-weight: 600; color: white; font-size: 0.85rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <div style="
+                    font-weight: 600; 
+                    color: white; 
+                    font-size: 0.85rem; 
+                    line-height: 1.2; 
+                    white-space: nowrap; 
+                    overflow: hidden; 
+                    text-overflow: ellipsis;
+                ">
                     {nome}
                 </div>
-                <div style="font-size: 0.7rem; color: rgba(255, 255, 255, 0.8); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <div style="
+                    font-size: 0.7rem; 
+                    color: rgba(255, 255, 255, 0.8); 
+                    line-height: 1.2; 
+                    white-space: nowrap; 
+                    overflow: hidden; 
+                    text-overflow: ellipsis;
+                ">
                     {setor}
                 </div>
             </div>
