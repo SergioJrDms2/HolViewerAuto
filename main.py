@@ -22,6 +22,7 @@ import unicodedata
 from feedback_page import render_feedback_page
 from ui_pages import render_individual_header, render_lote_header
 from sidebar import render_sidebar
+from auth import render_auth_page, render_user_info_sidebar
 
 # ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -198,6 +199,7 @@ NOSSOS_PRODUTOS = [
 # Cartões de terceiros (concorrentes)
 CARTOES_CONHECIDOS = [
     "NIO",
+    "DAYCOVAL",
     "BMG",
     "PAN",
     "MEUCASHCARD",
@@ -222,8 +224,7 @@ CARTOES_NAO_COMPRADOS = [
     "FY DIGITAL",
     "CLICKBANK",
     "PIXCARD",
-    "VEMCARD",
-    "DAYCOVAL"
+    "VEMCARD"
 ]
 
 CARTOES_DESCONHECIDOS = [
@@ -10770,9 +10771,25 @@ def processar_multiplos_pdfs(arquivos_uploaded, prefeitura: str) -> pd.DataFrame
 # ============================================================================
 
 def main():
+    
+    # ────────────────────────────────────────────────────────────────────
+    # 1. AUTENTICAÇÃO (DEVE SER A PRIMEIRA COISA)
+    # ────────────────────────────────────────────────────────────────────
+    if not render_auth_page():
+        st.stop()  # Para execução se não estiver autenticado
+    
+    # ────────────────────────────────────────────────────────────────────
+    # 2. SIDEBAR REDESENHADA
+    # ────────────────────────────────────────────────────────────────────
+    # A sidebar agora retorna os valores de prefeitura e modo
     prefeitura_selecionada, modo = render_sidebar(
-        PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS
+        PREFEITURAS, 
+        NOSSOS_PRODUTOS, 
+        CARTOES_CONHECIDOS, 
+        CARTOES_NAO_COMPRADOS
     )
+    
+
 
     
     # Conteúdo principal
