@@ -331,13 +331,6 @@ def render_admin_panel():
             st.markdown(f"<p style='color: #64748B; margin-bottom: 1.5rem;'>{cat_desc}</p>", unsafe_allow_html=True)
             
             cartoes = load_cartoes(cat_key)
-
-            # Seção de adicionar
-            st.markdown(f"""
-                <div class='add-card-section'>
-                    <h4 style='color: {cat_color}; margin: 0 0 1rem 0;'>➕ Adicionar Novo Cartão</h4>
-                </div>
-            """, unsafe_allow_html=True)
             
             col_input, col_btn = st.columns([3, 1], gap="small")
             
