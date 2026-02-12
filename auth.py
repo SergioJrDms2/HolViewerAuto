@@ -39,37 +39,19 @@ def get_supabase_client() -> Client:
 # ============================================================================
 
 def validar_email(email: str) -> bool:
-    """
-    Valida formato do email e domínio/username autorizado.
-    
-    Formatos aceitos:
-    1. Domínio institucional: usuario@starbank / @starbank.tec / @starbank.tec.br
-    2. Username com sufixo: usuario.starbank@gmail.com ou usuario.startec@outlook.com
-    """
+    """Valida formato do email e domínio autorizado (.starbank ou .startec no username)."""
     email = email.strip().lower()
-    
     # Valida formato básico do email
     padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     if not re.match(padrao, email):
         return False
     
     # Separa username e domínio
-    try:
-        username, dominio = email.split('@')
-    except ValueError:
-        return False
+    username = email.split('@')[0]
     
-    # FORMATO 1: Verifica se o domínio é institucional
-    dominios_autorizados = ['starbank', 'starbank.tec', 'starbank.tec.br']
-    if dominio in dominios_autorizados:
-        return True
-    
-    # FORMATO 2: Verifica se o username termina com .starbank ou .startec
-    sufixos_autorizados = ['.starbank', '.startec']
-    if any(username.endswith(sufixo) for sufixo in sufixos_autorizados):
-        return True
-    
-    return False
+    # Verifica se o username termina com .starbank ou .startec
+    dominios_autorizados = ['.starbank', '.startec']
+    return any(username.endswith(dominio) for dominio in dominios_autorizados)
 
 
 def validar_senha(senha: str) -> tuple[bool, str]:
@@ -153,6 +135,39 @@ def fazer_login(email: str, senha: str) -> tuple[bool, str, dict]:
                 "setor": response.user.user_metadata.get("setor", "N/A"),
                 "access_token": response.session.access_token
             }
+            
+            # 🆕 ATUALIZA/CRIA registro na tabela user_preferences com dados do usuário
+            try:
+                # Busca preferências existentes
+                pref_response = supabase.table('user_preferences').select('*').eq('user_id', response.user.id).execute()
+                
+                if pref_response.data and len(pref_response.data) > 0:
+                    # Atualiza registro existente mantendo tema e avatar, mas atualizando nome/setor/email
+                    pref_existente = pref_response.data[0]
+                    dados_atualizados = {
+                        'user_id': response.user.id,
+                        'tema': pref_existente.get('tema', 'Roxo Padrão'),
+                        'avatar': pref_existente.get('avatar', '👤'),
+                        'nome': user_data['nome'],
+                        'setor': user_data['setor'],
+                        'email': user_data['email']
+                    }
+                    supabase.table('user_preferences').upsert(dados_atualizados, on_conflict='user_id').execute()
+                else:
+                    # Cria novo registro com valores padrão
+                    dados_novos = {
+                        'user_id': response.user.id,
+                        'tema': 'Roxo Padrão',
+                        'avatar': '👤',
+                        'nome': user_data['nome'],
+                        'setor': user_data['setor'],
+                        'email': user_data['email']
+                    }
+                    supabase.table('user_preferences').insert(dados_novos).execute()
+            except Exception as e:
+                # Se falhar ao atualizar preferências, apenas loga o erro mas continua o login
+                print(f"Aviso: Não foi possível atualizar preferências: {str(e)}")
+            
             return True, "Login realizado com sucesso!", user_data
         else:
             return False, "Credenciais inválidas.", {}
@@ -389,17 +404,21 @@ def render_auth_page():
 # ============================================================================
 
 def render_user_info_sidebar():
+    """Renderiza informações do usuário na sidebar com suporte a gradientes personalizados."""
     if verificar_sessao() and 'usuario' in st.session_state:
         user = st.session_state.usuario
         nome = user.get('nome', 'Usuário')
         setor = user.get('setor', 'N/A')
         
-        # 1. Carregar as preferências reais do banco/sessão
+        # 1. Carregar as preferências reais do banco/sessão (agora inclui tema_config)
         prefs = carregar_preferencias()
         
-        # 2. Buscar a configuração do tema escolhido (ou usar o padrão se falhar)
-        tema_config = TEMAS.get(prefs['tema'], TEMAS['Roxo Padrão'])
-        avatar = prefs['avatar'] # Pega o emoji escolhido
+        # 2. Usar a configuração do tema (já vem pronta com gradiente personalizado se aplicável)
+        tema_config = prefs.get('tema_config', TEMAS.get('Roxo Padrão', {
+            "gradient": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
+            "shadow": "rgba(139, 92, 246, 0.25)"
+        }))
+        avatar = prefs.get('avatar', '👤')  # Pega o emoji escolhido
         
         # Card com informações dinâmicas (Gradient e Avatar agora são variáveis)
         html = f"""
