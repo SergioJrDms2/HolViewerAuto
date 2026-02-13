@@ -37,6 +37,9 @@ def salvar_feedback_no_sheets(dados: dict) -> bool:
     """
     Salva os dados do formulário no Google Sheets.
     Retorna True se bem-sucedido, False caso contrário.
+    
+    CORREÇÃO: Agora garante que SEMPRE adiciona uma nova linha ao final,
+    sem nunca substituir feedbacks anteriores.
     """
     try:
         client = get_google_sheets_client()
@@ -45,15 +48,25 @@ def salvar_feedback_no_sheets(dados: dict) -> bool:
 
         sheet = client.open_by_key(spreadsheet_id).worksheet(worksheet_name)
 
-        # Verifica se o cabeçalho já existe; se não, cria
+        # Define o cabeçalho esperado
         cabecalho = [
             "Data/Hora", "Nome", "Email", "Setor", "Tipo de Feedback",
             "Prioridade", "Mensagem", "Permite Contato", "Versão/Área do Sistema"
         ]
+        
+        # Verifica se o cabeçalho existe na linha 1
         primeira_linha = sheet.row_values(1)
-        if not primeira_linha:
-            sheet.append_row(cabecalho)
-
+        if not primeira_linha or primeira_linha == ['']:
+            # Se não existe cabeçalho, adiciona na linha 1
+            sheet.update('A1', [cabecalho])
+        
+        # CORREÇÃO PRINCIPAL: Encontra a próxima linha vazia de forma explícita
+        # Pega todas as células da coluna A (Data/Hora)
+        coluna_a = sheet.col_values(1)
+        
+        # A próxima linha vazia é o tamanho da lista + 1
+        proxima_linha = len(coluna_a) + 1
+        
         # Monta a linha de dados
         linha = [
             dados["data_hora"],
@@ -66,7 +79,12 @@ def salvar_feedback_no_sheets(dados: dict) -> bool:
             "Sim" if dados["permite_contato"] else "Não",
             dados["area_sistema"],
         ]
-        sheet.append_row(linha)
+        
+        # MÉTODO 1: Atualiza diretamente na próxima linha disponível
+        # Isso garante que NUNCA substitui uma linha existente
+        range_name = f'A{proxima_linha}'
+        sheet.update(range_name, [linha])
+        
         return True
 
     except Exception as e:
