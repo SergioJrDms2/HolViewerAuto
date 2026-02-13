@@ -545,7 +545,7 @@ def render_profile_settings():
     # ════════════════════════════════════════════════════════════════════
     with tab_criar:
         st.markdown("### ✨ Crie seu Gradiente Personalizado")
-        st.markdown("<p style='color: #64748B; margin-bottom: 2rem;'>Escolha duas cores e crie um gradiente único que só você verá!</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #64748B; margin-bottom: 2rem;'>Escolha duas cores e crie um gradiente único que só você terá!</p>", unsafe_allow_html=True)
         
         col_criar1, col_criar2 = st.columns([1.5, 1], gap="large")
         
