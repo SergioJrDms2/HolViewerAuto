@@ -7959,7 +7959,7 @@ def calcular_margem_taboao_serra(texto: str, salario_base: float, vencimentos_fi
             continue
         
         # Empréstimos genéricos
-        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST']):
+        if any(termo in linha_norm for termo in ['EMPRESTIMO', 'CONSIGNADO', 'FINANCIAMENTO', 'EMPREST', 'CONSIG', 'CONSIGNAÇÃO', 'CONSIGNACAO']):
             valor = extrair_valores_desconto(linha)
             if valor > 0:
                 emprestimos_atuais += valor
