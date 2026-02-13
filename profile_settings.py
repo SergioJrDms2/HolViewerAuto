@@ -100,6 +100,29 @@ def hex_to_rgba(hex_color: str, alpha: float = 0.25) -> str:
     return f"rgba({r}, {g}, {b}, {alpha})"
 
 
+def criar_gradiente_css(cores: list) -> str:
+    """
+    Cria um gradiente CSS com 2 a 4 cores distribuídas uniformemente.
+    
+    Args:
+        cores: Lista de cores em hexadecimal (2 a 4 cores)
+    
+    Returns:
+        String CSS do gradiente linear
+    """
+    # Remove cores vazias/None
+    cores = [c for c in cores if c]
+    
+    if len(cores) < 2:
+        cores = [cores[0], cores[0]] if cores else ["#8B5CF6", "#7C3AED"]
+    
+    num_cores = len(cores)
+    porcentagens = [i * (100 / (num_cores - 1)) for i in range(num_cores)]
+    
+    stops = [f"{cor} {pct:.0f}%" for cor, pct in zip(cores, porcentagens)]
+    return f"linear-gradient(135deg, {', '.join(stops)})"
+
+
 def carregar_gradientes_personalizados(user_id: str) -> dict:
     """Carrega gradientes personalizados do usuário do Supabase."""
     from auth import get_supabase_client
@@ -114,12 +137,19 @@ def carregar_gradientes_personalizados(user_id: str) -> dict:
                 nome = grad.get('nome_gradiente')
                 color_light = grad.get('color_light')
                 color_dark = grad.get('color_dark')
+                color3 = grad.get('color3')  # Terceira cor (opcional)
+                color4 = grad.get('color4')  # Quarta cor (opcional)
+                
+                # Cria lista de cores (remove None/vazias)
+                cores = [c for c in [color_light, color_dark, color3, color4] if c]
                 
                 gradientes[nome] = {
-                    "gradient": f"linear-gradient(135deg, {color_light} 0%, {color_dark} 100%)",
+                    "gradient": criar_gradiente_css(cores),
                     "color_light": color_light,
                     "color_dark": color_dark,
-                    "shadow": hex_to_rgba(color_dark, 0.25),
+                    "color3": color3,
+                    "color4": color4,
+                    "shadow": hex_to_rgba(cores[-1], 0.25),  # Usa a última cor para sombra
                     "custom": True,  # Flag para identificar que é personalizado
                     "id": grad.get('id')  # ID para poder deletar
                 }
@@ -131,8 +161,8 @@ def carregar_gradientes_personalizados(user_id: str) -> dict:
         return {}
 
 
-def salvar_gradiente_personalizado(user_id: str, nome: str, color_light: str, color_dark: str) -> tuple[bool, str]:
-    """Salva um novo gradiente personalizado no Supabase."""
+def salvar_gradiente_personalizado(user_id: str, nome: str, color_light: str, color_dark: str, color3: str = None, color4: str = None) -> tuple[bool, str]:
+    """Salva um novo gradiente personalizado no Supabase com 2 a 4 cores."""
     from auth import get_supabase_client
     
     try:
@@ -144,7 +174,7 @@ def salvar_gradiente_personalizado(user_id: str, nome: str, color_light: str, co
         if check.data:
             return False, "Você já tem um gradiente com esse nome. Escolha outro nome."
         
-        # Salva o novo gradiente
+        # Salva o novo gradiente (color3 e color4 são opcionais)
         dados = {
             'user_id': user_id,
             'nome_gradiente': nome,
@@ -152,8 +182,16 @@ def salvar_gradiente_personalizado(user_id: str, nome: str, color_light: str, co
             'color_dark': color_dark
         }
         
+        # Adiciona cores opcionais se fornecidas
+        if color3:
+            dados['color3'] = color3
+        if color4:
+            dados['color4'] = color4
+        
         supabase.table('custom_gradients').insert(dados).execute()
-        return True, "Gradiente personalizado criado com sucesso! 🎨"
+        
+        num_cores = 2 + (1 if color3 else 0) + (1 if color4 else 0)
+        return True, f"Gradiente personalizado com {num_cores} cores criado com sucesso! 🎨"
         
     except Exception as e:
         return False, f"Erro ao salvar gradiente: {str(e)}"
@@ -545,7 +583,7 @@ def render_profile_settings():
     # ════════════════════════════════════════════════════════════════════
     with tab_criar:
         st.markdown("### ✨ Crie seu Gradiente Personalizado")
-        st.markdown("<p style='color: #64748B; margin-bottom: 2rem;'>Escolha duas cores e crie um gradiente único que só você terá!</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #64748B; margin-bottom: 2rem;'>Escolha de 2 até 4 cores e crie um gradiente único que só você terá!</p>", unsafe_allow_html=True)
         
         col_criar1, col_criar2 = st.columns([1.5, 1], gap="large")
         
@@ -555,29 +593,83 @@ def render_profile_settings():
                 st.session_state.preview_cor1 = '#8B5CF6'
             if 'preview_cor2' not in st.session_state:
                 st.session_state.preview_cor2 = '#7C3AED'
+            if 'preview_cor3' not in st.session_state:
+                st.session_state.preview_cor3 = None
+            if 'preview_cor4' not in st.session_state:
+                st.session_state.preview_cor4 = None
+            if 'usar_cor3' not in st.session_state:
+                st.session_state.usar_cor3 = False
+            if 'usar_cor4' not in st.session_state:
+                st.session_state.usar_cor4 = False
             
-            # Color pickers FORA do formulário para atualização em tempo real
+            # Seletor de número de cores
+            st.markdown("#### 🎨 Número de Cores no Gradiente")
+            num_cores = st.radio(
+                "Escolha quantas cores usar:",
+                options=[2, 3, 4],
+                horizontal=True,
+                help="Você pode criar gradientes com 2, 3 ou 4 cores"
+            )
+            
+            st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
             st.markdown("#### 🎨 Escolha as Cores")
             
+            # Sempre mostra as duas primeiras cores
             col_cor1, col_cor2 = st.columns(2)
             
             with col_cor1:
                 cor_inicial = st.color_picker(
-                    "🎨 Cor Inicial",
+                    "🎨 Cor 1 (Inicial)",
                     value=st.session_state.preview_cor1,
-                    help="Cor que aparece no topo/esquerda",
+                    help="Primeira cor do gradiente",
                     key="color_picker_1"
                 )
                 st.session_state.preview_cor1 = cor_inicial
             
             with col_cor2:
                 cor_final = st.color_picker(
-                    "🎨 Cor Final",
+                    "🎨 Cor 2",
                     value=st.session_state.preview_cor2,
-                    help="Cor que aparece embaixo/direita",
+                    help="Segunda cor do gradiente",
                     key="color_picker_2"
                 )
                 st.session_state.preview_cor2 = cor_final
+            
+            # Mostra cor 3 se selecionado 3 ou 4 cores
+            if num_cores >= 3:
+                st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
+                col_cor3, col_cor4 = st.columns(2)
+                
+                with col_cor3:
+                    if st.session_state.preview_cor3 is None:
+                        st.session_state.preview_cor3 = '#EC4899'
+                    
+                    cor3 = st.color_picker(
+                        "🎨 Cor 3",
+                        value=st.session_state.preview_cor3,
+                        help="Terceira cor do gradiente",
+                        key="color_picker_3"
+                    )
+                    st.session_state.preview_cor3 = cor3
+                
+                # Mostra cor 4 se selecionado 4 cores
+                if num_cores == 4:
+                    with col_cor4:
+                        if st.session_state.preview_cor4 is None:
+                            st.session_state.preview_cor4 = '#F97316'
+                        
+                        cor4 = st.color_picker(
+                            "🎨 Cor 4 (Final)",
+                            value=st.session_state.preview_cor4,
+                            help="Quarta cor do gradiente",
+                            key="color_picker_4"
+                        )
+                        st.session_state.preview_cor4 = cor4
+                else:
+                    st.session_state.preview_cor4 = None
+            else:
+                st.session_state.preview_cor3 = None
+                st.session_state.preview_cor4 = None
             
             st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
             
@@ -606,11 +698,18 @@ def render_profile_settings():
                         st.error("⚠️ Você precisa estar logado para criar gradientes.")
                     else:
                         user_id = st.session_state.usuario['id']
+                        
+                        # Prepara as cores baseado na seleção
+                        cor3_salvar = st.session_state.preview_cor3 if num_cores >= 3 else None
+                        cor4_salvar = st.session_state.preview_cor4 if num_cores == 4 else None
+                        
                         sucesso, msg = salvar_gradiente_personalizado(
                             user_id,
                             nome_gradiente.strip(),
                             st.session_state.preview_cor1,
-                            st.session_state.preview_cor2
+                            st.session_state.preview_cor2,
+                            cor3_salvar,
+                            cor4_salvar
                         )
                         
                         if sucesso:
@@ -626,8 +725,15 @@ def render_profile_settings():
             # Preview do gradiente sendo criado
             st.markdown("### Preview em Tempo Real")
             
-            gradient_preview = f"linear-gradient(135deg, {st.session_state.preview_cor1} 0%, {st.session_state.preview_cor2} 100%)"
-            shadow_preview = hex_to_rgba(st.session_state.preview_cor2, 0.25)
+            # Cria lista de cores para o preview
+            cores_preview = [st.session_state.preview_cor1, st.session_state.preview_cor2]
+            if num_cores >= 3 and st.session_state.preview_cor3:
+                cores_preview.append(st.session_state.preview_cor3)
+            if num_cores == 4 and st.session_state.preview_cor4:
+                cores_preview.append(st.session_state.preview_cor4)
+            
+            gradient_preview = criar_gradiente_css(cores_preview)
+            shadow_preview = hex_to_rgba(cores_preview[-1], 0.25)
             
             nome = st.session_state.usuario.get('nome', 'Usuário') if 'usuario' in st.session_state else 'Usuário'
             setor = st.session_state.usuario.get('setor', 'N/A') if 'usuario' in st.session_state else 'N/A'
@@ -671,7 +777,7 @@ def render_profile_settings():
                 </div>
             """, unsafe_allow_html=True)
             
-            st.info("💡 **Dica**: Experimente combinar cores complementares ou variações de uma mesma cor para resultados harmoniosos!")
+            st.info("💡 **Dica**: Com 2 cores, experimente cores complementares. Com 3-4 cores, crie transições suaves usando tons intermediários ou faça gradientes ousados com cores contrastantes!")
     
     # ════════════════════════════════════════════════════════════════════
     # SEÇÃO DE USUÁRIOS DA PLATAFORMA (full width abaixo do layout)
