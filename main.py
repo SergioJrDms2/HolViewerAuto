@@ -27,6 +27,23 @@ from profile_settings import render_profile_settings
 from admin import render_admin_page, init_db, load_cartoes
 
 # ============================================================================
+# FUNÇÃO DE AVISO POPUP DAYCOVAL
+# ============================================================================
+
+@st.dialog("⚠️ Aviso Importante")
+def show_daycoval_warning():
+    """Exibe popup de aviso sobre cartão Daycoval"""
+    
+    st.warning("**Não compramos mais o cartão Daycoval**")
+    
+    st.markdown("""
+    Por favor, desconsidere este cartão nas suas análises e operações.
+    """)
+    
+    if st.button("Entendi", use_container_width=True, type="primary"):
+        st.rerun()
+
+# ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
 # ============================================================================
 
@@ -10814,6 +10831,14 @@ def main():
 
     from complete_profile import render_complete_profile_modal
     render_complete_profile_modal()
+    
+    # Popup de aviso Daycoval
+    if 'daycoval_warning_shown' not in st.session_state:
+        st.session_state['daycoval_warning_shown'] = False
+    
+    if not st.session_state['daycoval_warning_shown']:
+        show_daycoval_warning()
+        st.session_state['daycoval_warning_shown'] = True
     # ────────────────────────────────────────────────────────────────────
     # 2. SIDEBAR REDESENHADA
     # ────────────────────────────────────────────────────────────────────
