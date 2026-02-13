@@ -25,7 +25,6 @@ from profile_settings import carregar_preferencias, TEMAS
 # ============================================================================
 # CONEXÃO COM SUPABASE
 # ============================================================================
-
 @st.cache_resource
 def get_supabase_client() -> Client:
     """Retorna cliente do Supabase (singleton cacheado)."""
@@ -39,19 +38,37 @@ def get_supabase_client() -> Client:
 # ============================================================================
 
 def validar_email(email: str) -> bool:
-    """Valida formato do email e domínio autorizado (.starbank ou .startec no username)."""
+    """
+    Valida formato do email e domínio/username autorizado.
+    
+    Formatos aceitos:
+    1. Domínio institucional: usuario@starbank / @starbank.tec / @starbank.tec.br
+    2. Username com sufixo: usuario.starbank@gmail.com ou usuario.startec@outlook.com
+    """
     email = email.strip().lower()
+    
     # Valida formato básico do email
     padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     if not re.match(padrao, email):
         return False
     
     # Separa username e domínio
-    username = email.split('@')[0]
+    try:
+        username, dominio = email.split('@')
+    except ValueError:
+        return False
     
-    # Verifica se o username termina com .starbank ou .startec
-    dominios_autorizados = ['.starbank', '.startec']
-    return any(username.endswith(dominio) for dominio in dominios_autorizados)
+    # FORMATO 1: Verifica se o domínio é institucional
+    dominios_autorizados = ['starbank', 'starbank.tec', 'starbank.tec.br']
+    if dominio in dominios_autorizados:
+        return True
+    
+    # FORMATO 2: Verifica se o username termina com .starbank ou .startec
+    sufixos_autorizados = ['.starbank', '.startec']
+    if any(username.endswith(sufixo) for sufixo in sufixos_autorizados):
+        return True
+    
+    return False
 
 
 def validar_senha(senha: str) -> tuple[bool, str]:
@@ -135,39 +152,6 @@ def fazer_login(email: str, senha: str) -> tuple[bool, str, dict]:
                 "setor": response.user.user_metadata.get("setor", "N/A"),
                 "access_token": response.session.access_token
             }
-            
-            # 🆕 ATUALIZA/CRIA registro na tabela user_preferences com dados do usuário
-            try:
-                # Busca preferências existentes
-                pref_response = supabase.table('user_preferences').select('*').eq('user_id', response.user.id).execute()
-                
-                if pref_response.data and len(pref_response.data) > 0:
-                    # Atualiza registro existente mantendo tema e avatar, mas atualizando nome/setor/email
-                    pref_existente = pref_response.data[0]
-                    dados_atualizados = {
-                        'user_id': response.user.id,
-                        'tema': pref_existente.get('tema', 'Roxo Padrão'),
-                        'avatar': pref_existente.get('avatar', '👤'),
-                        'nome': user_data['nome'],
-                        'setor': user_data['setor'],
-                        'email': user_data['email']
-                    }
-                    supabase.table('user_preferences').upsert(dados_atualizados, on_conflict='user_id').execute()
-                else:
-                    # Cria novo registro com valores padrão
-                    dados_novos = {
-                        'user_id': response.user.id,
-                        'tema': 'Roxo Padrão',
-                        'avatar': '👤',
-                        'nome': user_data['nome'],
-                        'setor': user_data['setor'],
-                        'email': user_data['email']
-                    }
-                    supabase.table('user_preferences').insert(dados_novos).execute()
-            except Exception as e:
-                # Se falhar ao atualizar preferências, apenas loga o erro mas continua o login
-                print(f"Aviso: Não foi possível atualizar preferências: {str(e)}")
-            
             return True, "Login realizado com sucesso!", user_data
         else:
             return False, "Credenciais inválidas.", {}
@@ -202,6 +186,7 @@ def verificar_sessao() -> bool:
     if 'autenticado' in st.session_state and st.session_state.autenticado:
         return True
     return False
+
 
 
 # ============================================================================
