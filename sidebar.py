@@ -201,7 +201,7 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
             img_src = "" 
 
         st.markdown(f"""
-            <div style='text-align: center; color: white;'>
+            <div style='text-align: left; color: white;'>
                 <img src='{img_src}' style='width: 200px;'>
             </div>
         """, unsafe_allow_html=True)
@@ -264,12 +264,25 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
             </div>
         """, unsafe_allow_html=True)
 
-        modo = st.radio(
+        # Opções de modo SEM Perfil
+        opcoes_modo = ["Análise Individual", "Análise em Lote", "Feedback"]
+        
+        # Sempre renderiza o radio button
+        modo_selecionado_radio = st.radio(
             "Selecione o Modo",
-            ["Análise Individual", "Análise em Lote", "Feedback", "Perfil"],
-            help="Escolha entre analisar um único PDF, múltiplos PDFs, enviar feedback ou configurar seu perfil",
+            opcoes_modo,
+            index=0,
+            help="Escolha entre analisar um único PDF, múltiplos PDFs ou enviar feedback",
             label_visibility="collapsed"
         )
+        
+        # Se o usuário clicou no botão de editar perfil, sobrescreve o modo
+        if 'modo_selecionado' in st.session_state and st.session_state['modo_selecionado'] == 'Perfil':
+            modo = "Perfil"
+            # Remove o flag após usar
+            del st.session_state['modo_selecionado']
+        else:
+            modo = modo_selecionado_radio
 
         # ── Divisor ───────────────────────────────────────────────────────
         st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
