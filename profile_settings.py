@@ -332,7 +332,7 @@ def render_profile_settings():
     """, unsafe_allow_html=True)
     
     # Header
-    st.markdown("<h1 class='profile-header'>⚙️ Configurações de Perfil</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='profile-header'>Configurações de Perfil</h1>", unsafe_allow_html=True)
     st.markdown("<p class='profile-subtitle'>Personalize sua experiência no StarCheck</p>", unsafe_allow_html=True)
     
     # Inicializa variáveis temporárias se não existirem
@@ -624,7 +624,7 @@ def render_profile_settings():
         
         with col_criar2:
             # Preview do gradiente sendo criado
-            st.markdown("### 👁️ Preview em Tempo Real")
+            st.markdown("### Preview em Tempo Real")
             
             gradient_preview = f"linear-gradient(135deg, {st.session_state.preview_cor1} 0%, {st.session_state.preview_cor2} 100%)"
             shadow_preview = hex_to_rgba(st.session_state.preview_cor2, 0.25)
