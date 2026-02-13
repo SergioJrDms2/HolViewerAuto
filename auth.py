@@ -404,73 +404,99 @@ def render_auth_page():
 # ============================================================================
 
 def render_user_info_sidebar():
-    """Renderiza informações do usuário na sidebar com suporte a gradientes personalizados."""
+    """Renderiza info do usuário e botão de edição branco perfeitamente alinhados."""
     if verificar_sessao() and 'usuario' in st.session_state:
         user = st.session_state.usuario
         nome = user.get('nome', 'Usuário')
         setor = user.get('setor', 'N/A')
         
-        # 1. Carregar as preferências reais do banco/sessão (agora inclui tema_config)
         prefs = carregar_preferencias()
-        
-        # 2. Usar a configuração do tema (já vem pronta com gradiente personalizado se aplicável)
         tema_config = prefs.get('tema_config', TEMAS.get('Roxo Padrão', {
             "gradient": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
             "shadow": "rgba(139, 92, 246, 0.25)"
         }))
-        avatar = prefs.get('avatar', '👤')  # Pega o emoji escolhido
+        avatar = prefs.get('avatar', '👤')
+
+        # CSS para alinhar o botão branco perfeitamente ao lado do card
+        st.markdown(f"""
+        <style>
+            /* 1. Remove o espaço que o Streamlit coloca entre colunas */
+            [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {{
+                align-items: center !important;
+                gap: 8px !important;
+            }}
+
+            /* 2. Estilização do Botão Branco - usando seletor que funciona no Streamlit */
+            [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button {{
+                background-color: #ffffff !important;
+                color: #444 !important;
+                border: 1px solid #e0e0e0 !important;
+                border-radius: 10px !important;
+                height: 52px !important;
+                width: 45px !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.08) !important;
+                transition: all 0.2s ease !important;
+            }}
+            
+            /* Hover do botão branco */
+            [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button:hover {{
+                background-color: #f8f8f8 !important;
+                border-color: #d0d0d0 !important;
+                box-shadow: 0 3px 8px rgba(0,0,0,0.12) !important;
+            }}
+
+            /* 3. Centralização absoluta do emoji de lápis */
+            [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button p {{
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 1 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                font-size: 1.2rem !important;
+                width: 100% !important;
+            }}
+            
+            /* 4. Remove o padding superior interno que o Streamlit coloca no bloco do botão */
+            [data-testid="stSidebar"] div[data-testid="column"]:nth-child(2) > div {{
+                padding-top: 0px !important;
+            }}
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Usamos colunas com alinhamento centralizado forçado
+        col1, col2 = st.columns([0.8, 0.2], vertical_alignment="center")
         
-        # Card com informações dinâmicas (Gradient e Avatar agora são variáveis)
-        html = f"""
-        <div style="
-            background: {tema_config['gradient']}; 
-            border-radius: 0.75rem; 
-            padding: 0.65rem 0.85rem; 
-            margin: 1rem 0 0.5rem 0; 
-            box-shadow: 0 3px 10px {tema_config['shadow']}; 
-            display: flex; 
-            align-items: center; 
-            gap: 0.65rem;
-        ">
+        with col1:
+            st.markdown(f"""
             <div style="
-                width: 32px; 
-                height: 32px; 
-                background: rgba(255, 255, 255, 0.25); 
-                border-radius: 50%; 
+                background: {tema_config['gradient']}; 
+                border-radius: 0.75rem; 
+                padding: 0.75rem 0.85rem; 
+                box-shadow: 0 3px 10px {tema_config['shadow']}; 
                 display: flex; 
                 align-items: center; 
-                justify-content: center; 
-                font-weight: 700; 
-                color: white; 
-                font-size: 1.1rem; 
-                border: 1.5px solid rgba(255, 255, 255, 0.3); 
-                flex-shrink: 0;
+                gap: 0.65rem;
+                height: 45px;
+                margin-bottom: 0.9rem;
+                box-sizing: border-box;
             ">
-                {avatar}
-            </div>
-            <div style="flex: 1; min-width: 0;">
-                <div style="
-                    font-weight: 600; 
-                    color: white; 
-                    font-size: 0.85rem; 
-                    line-height: 1.2; 
-                    white-space: nowrap; 
-                    overflow: hidden; 
-                    text-overflow: ellipsis;
-                ">
-                    {nome}
+                <div style="width: 32px; height: 32px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; border: 1.5px solid rgba(255, 255, 255, 0.3); flex-shrink: 0;">
+                    {avatar}
                 </div>
-                <div style="
-                    font-size: 0.7rem; 
-                    color: rgba(255, 255, 255, 0.8); 
-                    line-height: 1.2; 
-                    white-space: nowrap; 
-                    overflow: hidden; 
-                    text-overflow: ellipsis;
-                ">
-                    {setor}
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 600; color: white; font-size: 0.85rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{nome}</div>
+                    <div style="font-size: 0.7rem; color: rgba(255, 255, 255, 0.8); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{setor}</div>
                 </div>
             </div>
-        </div>
-        """
-        st.markdown(html, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            if st.button("✏️", key="btn_edit_profile"):
+                st.session_state['modo_selecionado'] = 'Perfil'
+                st.rerun()
