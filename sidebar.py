@@ -37,6 +37,10 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
     CARTOES_CONHECIDOS    = load_cartoes("cartoes_conhecidos")
     CARTOES_NAO_COMPRADOS = load_cartoes("cartoes_nao_comprados")
 
+    # INICIALIZA O MODO ATUAL NO SESSION STATE (se não existir)
+    if 'modo_atual' not in st.session_state:
+        st.session_state['modo_atual'] = 'Análise Individual'
+
     with st.sidebar:
 
         # ── CSS exclusivo da sidebar ──────────────────────────────────────
@@ -201,17 +205,13 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
             img_src = "" 
 
         st.markdown(f"""
-            <div style='text-align: left; color: white;'>
-                <img src='{img_src}' style='width: 200px;'>
+            <div style='text-align: center; margin-bottom: 1.8rem;'>
+                <img src='{img_src}' alt='StarCheck Logo' style='width: 200px; height: auto;' />
             </div>
         """, unsafe_allow_html=True)
 
-
+        # ── Info do Usuário ───────────────────────────────────────────────
         render_user_info_sidebar()
-        
-
-        # ── Divisor ───────────────────────────────────────────────────────
-        st.markdown("<hr style='border: none; height: 2px; margin-top: 1rem; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 0 0 1.5rem 0;'>", unsafe_allow_html=True)
 
         # ── Prefeitura ────────────────────────────────────────────────────
         st.markdown("""
@@ -264,25 +264,42 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
             </div>
         """, unsafe_allow_html=True)
 
-        # Opções de modo SEM Perfil
+        # Opções de modo SEM Perfil (Perfil é controlado separadamente)
         opcoes_modo = ["Análise Individual", "Análise em Lote", "Feedback"]
         
-        # Sempre renderiza o radio button
+        # Determina o índice atual baseado no modo_atual do session_state
+        # Se o modo_atual for "Perfil", mantem a seleção anterior do radio
+        if st.session_state['modo_atual'] in opcoes_modo:
+            index_atual = opcoes_modo.index(st.session_state['modo_atual'])
+        else:
+            # Se estiver em Perfil ou outro modo, mantém a última seleção válida
+            # ou usa a primeira opção como padrão
+            index_atual = 0
+        
+        # Renderiza o radio button
         modo_selecionado_radio = st.radio(
             "Selecione o Modo",
             opcoes_modo,
-            index=0,
+            index=index_atual,
             help="Escolha entre analisar um único PDF, múltiplos PDFs ou enviar feedback",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key="radio_modo"
         )
         
-        # Se o usuário clicou no botão de editar perfil, sobrescreve o modo
-        if 'modo_selecionado' in st.session_state and st.session_state['modo_selecionado'] == 'Perfil':
-            modo = "Perfil"
-            # Remove o flag após usar
-            del st.session_state['modo_selecionado']
-        else:
-            modo = modo_selecionado_radio
+        # Atualiza o modo_atual baseado no radio button (a não ser que esteja em Perfil)
+        # Se o usuário mudou o radio button, isso significa que ele quer sair do Perfil
+        if st.session_state['modo_atual'] == 'Perfil' and modo_selecionado_radio != st.session_state.get('ultimo_modo_radio'):
+            # Usuário clicou em um modo diferente, sai do Perfil
+            st.session_state['modo_atual'] = modo_selecionado_radio
+        elif st.session_state['modo_atual'] != 'Perfil':
+            # Não está em Perfil, então atualiza normalmente
+            st.session_state['modo_atual'] = modo_selecionado_radio
+        
+        # Salva a última seleção do radio para detectar mudanças
+        st.session_state['ultimo_modo_radio'] = modo_selecionado_radio
+        
+        # Retorna o modo atual (que pode ser Perfil ou o modo do radio)
+        modo = st.session_state['modo_atual']
 
         # ── Divisor ───────────────────────────────────────────────────────
         st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
