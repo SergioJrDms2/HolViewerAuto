@@ -483,5 +483,6 @@ def render_user_info_sidebar():
         
         with col2:
             if st.button("✏️", key="btn_edit_profile"):
-                st.session_state['modo_selecionado'] = 'Perfil'
+                # Define o modo atual como Perfil
+                st.session_state['modo_atual'] = 'Perfil'
                 st.rerun()
