@@ -3057,31 +3057,55 @@ def gerar_insights_ia_mercado(market_data: dict) -> list:
     if not key:
         return []
 
-    prompt = f"""Você é a Stella, Chief Strategy Officer do Starbank Grupo.
-Analise estes dados de mercado de um lote de holerites e gere exatamente 5 insights estratégicos
-para o CEO, gestor comercial ou liderança. Pense como consultora sênior — não como atendente.
+    prompt = f"""Você é a Stella, Chief Strategy Officer do Starbank Grupo — a mente estratégica mais afiada do mercado de crédito consignado.
+Você acabou de receber os dados agregados de um lote de holerites analisados. Sua missão é gerar exatamente 6 insights estratégicos
+que o CEO, o gestor comercial e a liderança vão querer imprimir e levar para a reunião de board.
 
 DADOS DO LOTE:
 {json.dumps(market_data, ensure_ascii=False, indent=2)}
 
 PORTFÓLIO: {PORTFOLIO}
 
-REGRAS:
-- Cada insight deve ter: titulo (curto), texto (2-4 frases densas com dados reais), icone (emoji), nivel ("critico"|"oportunidade"|"atencao"|"positivo")
-- Foque em: market share real, oportunidades de receita, riscos competitivos, decisões de campanha
-- Use os números reais do lote — nunca invente
-- Pense em ROI, alocação de esforço, velocidade de conversão
-- Seja específico: cite valores, percentuais, nomes de instituições concorrentes
-- NUNCA cite valor de troco
-- Retorne APENAS JSON válido, sem markdown
+━━━ COMO PENSAR — LEIA ANTES DE ESCREVER ━━━
 
-JSON:
+Você não está descrevendo os dados. Você está INTERPRETANDO o que eles significam para o negócio.
+A diferença:
+  ✗ "Temos 3 servidores com cartão concorrente totalizando R$ 450/mês"
+  ✓ "R$ 450/mês saindo todo mês para o BMG representa uma receita recorrente que já deveria ser nossa —
+     a cada mês sem ação, acumulamos R$ 450 de receita perdida. Em 12 meses, R$ 5.400 que financiamos
+     para um concorrente sem nenhum custo de aquisição do nosso lado."
+
+TIPOS DE INSIGHT QUE VOCÊ PODE (E DEVE) GERAR — escolha os mais relevantes para este lote:
+
+1. RECEITA LATENTE — quanto dinheiro existe disponível se convertermos X% do potencial
+2. CUSTO DA INAÇÃO — o que perdemos a cada mês que não agimos (receita que vai para concorrente, margem que expira)
+3. CONCENTRAÇÃO DE RISCO — dependência de 1-2 prefeituras, regimes frágeis, carteiras que podem cair
+4. EFEITO DOMINÓ — se convertermos o maior concorrente, quais outros produtos ficam viáveis em seguida
+5. SEGMENTO OCULTO — perfil de servidor que ninguém está olhando mas tem margem intocada
+6. VANTAGEM ASSIMÉTRICA — onde temos diferencial competitivo real que a concorrência não consegue replicar (ex: único a atender temporários)
+7. BENCHMARK IMPLÍCITO — o que o ticket médio do concorrente nos diz sobre o posicionamento de preço deles vs o nosso
+8. JANELA DE OPORTUNIDADE — situação que tem prazo (ex: cartão que vence, servidor prestes a se aposentar muda perfil de margem)
+9. ALAVANCAGEM DE BASE — clientes nossos que ainda têm margem disponível = custo de aquisição zero, já confiam em nós
+10. RISCO DE CHURN — sinais de que podemos perder clientes existentes para a concorrência
+
+REGRAS ABSOLUTAS:
+- Use APENAS os dados reais fornecidos — nunca invente números
+- Cada insight deve ter uma CONCLUSÃO ACIONÁVEL clara: o que a liderança deve fazer com essa informação
+- Seja específico: cite valores em R$, percentuais, nomes de instituições quando disponíveis
+- Vá além do óbvio — insights que qualquer analista já veria não valem espaço
+- Linguagem de board: densa, direta, sem eufemismos
+- NUNCA cite valor de troco
+- Máximo 5 linhas por texto — denso, não prolixo
+- Retorne APENAS JSON válido, sem markdown, sem texto fora do JSON
+
+JSON (exatamente 6 insights):
 [
-  {{"titulo": "...", "texto": "...", "icone": "🚨", "nivel": "critico"}},
-  {{"titulo": "...", "texto": "...", "icone": "🎯", "nivel": "oportunidade"}},
-  {{"titulo": "...", "texto": "...", "icone": "📊", "nivel": "atencao"}},
-  {{"titulo": "...", "texto": "...", "icone": "🏆", "nivel": "positivo"}},
-  {{"titulo": "...", "texto": "...", "icone": "💡", "nivel": "oportunidade"}}
+  {{"titulo": "título impactante de até 7 palavras", "texto": "insight denso com dado real + interpretação + conclusão acionável", "icone": "emoji relevante", "nivel": "critico"|"oportunidade"|"atencao"|"positivo"}},
+  {{"titulo": "...", "texto": "...", "icone": "...", "nivel": "..."}},
+  {{"titulo": "...", "texto": "...", "icone": "...", "nivel": "..."}},
+  {{"titulo": "...", "texto": "...", "icone": "...", "nivel": "..."}},
+  {{"titulo": "...", "texto": "...", "icone": "...", "nivel": "..."}},
+  {{"titulo": "...", "texto": "...", "icone": "...", "nivel": "..."}}
 ]"""
 
     try:
@@ -3089,7 +3113,7 @@ JSON:
         r = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1200,
+            max_tokens=1800,
             temperature=0.4,
         )
         c = r.choices[0].message.content.strip()
