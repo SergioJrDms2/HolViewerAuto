@@ -1,14 +1,5 @@
 """
 auth.py — Sistema de Autenticação com Supabase (Design Moderno)
-Login, cadastro e gerenciamento de sessão.
-
-Dependências:
-    pip install supabase
-
-Configuração no .streamlit/secrets.toml:
-    [supabase]
-    url = "https://seu-projeto.supabase.co"
-    key = "sua-anon-key-aqui"
 """
 
 import streamlit as st
@@ -16,7 +7,6 @@ from supabase import create_client, Client
 import re
 from datetime import datetime
 from auth_styles import apply_auth_styles
-import streamlit as st
 import base64
 import os
 from profile_settings import carregar_preferencias, TEMAS
@@ -27,7 +17,6 @@ from profile_settings import carregar_preferencias, TEMAS
 # ============================================================================
 @st.cache_resource
 def get_supabase_client() -> Client:
-    """Retorna cliente do Supabase (singleton cacheado)."""
     url = st.secrets["supabase"]["url"]
     key = st.secrets["supabase"]["key"]
     return create_client(url, key)
@@ -38,44 +27,24 @@ def get_supabase_client() -> Client:
 # ============================================================================
 
 def validar_email(email: str) -> bool:
-    """
-    Valida formato do email e domínio/username autorizado.
-    
-    Formatos aceitos:
-    1. Domínio institucional: usuario@starbank / @starbank.tec / @starbank.tec.br
-    2. Username com sufixo: usuario.starbank@gmail.com ou usuario.startec@outlook.com
-    """
     email = email.strip().lower()
-    
-    # Valida formato básico do email
     padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     if not re.match(padrao, email):
         return False
-    
-    # Separa username e domínio
     try:
         username, dominio = email.split('@')
     except ValueError:
         return False
-    
-    # FORMATO 1: Verifica se o domínio é institucional
     dominios_autorizados = ['starbank', 'starbank.tec', 'starbank.tec.br']
     if dominio in dominios_autorizados:
         return True
-    
-    # FORMATO 2: Verifica se o username termina com .starbank ou .startec
     sufixos_autorizados = ['.starbank', '.startec']
     if any(username.endswith(sufixo) for sufixo in sufixos_autorizados):
         return True
-    
     return False
 
 
 def validar_senha(senha: str) -> tuple[bool, str]:
-    """
-    Valida força da senha.
-    Retorna (válido, mensagem_erro).
-    """
     if len(senha) < 6:
         return False, "A senha deve ter pelo menos 6 caracteres"
     if len(senha) > 72:
@@ -84,26 +53,14 @@ def validar_senha(senha: str) -> tuple[bool, str]:
 
 
 def extrair_nome_curto(nome_completo: str) -> str:
-    """
-    Extrai apenas o primeiro nome.
-    Exemplo: "João da Silva Santos" -> "João"
-    """
     palavras = nome_completo.strip().split()
     return palavras[0] if palavras else nome_completo.strip()
 
 
 def fazer_cadastro(email: str, senha: str, nome: str, setor: str) -> tuple[bool, str]:
-    """
-    Cadastra um novo usuário no Supabase Auth e salva dados adicionais.
-    Retorna (sucesso, mensagem).
-    """
     try:
         supabase = get_supabase_client()
-        
-        # Extrai apenas primeiro e segundo nome
         nome_formatado = extrair_nome_curto(nome)
-        
-        # Cria usuário no Supabase Auth
         response = supabase.auth.sign_up({
             "email": email,
             "password": senha,
@@ -115,12 +72,10 @@ def fazer_cadastro(email: str, senha: str, nome: str, setor: str) -> tuple[bool,
                 }
             }
         })
-        
         if response.user:
             return True, "Cadastro realizado com sucesso! Você já pode fazer login."
         else:
             return False, "Erro ao criar conta. Tente novamente."
-            
     except Exception as e:
         error_msg = str(e)
         if "already registered" in error_msg.lower() or "already exists" in error_msg.lower():
@@ -132,18 +87,12 @@ def fazer_cadastro(email: str, senha: str, nome: str, setor: str) -> tuple[bool,
 
 
 def fazer_login(email: str, senha: str) -> tuple[bool, str, dict]:
-    """
-    Autentica usuário no Supabase.
-    Retorna (sucesso, mensagem, dados_usuario).
-    """
     try:
         supabase = get_supabase_client()
-        
         response = supabase.auth.sign_in_with_password({
             "email": email,
             "password": senha
         })
-        
         if response.user:
             user_data = {
                 "id": response.user.id,
@@ -155,7 +104,6 @@ def fazer_login(email: str, senha: str) -> tuple[bool, str, dict]:
             return True, "Login realizado com sucesso!", user_data
         else:
             return False, "Credenciais inválidas.", {}
-            
     except Exception as e:
         error_msg = str(e).lower()
         if "invalid login credentials" in error_msg or "invalid" in error_msg:
@@ -165,109 +113,143 @@ def fazer_login(email: str, senha: str) -> tuple[bool, str, dict]:
 
 
 def fazer_logout():
-    """Encerra a sessão do usuário."""
     try:
         supabase = get_supabase_client()
         supabase.auth.sign_out()
     except:
         pass
-    
-    # Limpa session state
     for key in ['usuario', 'autenticado', 'access_token']:
         if key in st.session_state:
             del st.session_state[key]
 
 
 def verificar_sessao() -> bool:
-    """
-    Verifica se há uma sessão ativa.
-    Retorna True se o usuário está autenticado.
-    """
     if 'autenticado' in st.session_state and st.session_state.autenticado:
         return True
     return False
 
 
-
 # ============================================================================
-# INTERFACE DE LOGIN/CADASTRO - DESIGN MODERNO
+# INTERFACE DE LOGIN/CADASTRO
 # ============================================================================
 
 def render_auth_page():
-    """
-    Renderiza a tela de autenticação moderna (login ou cadastro).
-    Retorna True se o usuário está autenticado, False caso contrário.
-    """
-    
-    # Verifica se já está autenticado
     if verificar_sessao():
         return True
-    
-    # Aplica estilos CSS
+
     apply_auth_styles()
-    
-    # Layout em duas colunas - estilo plataforma
+
+    st.markdown("""
+    <style>
+        /* Remove padding excessivo do container */
+        .main .block-container {
+            padding-top: 2rem !important;
+            padding-bottom: 2rem !important;
+        }
+
+        /* Estica as colunas para mesma altura */
+        [data-testid="stHorizontalBlock"] {
+            align-items: stretch !important;
+        }
+
+        /* Wrapper da imagem: ocupa toda a altura e centraliza verticalmente */
+        #login-img-wrapper {
+            position: sticky;
+            top: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            min-height: 460px;
+        }
+
+        /* Imagem: 100% da largura da coluna, sem distorcer */
+        #login-img-wrapper img {
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 1rem;
+            display: block;
+        }
+    </style>
+
+    <script>
+        (function syncImgHeight() {
+            function doSync() {
+                try {
+                    var doc = window.parent.document;
+                    // Pega as duas colunas do layout principal
+                    var cols = doc.querySelectorAll(
+                        'section.main [data-testid="stHorizontalBlock"] > div[data-testid="column"]'
+                    );
+                    if (cols.length < 2) return;
+
+                    var rightCol  = cols[1];
+                    var wrapper   = doc.getElementById('login-img-wrapper');
+                    if (!wrapper) return;
+
+                    var h = rightCol.offsetHeight;
+                    if (h > 100) {
+                        wrapper.style.minHeight = h + 'px';
+                        wrapper.style.height    = h + 'px';
+                    }
+                } catch(e) {}
+            }
+
+            // Dispara em múltiplos momentos para garantir que o DOM esteja pronto
+            [100, 300, 600, 1000, 2000].forEach(function(t) {
+                setTimeout(doSync, t);
+            });
+
+            window.addEventListener('resize', doSync);
+        })();
+    </script>
+    """, unsafe_allow_html=True)
+
     col_left, col_right = st.columns([1.2, 1.8], gap="large")
-    
+
     # ══════════════════════════════════════════════════════════════════════
-    # COLUNA ESQUERDA - Logo e Informações
+    # COLUNA ESQUERDA - Imagem
     # ══════════════════════════════════════════════════════════════════════
     with col_left:
-        # --- 1. Mantenha sua função de imagem ---
         def get_img_as_base64(file_path):
             with open(file_path, "rb") as f:
-                data = f.read()
-            return base64.b64encode(data).decode()
+                return base64.b64encode(f.read()).decode()
 
-        # Ajuste o caminho se necessário
-        image_path = "assets/LogoStarcheckWhite.png" 
-
+        image_path = "assets/login.png"
         try:
             img_base64 = get_img_as_base64(image_path)
             img_src = f"data:image/png;base64,{img_base64}"
         except Exception:
-            img_src = "" 
+            img_src = ""
 
         st.markdown(f"""
-        <div style='background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%); border-radius: 1.5rem; padding: 3rem 2rem; min-height: 600px; display: flex; flex-direction: column; justify-content: center; box-shadow: 0 20px 50px rgba(139, 92, 246, 0.3);'>
-        <div style='text-align: center; color: white;'>
-        <img src='{img_src}' style='width: 200px; margin-bottom: 2rem;'>
-        <div style='margin-top: 3rem;'>
-        <h2 style='font-size: 1.75rem; font-weight: 800; margin-bottom: 1rem; line-height: 1.2; color: white;'>StarCheck - Analisador de Holerite</h2>
-        <p style='font-size: 1.05rem; opacity: 0.9; line-height: 1.6; margin-bottom: 2rem; color: white;'>Faça upload do seu holerite em PDF e obtenha análises detalhadas.</p>
-        </div>
-        <div style='background: rgba(255, 255, 255, 0.15); border-radius: 1rem; padding: 1.5rem; margin-top: 2rem; backdrop-filter: blur(10px);'>
-        <div style='display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;'>
-        <div style='width: 40px; height: 40px; background: rgba(255, 255, 255, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;'>⚡</div>
-        <div style='text-align: left;'><div style='font-weight: 700; font-size: 0.95rem; color: white;'>Processamento Rápido</div><div style='font-size: 0.85rem; opacity: 0.8; color: white;'>Análise em segundos</div></div>
-        </div>
-        <div style='display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;'>
-        <div style='width: 40px; height: 40px; background: rgba(255, 255, 255, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;'>💡</div>
-        <div style='text-align: left;'><div style='font-weight: 700; font-size: 0.95rem; color: white;'>Insights Inteligentes</div><div style='font-size: 0.85rem; opacity: 0.8; color: white;'>Oportunidades identificadas</div></div>
-        </div>
-        <div style='display: flex; align-items: center; gap: 1rem;'>
-        <div style='width: 40px; height: 40px; background: rgba(255, 255, 255, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;'>🔒</div>
-        <div style='text-align: left;'><div style='font-weight: 700; font-size: 0.95rem; color: white;'>100% Seguro</div><div style='font-size: 0.85rem; opacity: 0.8; color: white;'>Seus dados protegidos</div></div>
-        </div>
-        </div>
-        </div>
+        <div id="login-img-wrapper">
+            <img src="{img_src}" alt="Logo StarCheck">
         </div>
         """, unsafe_allow_html=True)
-    
+
     # ══════════════════════════════════════════════════════════════════════
-    # COLUNA DIREITA - Formulário de Login/Cadastro
+    # COLUNA DIREITA - Formulário
     # ══════════════════════════════════════════════════════════════════════
     with col_right:
-        # Título
-        st.markdown("<h1 style='color: #111827; font-size: 2rem; font-weight: 800; margin: 0 0 0.5rem 0; letter-spacing: -0.02em;'>Bem-vindo!</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='color: #6B7280; font-size: 1rem; margin: 0 0 2rem 0;'>Entre com sua conta ou crie uma nova</p>", unsafe_allow_html=True)
-        
-        # Tabs: Login e Cadastro
+        st.markdown(
+            "<h1 style='color: #111827; font-size: 2rem; font-weight: 800; "
+            "margin: 0 0 0.5rem 0; letter-spacing: -0.02em;'>Bem-vindo!</h1>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            "<p style='color: #6B7280; font-size: 1rem; margin: 0 0 2rem 0;'>"
+            "Entre com sua conta ou crie uma nova</p>",
+            unsafe_allow_html=True
+        )
+
         tab_login, tab_cadastro = st.tabs(["🔑 Entrar", "📝 Criar Conta"])
-        
-        # ──────────────────────────────────────────────────────────────────
-        # TAB LOGIN
-        # ──────────────────────────────────────────────────────────────────
+
+        # ── TAB LOGIN ──────────────────────────────────────────────────────
         with tab_login:
             with st.form("form_login", clear_on_submit=False):
                 email_login = st.text_input(
@@ -281,19 +263,19 @@ def render_auth_page():
                     placeholder="••••••••",
                     key="senha_login"
                 )
-                
                 st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
-                submit_login = st.form_submit_button("Entrar", use_container_width=True, type="primary")
-                
+                submit_login = st.form_submit_button(
+                    "Entrar", use_container_width=True, type="primary"
+                )
+
                 if submit_login:
                     if not email_login or not senha_login:
                         st.error("⚠️ Preencha todos os campos.")
                     elif not validar_email(email_login):
-                        st.error("⚠️ Email inválido. Use o formato: seunome.starbank@email.com ou seunome.startec@email.com")
+                        st.error("⚠️ Email inválido. Use o formato: seunome.starbank@email.com")
                     else:
                         with st.spinner("Autenticando..."):
                             sucesso, mensagem, user_data = fazer_login(email_login, senha_login)
-                            
                             if sucesso:
                                 st.session_state.autenticado = True
                                 st.session_state.usuario = user_data
@@ -302,10 +284,8 @@ def render_auth_page():
                                 st.rerun()
                             else:
                                 st.error(f"❌ {mensagem}")
-        
-        # ──────────────────────────────────────────────────────────────────
-        # TAB CADASTRO
-        # ──────────────────────────────────────────────────────────────────
+
+        # ── TAB CADASTRO ───────────────────────────────────────────────────
         with tab_cadastro:
             with st.form("form_cadastro", clear_on_submit=True):
                 nome_cadastro = st.text_input(
@@ -323,7 +303,6 @@ def render_auth_page():
                     placeholder="Ex: Comercial, Crédito, TI...",
                     key="setor_cadastro"
                 )
-                
                 col1, col2 = st.columns(2)
                 with col1:
                     senha_cadastro = st.text_input(
@@ -339,27 +318,25 @@ def render_auth_page():
                         placeholder="Digite novamente",
                         key="senha_confirmacao"
                     )
-                
                 st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
-                submit_cadastro = st.form_submit_button("Criar Conta", use_container_width=True, type="primary")
-                
+                submit_cadastro = st.form_submit_button(
+                    "Criar Conta", use_container_width=True, type="primary"
+                )
+
                 if submit_cadastro:
                     erros = []
-                    
                     if not nome_cadastro or len(nome_cadastro.strip()) < 3:
                         erros.append("Nome deve ter pelo menos 3 caracteres")
                     if not email_cadastro or not validar_email(email_cadastro):
                         erros.append("Email inválido. Use seu email institucional.")
                     if not setor_cadastro or len(setor_cadastro.strip()) < 2:
                         erros.append("Setor é obrigatório")
-                    
                     valido_senha, msg_senha = validar_senha(senha_cadastro)
                     if not valido_senha:
                         erros.append(msg_senha)
-                    
                     if senha_cadastro != senha_confirmacao:
                         erros.append("As senhas não coincidem")
-                    
+
                     if erros:
                         for erro in erros:
                             st.error(f"⚠️ {erro}")
@@ -371,30 +348,31 @@ def render_auth_page():
                                 nome_cadastro.strip(),
                                 setor_cadastro.strip()
                             )
-                            
                             if sucesso:
                                 st.success(f"✅ {mensagem}")
                                 st.info("💡 Agora você pode fazer login na aba 'Entrar'.")
                             else:
                                 st.error(f"❌ {mensagem}")
-        
-        # Rodapé
-        st.markdown("<div style='text-align: center; margin-top: 2rem; color: #9CA3AF; font-size: 0.85rem;'><p style='margin: 0;'>v2.0 · StarCheck · Sistema de Análise de Holerites</p></div>", unsafe_allow_html=True)
-    
+
+        st.markdown(
+            "<div style='text-align: center; margin-top: 2rem; color: #9CA3AF; font-size: 0.85rem;'>"
+            "<p style='margin: 0;'>v3.0 · StarCheck · Sistema Inteligente de Análise de Holerites</p></div>",
+            unsafe_allow_html=True
+        )
+
     return False
 
 
 # ============================================================================
-# SIDEBAR - INFO COMPACTA DO USUÁRIO COM ÍCONE SVG VERMELHO
+# SIDEBAR - INFO COMPACTA DO USUÁRIO
 # ============================================================================
 
 def render_user_info_sidebar():
-    """Renderiza info do usuário e botão de edição branco perfeitamente alinhados."""
     if verificar_sessao() and 'usuario' in st.session_state:
         user = st.session_state.usuario
         nome = user.get('nome', 'Usuário')
         setor = user.get('setor', 'N/A')
-        
+
         prefs = carregar_preferencias()
         tema_config = prefs.get('tema_config', TEMAS.get('Roxo Padrão', {
             "gradient": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
@@ -402,16 +380,12 @@ def render_user_info_sidebar():
         }))
         avatar = prefs.get('avatar', '👤')
 
-        # CSS para alinhar o botão branco perfeitamente ao lado do card
         st.markdown(f"""
         <style>
-            /* 1. Remove o espaço que o Streamlit coloca entre colunas */
             [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {{
                 align-items: center !important;
                 gap: 8px !important;
             }}
-
-            /* 2. Estilização do Botão Branco - usando seletor que funciona no Streamlit */
             [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button {{
                 background-color: #ffffff !important;
                 color: #444 !important;
@@ -427,62 +401,54 @@ def render_user_info_sidebar():
                 box-shadow: 0 2px 5px rgba(0,0,0,0.08) !important;
                 transition: all 0.2s ease !important;
             }}
-            
-            /* Hover do botão branco */
             [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button:hover {{
                 background-color: #f8f8f8 !important;
                 border-color: #d0d0d0 !important;
                 box-shadow: 0 3px 8px rgba(0,0,0,0.12) !important;
             }}
-
-            /* 3. Centralização absoluta do emoji de lápis */
             [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button p {{
-                margin: 0 !important;
-                padding: 0 !important;
-                line-height: 1 !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                font-size: 1.2rem !important;
+                margin: 0 !important; padding: 0 !important; line-height: 1 !important;
+                display: flex !important; align-items: center !important;
+                justify-content: center !important; font-size: 1.2rem !important;
                 width: 100% !important;
             }}
-            
-            /* 4. Remove o padding superior interno que o Streamlit coloca no bloco do botão */
             [data-testid="stSidebar"] div[data-testid="column"]:nth-child(2) > div {{
                 padding-top: 0px !important;
             }}
         </style>
         """, unsafe_allow_html=True)
 
-        # Usamos colunas com alinhamento centralizado forçado
         col1, col2 = st.columns([0.8, 0.2], vertical_alignment="center")
-        
+
         with col1:
             st.markdown(f"""
             <div style="
-                background: {tema_config['gradient']}; 
-                border-radius: 0.75rem; 
-                padding: 0.75rem 0.85rem; 
-                box-shadow: 0 3px 10px {tema_config['shadow']}; 
-                display: flex; 
-                align-items: center; 
+                background: {tema_config['gradient']};
+                border-radius: 0.75rem;
+                padding: 0.75rem 0.85rem;
+                box-shadow: 0 3px 10px {tema_config['shadow']};
+                display: flex;
+                align-items: center;
                 gap: 0.65rem;
                 height: 45px;
                 margin-bottom: 0.9rem;
                 box-sizing: border-box;
             ">
-                <div style="width: 32px; height: 32px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; border: 1.5px solid rgba(255, 255, 255, 0.3); flex-shrink: 0;">
+                <div style="width: 32px; height: 32px; background: rgba(255,255,255,0.25);
+                    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+                    font-size: 1.1rem; border: 1.5px solid rgba(255,255,255,0.3); flex-shrink: 0;">
                     {avatar}
                 </div>
                 <div style="flex: 1; min-width: 0;">
-                    <div style="font-weight: 600; color: white; font-size: 0.85rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{nome}</div>
-                    <div style="font-size: 0.7rem; color: rgba(255, 255, 255, 0.8); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{setor}</div>
+                    <div style="font-weight: 600; color: white; font-size: 0.85rem; line-height: 1.2;
+                        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{nome}</div>
+                    <div style="font-size: 0.7rem; color: rgba(255,255,255,0.8); line-height: 1.2;
+                        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{setor}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
-        
+
         with col2:
             if st.button("✏️", key="btn_edit_profile"):
-                # Define o modo atual como Perfil
                 st.session_state['modo_atual'] = 'Perfil'
                 st.rerun()
