@@ -4125,8 +4125,10 @@ def render_dashboard_lote(resultados: list):
             "distribuicao_oportunidades": dict(opps.most_common()),
         }
 
-        with st.spinner("✨ Stella gerando insights estratégicos..."):
-            insights_ia = gerar_insights_ia_mercado(market_payload)
+        if "insights_ia_lote" not in st.session_state:
+            with st.spinner("✨ Stella gerando insights estratégicos..."):
+                st.session_state["insights_ia_lote"] = gerar_insights_ia_mercado(market_payload)
+        insights_ia = st.session_state["insights_ia_lote"]
 
         _COR_NIVEL = {
             "critico":     ("#fef2f2", "#dc2626"),
@@ -4328,7 +4330,7 @@ def main():
 
         if arquivos_upload:
             if st.button("🚀 Processar Todos com a Stella", type="primary", use_container_width=False):
-                for k in ("lote_resultados", "df_resultados", "chat_history_lote"):
+                for k in ("lote_resultados", "df_resultados", "chat_history_lote", "insights_ia_lote"):
                     st.session_state.pop(k, None)
                 with st.spinner(f"Analisando {len(arquivos_upload)} holerite(s)..."):
                     resultados = processar_lote(arquivos_upload)
