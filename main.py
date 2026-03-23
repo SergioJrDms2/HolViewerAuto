@@ -883,7 +883,7 @@ def extrair_texto_imagem(bytes_: bytes) -> str:
 
 
 def _groq_key() -> str:
-    try: return "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"
+    try: return "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"
     except Exception: return os.environ.get("GROQ_API_KEY","")
 
 # ============================================================================
