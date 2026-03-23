@@ -213,33 +213,7 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
         # ── Info do Usuário ───────────────────────────────────────────────
         render_user_info_sidebar()
 
-        # ── Prefeitura ────────────────────────────────────────────────────
-        st.markdown("""
-            <div style='
-                display: flex; 
-                align-items: center; 
-                gap: 0.5rem;
-                margin-bottom: 0.6rem;
-            '>
-                <span style='font-size: 1.1rem;'>📍</span>
-                <p style='
-                    font-size: 0.75rem; 
-                    font-weight: 700; 
-                    text-transform: uppercase; 
-                    letter-spacing: 0.8px; 
-                    color: #6D28D9; 
-                    margin: 0;
-                '>Prefeitura</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        prefeitura_selecionada = st.selectbox(
-            "Prefeitura",
-            options=list(PREFEITURAS.keys()),
-            format_func=lambda x: PREFEITURAS[x]['nome'],
-            help="Escolha a prefeitura do holerite para análise correta",
-            label_visibility="collapsed"
-        )
+        prefeitura_selecionada = None
 
         # ── Divisor ───────────────────────────────────────────────────────
         st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
@@ -304,118 +278,9 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
         # ── Divisor ───────────────────────────────────────────────────────
         st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
 
-        # ── Nossos Produtos ───────────────────────────────────────────────
-        st.markdown("""
-            <div style='
-                display: flex; 
-                align-items: center; 
-                gap: 0.5rem;
-                margin-bottom: 0.6rem;
-            '>
-                <span style='font-size: 1.1rem;'>✅</span>
-                <p style='
-                    font-size: 0.75rem; 
-                    font-weight: 700; 
-                    text-transform: uppercase; 
-                    letter-spacing: 0.8px; 
-                    color: #6D28D9; 
-                    margin: 0;
-                '>Nossos Produtos</p>
-            </div>
-        """, unsafe_allow_html=True)
         
-        with st.expander("Ver lista completa", expanded=False):
-            for produto in NOSSOS_PRODUTOS:
-                st.markdown(f"""
-                    <div style='
-                        padding: 0.5rem 0.6rem; 
-                        font-size: 0.88rem; 
-                        font-weight: 500; 
-                        color: #2D1B69; 
-                        border-bottom: 1px solid #E9DEFF;
-                        display: flex;
-                        align-items: center;
-                        gap: 0.5rem;
-                    '>
-                        <span style='color: #8B5CF6;'>⭐</span> {produto}
-                    </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
-
-        # ── Cartões Concorrentes ──────────────────────────────────────────
-        st.markdown("""
-            <div style='
-                display: flex; 
-                align-items: center; 
-                gap: 0.5rem;
-                margin-bottom: 0.6rem;
-            '>
-                <span style='font-size: 1.1rem;'>🎯</span>
-                <p style='
-                    font-size: 0.75rem; 
-                    font-weight: 700; 
-                    text-transform: uppercase; 
-                    letter-spacing: 0.8px; 
-                    color: #6D28D9; 
-                    margin: 0;
-                '>Cartões Concorrentes</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        with st.expander("Ver lista completa", expanded=False):
-            cols = st.columns(2)
-            for idx, cartao in enumerate(CARTOES_CONHECIDOS):
-                with cols[idx % 2]:
-                    st.markdown(f"""
-                        <div style='
-                            padding: 0.3rem 0; 
-                            font-size: 0.82rem; 
-                            color: #4C1D95;
-                            font-weight: 500;
-                        '>• {cartao}</div>
-                    """, unsafe_allow_html=True)
-
-        st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
-
-        # ── Cartões Que Não Compramos ─────────────────────────────────────
-        st.markdown("""
-            <div style='
-                display: flex; 
-                align-items: center; 
-                gap: 0.5rem;
-                margin-bottom: 0.6rem;
-            '>
-                <span style='font-size: 1.1rem;'>🚫</span>
-                <p style='
-                    font-size: 0.75rem; 
-                    font-weight: 700; 
-                    text-transform: uppercase; 
-                    letter-spacing: 0.8px; 
-                    color: #6D28D9; 
-                    margin: 0;
-                '>Cartões Que Não Compramos</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        with st.expander("Ver lista completa", expanded=False):
-            cols = st.columns(2)
-            for idx, cartao in enumerate(CARTOES_NAO_COMPRADOS):
-                with cols[idx % 2]:
-                    st.markdown(f"""
-                        <div style='
-                            padding: 0.3rem 0; 
-                            font-size: 0.82rem; 
-                            color: #4C1D95;
-                            font-weight: 500;
-                        '>• {cartao}</div>
-                    """, unsafe_allow_html=True)
-
-        # ── Divisor ───────────────────────────────────────────────────────
-        st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
-
         # ── Dica ──────────────────────────────────────────────────────────
-        st.info("💡 Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote.", icon="ℹ️")
+        st.info("Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote.", icon="💡")
 
         # ── Versão ────────────────────────────────────────────────────────
         st.markdown("""
@@ -430,7 +295,7 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
                     color: #A78BFA; 
                     letter-spacing: 0.8px;
                     font-weight: 600;
-                '>v2.1 · StarCheck</span> 
+                '>v3.0 StarCheck</span> 
             </div>
         """, unsafe_allow_html=True)
 
