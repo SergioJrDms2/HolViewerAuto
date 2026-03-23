@@ -118,7 +118,7 @@ def render_feedback_page():
             box-shadow: 0 8px 30px rgba(124, 58, 237, 0.25);
         ">
             <h1 style="color: white; font-size: 2rem; font-weight: 800; margin: 0 0 0.5rem 0; letter-spacing: -0.5px;">
-                💬 Central de Feedback
+                Central de Feedback
             </h1>
             <p style="color: #DDD6FE; font-size: 1.05rem; margin: 0; line-height: 1.6;">
                 Sua opinião é o que nos move. Use este espaço para nos ajudar a evoluir.
@@ -146,33 +146,6 @@ def render_feedback_page():
             </p>
         </div>
     """, unsafe_allow_html=True)
-
-    # ---------- Indicadores de impacto ----------
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("""
-            <div style="background:#F5F3FF; border-radius:1rem; padding:1.25rem; text-align:center; border:1px solid #DDD6FE;">
-                <div style="font-size:1.8rem;">📋</div>
-                <div style="font-weight:700; color:#4C1D95; font-size:0.95rem; margin-top:0.4rem;">Registrado</div>
-                <div style="color:#7C3AED; font-size:0.7rem;">Todo feedback é direcionado para nossa equipe de Customer Experience</div>
-            </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-            <div style="background:#F0FDF4; border-radius:1rem; padding:1.25rem; text-align:center; border:1px solid #BBF7D0;">
-                <div style="font-size:1.8rem;">🔍</div>
-                <div style="font-weight:700; color:#14532D; font-size:0.95rem; margin-top:0.4rem;">Analisado</div>
-                <div style="color:#16A34A; font-size:0.7rem;;">Nossa equipe revisa todos os envios</div>
-            </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown("""
-            <div style="background:#EFF6FF; border-radius:1rem; padding:1.25rem; text-align:center; border:1px solid #BFDBFE;">
-                <div style="font-size:1.8rem;">🚀</div>
-                <div style="font-weight:700; color:#1E3A5F; font-size:0.95rem; margin-top:0.4rem;">Implementado</div>
-                <div style="color:#2563EB; font-size:0.7rem;;">Boas ideias viram features reais</div>
-            </div>
-        """, unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
 
