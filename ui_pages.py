@@ -156,40 +156,8 @@ def render_individual_header(prefeitura_selecionada: str, PREFEITURAS: dict):
     _banner(
         titulo="Análise Individual",
         subtitulo="Faça o upload de um holerite em PDF e obtenha em segundos: dados do servidor, cálculo de margem e oportunidades de negócio.",
-        icone="🔍"
+        icone=""
     )
-
-    _card_prefeitura(
-        nome_prefeitura=PREFEITURAS[prefeitura_selecionada]['nome'],
-        tem_margem=prefeitura_selecionada in PREFEITURAS_COM_MARGEM
-    )
-
-    _tres_cards([
-        {
-            "icone": "📄",
-            "titulo": "Upload de PDF",
-            "descricao": "Arraste ou selecione o holerite",
-            "bg": "#F5F3FF",
-            "border": "#DDD6FE",
-            "cor_titulo": "#4C1D95",
-        },
-        {
-            "icone": "⚡",
-            "titulo": "Processamento Automático",
-            "descricao": "Extração inteligente de dados",
-            "bg": "#EFF6FF",
-            "border": "#BFDBFE",
-            "cor_titulo": "#1E3A5F",
-        },
-        {
-            "icone": "💡",
-            "titulo": "Oportunidades",
-            "descricao": "Cartões e margem identificados",
-            "bg": "#F0FDF4",
-            "border": "#BBF7D0",
-            "cor_titulo": "#14532D",
-        },
-    ])
 
     _como_usar_individual()
 
@@ -205,39 +173,7 @@ def render_lote_header(prefeitura_selecionada: str, PREFEITURAS: dict):
     _banner(
         titulo="Análise em Lote",
         subtitulo="Processe dezenas de holerites de uma vez. Visualize o dashboard consolidado e exporte os resultados em Excel ou CSV.",
-        icone="📦"
+        icone=""
     )
-
-    _card_prefeitura(
-        nome_prefeitura=PREFEITURAS[prefeitura_selecionada]['nome'],
-        tem_margem=prefeitura_selecionada in PREFEITURAS_COM_MARGEM
-    )
-
-    _tres_cards([
-        {
-            "icone": "📂",
-            "titulo": "Múltiplos PDFs",
-            "descricao": "Suba todos de uma vez",
-            "bg": "#F5F3FF",
-            "border": "#DDD6FE",
-            "cor_titulo": "#4C1D95",
-        },
-        {
-            "icone": "📊",
-            "titulo": "Dashboard",
-            "descricao": "Resultados consolidados",
-            "bg": "#EFF6FF",
-            "border": "#BFDBFE",
-            "cor_titulo": "#1E3A5F",
-        },
-        {
-            "icone": "⬇️",
-            "titulo": "Exportação",
-            "descricao": "Download em Excel ou CSV",
-            "bg": "#F0FDF4",
-            "border": "#BBF7D0",
-            "cor_titulo": "#14532D",
-        },
-    ])
 
     _como_usar_lote()
