@@ -1597,7 +1597,7 @@ LISTA COMPLETA DE SERVIDORES (ordenada por prioridade comercial):
 {todos_txt}
 
 CONTEXTO PARA DECISÕES GERENCIAIS:
-- Ticket médio de empréstimo disponível: R$ {(margem_total / len(com_emp)):.2f} por servidor elegível
+- Ticket médio de empréstimo disponível: R$ {(margem_total / len(com_emp) if com_emp else 0):.2f} por servidor elegível
 - % da base com concorrência ativa: {len(com_conc)/total*100:.0f}% — indica grau de disputa de mercado
 - % da base exclusivamente nossa: {len(com_nos)/total*100:.0f}% — indica penetração e risco de churn"""
 
