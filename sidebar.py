@@ -239,7 +239,7 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
         """, unsafe_allow_html=True)
 
         # Opções de modo SEM Perfil (Perfil é controlado separadamente)
-        opcoes_modo = ["Análise Individual", "Análise em Lote", "Feedback"]
+        opcoes_modo = ["Análise Individual", "Análise em Lote", "Feedback", "Busca CRM"]
         
         # Determina o índice atual baseado no modo_atual do session_state
         # Se o modo_atual for "Perfil", mantem a seleção anterior do radio
