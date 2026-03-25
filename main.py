@@ -15,6 +15,7 @@ from PIL import Image
 from groq import Groq 
 import re as _re
 import streamlit.components.v1 as components
+from crm_page import render_crm_page
 
 from feedback_page import render_feedback_page
 from ui_pages import render_individual_header, render_lote_header
@@ -3127,6 +3128,534 @@ JSON (exatamente 6 insights):
     except Exception:
         return []
 
+# ============================================================================
+# GERADOR DE PDF — INTELIGÊNCIA DE MERCADO
+# ============================================================================
+def gerar_pdf_intel(resultados: list, insights_ia: list, market_payload: dict) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        HRFlowable, KeepTogether, Image as RLImage, PageBreak
+    )
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
+    import plotly.graph_objects as go
+    from collections import Counter, defaultdict
+    import io as _io
+
+    # ── CORES ──────────────────────────────────────────────────────────────
+    ROXO        = colors.HexColor("#7C3AED")
+    ROXO_ESC    = colors.HexColor("#4C1D95")
+    ROXO_CLARO  = colors.HexColor("#EDE9FE")
+    AZUL        = colors.HexColor("#1D4ED8")
+    VERDE       = colors.HexColor("#16A34A")
+    VERMELHO    = colors.HexColor("#DC2626")
+    LARANJA     = colors.HexColor("#D97706")
+    CINZA_ESC   = colors.HexColor("#111827")
+    CINZA_MED   = colors.HexColor("#374151")
+    CINZA_CLARO = colors.HexColor("#F9FAFB")
+    BORDA       = colors.HexColor("#E5E7EB")
+
+    W, H = A4
+
+    # ── ESTILOS ─────────────────────────────────────────────────────────────
+    def s(name, **kw):
+        return ParagraphStyle(name, **kw)
+
+    CAPA_TITULO  = s("CapaTit",  fontSize=28, textColor=colors.white, fontName="Helvetica-Bold",
+                     leading=34, alignment=TA_LEFT)
+    CAPA_SUB     = s("CapaSub",  fontSize=13, textColor=colors.HexColor("#DDD6FE"),
+                     fontName="Helvetica", leading=18, alignment=TA_LEFT)
+    CAPA_DATA    = s("CapaData", fontSize=10, textColor=colors.HexColor("#C4B5FD"),
+                     fontName="Helvetica", alignment=TA_LEFT)
+    SEC_TITULO   = s("SecTit",   fontSize=14, textColor=ROXO_ESC, fontName="Helvetica-Bold",
+                     leading=18, spaceBefore=16, spaceAfter=6)
+    SEC_SUB      = s("SecSub",   fontSize=11, textColor=CINZA_ESC, fontName="Helvetica-Bold",
+                     leading=14, spaceBefore=10, spaceAfter=4)
+    BODY         = s("Body",     fontSize=9,  textColor=CINZA_MED, fontName="Helvetica",
+                     leading=14, spaceAfter=4)
+    BODY_BOLD    = s("BodyB",    fontSize=9,  textColor=CINZA_ESC, fontName="Helvetica-Bold",
+                     leading=14)
+    INSIGHT_TIT  = s("InsTit",   fontSize=10, textColor=CINZA_ESC, fontName="Helvetica-Bold",
+                     leading=13, spaceAfter=3)
+    INSIGHT_TXT  = s("InsTxt",   fontSize=9,  textColor=CINZA_MED, fontName="Helvetica",
+                     leading=13, spaceAfter=2)
+    RODAPE       = s("Rodape",   fontSize=7,  textColor=colors.HexColor("#9CA3AF"),
+                     fontName="Helvetica", alignment=TA_CENTER)
+    KPI_NUM      = s("KpiNum",   fontSize=18, textColor=ROXO, fontName="Helvetica-Bold",
+                     leading=22, alignment=TA_CENTER)
+    KPI_LAB      = s("KpiLab",   fontSize=7,  textColor=colors.HexColor("#6B7280"),
+                     fontName="Helvetica", leading=10, alignment=TA_CENTER)
+    TABLE_HEADER = s("TblHdr",   fontSize=8,  textColor=colors.white, fontName="Helvetica-Bold",
+                     leading=11, alignment=TA_CENTER)
+    TABLE_CELL   = s("TblCel",   fontSize=8,  textColor=CINZA_MED, fontName="Helvetica",
+                     leading=11)
+    TABLE_CELL_C = s("TblCelC",  fontSize=8,  textColor=CINZA_MED, fontName="Helvetica",
+                     leading=11, alignment=TA_CENTER)
+
+    buf = _io.BytesIO()
+
+    # ── CABEÇALHO / RODAPÉ ──────────────────────────────────────────────────
+    def _header_footer(canvas, doc):
+        canvas.saveState()
+        pg = canvas.getPageNumber()
+        if pg > 1:
+            canvas.setFillColor(ROXO)
+            canvas.rect(0, H - 32, W, 32, fill=True, stroke=False)
+            canvas.setFillColor(colors.white)
+            canvas.setFont("Helvetica-Bold", 8)
+            canvas.drawString(1.2*cm, H - 20, "StarCheck · Inteligência de Mercado")
+            canvas.setFont("Helvetica", 8)
+            canvas.drawRightString(W - 1.2*cm, H - 20,
+                                   datetime.now().strftime("%d/%m/%Y"))
+            canvas.setFillColor(colors.HexColor("#E5E7EB"))
+            canvas.rect(0, 22, W, 1, fill=True, stroke=False)
+            canvas.setFillColor(colors.HexColor("#9CA3AF"))
+            canvas.setFont("Helvetica", 7)
+            canvas.drawCentredString(W/2, 8, f"Starbank Grupo · Página {pg}")
+        canvas.restoreState()
+
+    def _capa(canvas, doc):
+        canvas.saveState()
+        # fundo gradiente simulado com retângulos
+        canvas.setFillColor(ROXO_ESC)
+        canvas.rect(0, 0, W, H, fill=True, stroke=False)
+        canvas.setFillColor(ROXO)
+        canvas.rect(0, H*0.42, W, H*0.58, fill=True, stroke=False)
+        # barra lateral decorativa
+        canvas.setFillColor(colors.HexColor("#6D28D9"))
+        canvas.rect(0, 0, 8, H, fill=True, stroke=False)
+        # rodapé capa
+        canvas.setFillColor(colors.HexColor("#3B0764"))
+        canvas.rect(0, 0, W, 1.8*cm, fill=True, stroke=False)
+        canvas.setFillColor(colors.HexColor("#A78BFA"))
+        canvas.setFont("Helvetica", 7)
+        canvas.drawString(1.5*cm, 0.65*cm,
+                          f"Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')} · Starbank Grupo · Uso interno e confidencial")
+        canvas.restoreState()
+
+    doc = BaseDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        topMargin=1.2*cm,  bottomMargin=1.5*cm,
+    )
+    frame_capa   = Frame(0, 0, W, H, leftPadding=2*cm, rightPadding=2*cm,
+                         topPadding=0, bottomPadding=2.5*cm, id="capa")
+    frame_normal = Frame(1.5*cm, 1.5*cm, W - 3*cm, H - 3.2*cm - 1.5*cm,
+                         id="normal")
+    doc.addPageTemplates([
+        PageTemplate(id="Capa",   frames=[frame_capa],   onPage=_capa),
+        PageTemplate(id="Normal", frames=[frame_normal], onPage=_header_footer),
+    ])
+
+    story = []
+
+    # ── CAPA ────────────────────────────────────────────────────────────────
+    total      = len(resultados)
+    com_emp    = [r for r in resultados if r["emp_disp"] > 0]
+    com_conc   = [r for r in resultados if r["qt_concorrentes"] > 0]
+    com_nos    = [r for r in resultados if r["qt_nossos"] > 0]
+    sem_consig = [r for r in resultados if r["total_cartoes"] == 0 and r["total_emprestimos"] == 0]
+    so_conc    = [r for r in resultados if r["qt_nossos"] == 0 and r["qt_concorrentes"] > 0]
+    marg_disp  = sum(r["emp_disp"] for r in com_emp)
+    total_conc = sum(r["total_concorrentes"] for r in com_conc)
+
+    story.append(Spacer(1, 5.5*cm))
+    story.append(Paragraph("✦ INTELIGÊNCIA", CAPA_SUB))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(Paragraph("DE MERCADO", CAPA_TITULO))
+    story.append(Spacer(1, 0.15*cm))
+    story.append(Paragraph("Análise Estratégica · StarCheck", CAPA_TITULO))
+    story.append(Spacer(1, 1.2*cm))
+    story.append(Paragraph(
+        f"{total} servidores analisados · {len(set(r['prefeitura'] for r in resultados))} prefeitura(s)",
+        CAPA_SUB))
+    story.append(Spacer(1, 0.4*cm))
+    story.append(Paragraph(datetime.now().strftime("%B de %Y").capitalize(), CAPA_DATA))
+    story.append(PageBreak())
+
+    # ── SUMÁRIO EXECUTIVO ────────────────────────────────────────────────────
+    story.append(Paragraph("Sumário Executivo", SEC_TITULO))
+    story.append(HRFlowable(width="100%", thickness=2, color=ROXO, spaceAfter=10))
+
+    mp = market_payload
+    kpi_data = [
+        [Paragraph(f"R$ {mp['volume_consignado_mensal']:,.2f}".replace(",","X").replace(".",",").replace("X","."), KPI_NUM),
+         Paragraph(f"R$ {mp['nossa_receita_mensal']:,.2f}".replace(",","X").replace(".",",").replace("X","."), KPI_NUM),
+         Paragraph(f"R$ {mp['volume_concorrentes_mensal']:,.2f}".replace(",","X").replace(".",",").replace("X","."), KPI_NUM),
+         Paragraph(f"{mp['taxa_penetracao_pct']:.0f}%", KPI_NUM)],
+        [Paragraph("Volume Consignado/Mês", KPI_LAB),
+         Paragraph("Nossa Receita/Mês", KPI_LAB),
+         Paragraph("Volume Concorrentes/Mês", KPI_LAB),
+         Paragraph("Nossa Penetração", KPI_LAB)],
+    ]
+    kpi_table = Table(kpi_data, colWidths=[(W - 3*cm)/4]*4)
+    kpi_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), ROXO_CLARO),
+        ("BACKGROUND", (0,0), (0,0), colors.HexColor("#F5F3FF")),
+        ("ROWBACKGROUNDS", (0,0), (-1,-1), [ROXO_CLARO, colors.white]),
+        ("BOX",         (0,0), (-1,-1), 1, BORDA),
+        ("INNERGRID",   (0,0), (-1,-1), 0.5, BORDA),
+        ("TOPPADDING",  (0,0), (-1,-1), 10),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 8),
+        ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ("RIGHTPADDING",(0,0), (-1,-1), 4),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 0.6*cm))
+
+    kpi2_data = [
+        [Paragraph(f"{mp['pct_market_share_nosso']:.1f}%", KPI_NUM),
+         Paragraph(f"{mp['pct_market_share_conc']:.1f}%", KPI_NUM),
+         Paragraph(str(len(so_conc)), KPI_NUM),
+         Paragraph(str(len(sem_consig)), KPI_NUM)],
+        [Paragraph("Market Share Nosso", KPI_LAB),
+         Paragraph("Market Share Concorrentes", KPI_LAB),
+         Paragraph("Alvo Puro (só concorrente)", KPI_LAB),
+         Paragraph("Mercado Novo (sem consig.)", KPI_LAB)],
+    ]
+    kpi2_table = Table(kpi2_data, colWidths=[(W - 3*cm)/4]*4)
+    kpi2_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), colors.white),
+        ("BOX",         (0,0), (-1,-1), 1, BORDA),
+        ("INNERGRID",   (0,0), (-1,-1), 0.5, BORDA),
+        ("TOPPADDING",  (0,0), (-1,-1), 10),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 8),
+    ]))
+    story.append(kpi2_table)
+    story.append(Spacer(1, 0.5*cm))
+
+    story.append(Paragraph(
+        f"Este relatório consolida a análise de <b>{total} servidores públicos</b> de "
+        f"<b>{len(set(r['prefeitura'] for r in resultados))} prefeitura(s)</b>. "
+        f"O volume total de consignações identificado é de <b>R$ {mp['volume_consignado_mensal']:,.2f}/mês</b>, "
+        f"do qual <b>{mp['pct_market_share_nosso']:.1f}%</b> já está conosco e "
+        f"<b>{mp['pct_market_share_conc']:.1f}%</b> está com concorrentes — representando "
+        f"<b>R$ {mp['volume_concorrentes_mensal']:,.2f}/mês</b> de receita recorrente a ser capturada.",
+        BODY))
+
+    # ── MARKET SHARE ────────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Market Share & Posicionamento Competitivo", SEC_TITULO))
+    story.append(HRFlowable(width="100%", thickness=2, color=ROXO, spaceAfter=10))
+
+    # Gera gráfico de pizza — market share por volume
+    _COR_TIPO = {"nosso":"#7c3aed","concorrente":"#1d4ed8","nao_comprado":"#be185d",
+                 "emprestimo":"#d97706","desconhecido":"#6b7280"}
+
+    inst_data: dict = defaultdict(lambda: {"contratos":0,"valor":0.0,"tipo":""})
+    for r in resultados:
+        d = r.get("_dados", {})
+        for c in d.get("cartoes", []):
+            desc = str(c.get("descricao","")).strip()
+            if not desc or _abs_val(c.get("valor",0)) <= 0: continue
+            inst_data[desc]["contratos"] += 1
+            inst_data[desc]["valor"]     += _abs_val(c.get("valor",0))
+            inst_data[desc]["tipo"]       = c.get("tipo","desconhecido")
+        for e in d.get("emprestimos", []):
+            desc = str(e.get("descricao","")).strip()
+            if not desc or _abs_val(e.get("valor",0)) <= 0: continue
+            tipo_e = "nosso" if any(p.upper() in desc.upper() for p in NOSSOS_PRODUTOS) else "emprestimo"
+            inst_data[desc]["contratos"] += 1
+            inst_data[desc]["valor"]     += _abs_val(e.get("valor",0))
+            inst_data[desc]["tipo"]       = tipo_e
+
+    inst_list = sorted([{"desc":k,"valor":v["valor"],"tipo":v["tipo"],"contratos":v["contratos"]}
+                        for k,v in inst_data.items()], key=lambda x: x["valor"], reverse=True)
+
+    total_consig = sum(i["valor"] for i in inst_list) or 1
+    grp = defaultdict(float)
+    for i in inst_list:
+        label = {"nosso":"Starbank (Nossos)","concorrente":"Concorrentes",
+                 "nao_comprado":"Não Compramos","emprestimo":"Empréstimos",
+                 "desconhecido":"Não Identificados"}.get(i["tipo"], i["tipo"])
+        grp[label] += i["valor"]
+
+    pie_labels = list(grp.keys())
+    pie_values = list(grp.values())
+    pie_colors = ["#7c3aed","#1d4ed8","#be185d","#d97706","#6b7280"][:len(pie_labels)]
+
+    fig_pie = go.Figure(go.Pie(
+        labels=pie_labels, values=pie_values, marker_colors=pie_colors,
+        hole=0.45, textinfo="label+percent", textfont_size=11,
+    ))
+    fig_pie.update_layout(
+        width=480, height=300, margin=dict(t=20,b=20,l=20,r=20),
+        paper_bgcolor="white", showlegend=True,
+        legend=dict(font_size=10, orientation="v", x=0.75),
+        annotations=[dict(text=f"R${total_consig/1000:.1f}k<br>/mês",
+                          x=0.37, y=0.5, showarrow=False, font_size=10)]
+    )
+    try:
+        img_pie = _io.BytesIO(fig_pie.to_image(format="png", scale=2))
+        story.append(Paragraph("Market Share por Volume Mensal", SEC_SUB))
+        story.append(RLImage(img_pie, width=12*cm, height=7.5*cm, hAlign="CENTER"))
+    except Exception:
+        story.append(Paragraph("(gráfico não disponível — instale kaleido)", BODY))
+
+    story.append(Spacer(1, 0.5*cm))
+
+    # Tabela por tipo de instituição
+    story.append(Paragraph("Distribuição por Categoria de Instituição", SEC_SUB))
+    tbl_hdr = [
+        Paragraph("Categoria",       TABLE_HEADER),
+        Paragraph("Volume/Mês",      TABLE_HEADER),
+        Paragraph("% do Total",      TABLE_HEADER),
+        Paragraph("Contratos",       TABLE_HEADER),
+    ]
+    tbl_rows = [tbl_hdr]
+    categoria_map = {"nosso":"Starbank (Nossos)","concorrente":"Concorrentes",
+                     "nao_comprado":"Não Compramos","emprestimo":"Empréstimos","desconhecido":"Não Identificados"}
+    for tipo, label in categoria_map.items():
+        vals = [i for i in inst_list if i["tipo"] == tipo]
+        if not vals: continue
+        vol   = sum(i["valor"] for i in vals)
+        cts   = sum(i["contratos"] for i in vals)
+        pct   = vol / total_consig * 100
+        cor_t = colors.HexColor(_COR_TIPO.get(tipo, "#6b7280"))
+        tbl_rows.append([
+            Paragraph(f'<font color="{_COR_TIPO.get(tipo,"#374151")}"><b>{label}</b></font>', TABLE_CELL),
+            Paragraph(f"R$ {vol:,.2f}".replace(",","X").replace(".",",").replace("X","."), TABLE_CELL_C),
+            Paragraph(f"{pct:.1f}%", TABLE_CELL_C),
+            Paragraph(str(cts), TABLE_CELL_C),
+        ])
+    t = Table(tbl_rows, colWidths=[(W-3*cm)*x for x in [0.4,0.25,0.2,0.15]])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0),  ROXO),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, CINZA_CLARO]),
+        ("BOX",           (0,0), (-1,-1), 0.5, BORDA),
+        ("INNERGRID",     (0,0), (-1,-1), 0.3, BORDA),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 6),
+    ]))
+    story.append(t)
+
+    # ── MAPA COMPETITIVO ─────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Mapa Competitivo — Instituições Identificadas", SEC_TITULO))
+    story.append(HRFlowable(width="100%", thickness=2, color=ROXO, spaceAfter=10))
+
+    top12 = inst_list[:12]
+    if top12:
+        fig_bar = go.Figure(go.Bar(
+            y=[i["desc"][:28] for i in top12][::-1],
+            x=[i["valor"] for i in top12][::-1],
+            orientation="h",
+            marker_color=[_COR_TIPO.get(i["tipo"],"#6b7280") for i in top12][::-1],
+            text=[f"R$ {i['valor']:,.2f}".replace(",","X").replace(".",",").replace("X",".") for i in top12][::-1],
+            textposition="outside", textfont_size=9,
+        ))
+        fig_bar.update_layout(
+            width=560, height=max(280, len(top12)*30 + 60),
+            margin=dict(t=10,b=10,l=10,r=100),
+            plot_bgcolor="white", paper_bgcolor="white",
+            xaxis=dict(gridcolor="#f3f4f6"),
+            showlegend=False,
+        )
+        try:
+            img_bar = _io.BytesIO(fig_bar.to_image(format="png", scale=2))
+            story.append(RLImage(img_bar, width=14*cm, height=max(7*cm, len(top12)*0.75*cm), hAlign="CENTER"))
+        except Exception:
+            pass
+    story.append(Spacer(1, 0.4*cm))
+
+    # Tabela top concorrentes
+    concorrentes_list = [i for i in inst_list if i["tipo"] == "concorrente"][:8]
+    if concorrentes_list:
+        story.append(Paragraph("Top Concorrentes — Detalhamento", SEC_SUB))
+        c_hdr = [Paragraph(h, TABLE_HEADER) for h in ["Instituição","Volume/Mês","Contratos","Ticket Médio"]]
+        c_rows = [c_hdr]
+        for inst in concorrentes_list:
+            tm = inst["valor"] / inst["contratos"] if inst["contratos"] else 0
+            c_rows.append([
+                Paragraph(inst["desc"][:32], TABLE_CELL),
+                Paragraph(f"R$ {inst['valor']:,.2f}".replace(",","X").replace(".",",").replace("X","."), TABLE_CELL_C),
+                Paragraph(str(inst["contratos"]), TABLE_CELL_C),
+                Paragraph(f"R$ {tm:,.2f}".replace(",","X").replace(".",",").replace("X","."), TABLE_CELL_C),
+            ])
+        tc = Table(c_rows, colWidths=[(W-3*cm)*x for x in [0.4,0.25,0.15,0.2]])
+        tc.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,0),  AZUL),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, CINZA_CLARO]),
+            ("BOX",           (0,0), (-1,-1), 0.5, BORDA),
+            ("INNERGRID",     (0,0), (-1,-1), 0.3, BORDA),
+            ("TOPPADDING",    (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ("LEFTPADDING",   (0,0), (-1,-1), 6),
+        ]))
+        story.append(tc)
+
+    # ── ANÁLISE POR PREFEITURA ────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Análise por Prefeitura", SEC_TITULO))
+    story.append(HRFlowable(width="100%", thickness=2, color=ROXO, spaceAfter=10))
+
+    pref_map: dict = {}
+    for r in resultados:
+        p = r["prefeitura"] or "Desconhecida"
+        if p not in pref_map:
+            pref_map[p] = {"servidores":0,"emp_disp":0.0,"conc_total":0.0,
+                           "qt_conc":0,"qt_nossos":0,"liquido_total":0.0,
+                           "emp_total":0.0}
+        v = pref_map[p]
+        v["servidores"]   += 1
+        v["emp_disp"]     += max(r["emp_disp"], 0)
+        v["emp_total"]    += max(r["emp_total"], 0)
+        v["conc_total"]   += r["total_concorrentes"]
+        v["qt_conc"]      += r["qt_concorrentes"]
+        v["qt_nossos"]    += r["qt_nossos"]
+        v["liquido_total"]+= r["liquido"]
+
+    pref_sorted = sorted(pref_map.items(), key=lambda x: x[1]["emp_disp"], reverse=True)
+
+    p_hdr = [Paragraph(h, TABLE_HEADER) for h in
+             ["Prefeitura","Serv.","Emp.Disp.","Concorrentes/mês","Nossos","Liq.Médio"]]
+    p_rows = [p_hdr]
+    for pref, v in pref_sorted:
+        media_liq = v["liquido_total"] / v["servidores"] if v["servidores"] else 0
+        p_rows.append([
+            Paragraph(pref[:30], TABLE_CELL),
+            Paragraph(str(v["servidores"]), TABLE_CELL_C),
+            Paragraph(f"R$ {v['emp_disp']:,.2f}".replace(",","X").replace(".",",").replace("X","."), TABLE_CELL_C),
+            Paragraph(f"R$ {v['conc_total']:,.2f}".replace(",","X").replace(".",",").replace("X","."), TABLE_CELL_C),
+            Paragraph(str(v["qt_nossos"]), TABLE_CELL_C),
+            Paragraph(f"R$ {media_liq:,.2f}".replace(",","X").replace(".",",").replace("X","."), TABLE_CELL_C),
+        ])
+    tp = Table(p_rows, colWidths=[(W-3*cm)*x for x in [0.32,0.08,0.18,0.18,0.1,0.14]])
+    tp.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0),  ROXO),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, CINZA_CLARO]),
+        ("BOX",           (0,0), (-1,-1), 0.5, BORDA),
+        ("INNERGRID",     (0,0), (-1,-1), 0.3, BORDA),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 5),
+    ]))
+    story.append(tp)
+
+    # ── INSIGHTS ESTRATÉGICOS (IA) ────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Insights Estratégicos · Stella IA", SEC_TITULO))
+    story.append(HRFlowable(width="100%", thickness=2, color=ROXO, spaceAfter=10))
+    story.append(Paragraph(
+        "Os insights abaixo foram gerados pela Stella, assistente de IA do StarCheck, "
+        "com base nos dados agregados deste lote. Cada insight inclui uma conclusão acionável "
+        "para apoiar decisões de liderança, gestão comercial e alocação de esforço.",
+        BODY))
+    story.append(Spacer(1, 0.4*cm))
+
+    _NIVEL_COR = {
+        "critico":      (colors.HexColor("#FEF2F2"), VERMELHO),
+        "oportunidade": (colors.HexColor("#FFFBEB"), LARANJA),
+        "atencao":      (colors.HexColor("#EFF6FF"), AZUL),
+        "positivo":     (colors.HexColor("#F0FDF4"), VERDE),
+    }
+    _NIVEL_LABEL = {
+        "critico":"CRÍTICO","oportunidade":"OPORTUNIDADE","atencao":"ATENÇÃO","positivo":"POSITIVO"
+    }
+
+    for i, ins in enumerate(insights_ia, 1):
+        nivel = ins.get("nivel", "atencao")
+        bg_c, borda_c = _NIVEL_COR.get(nivel, (CINZA_CLARO, ROXO))
+        label_nivel = _NIVEL_LABEL.get(nivel, nivel.upper())
+        icone = ins.get("icone", "💡")
+        titulo = ins.get("titulo", "")
+        texto  = ins.get("texto", "")
+
+        bloco = [
+            Paragraph(f'{icone}  <b>{titulo}</b>'
+                      f'  <font size="7" color="{borda_c.hexval() if hasattr(borda_c,"hexval") else "#374151"}"> [{label_nivel}]</font>',
+                      INSIGHT_TIT),
+            Paragraph(texto, INSIGHT_TXT),
+        ]
+        inner = Table([[bloco]], colWidths=[W - 4.5*cm])
+        inner.setStyle(TableStyle([
+            ("BACKGROUND",   (0,0),(-1,-1), bg_c),
+            ("LEFTPADDING",  (0,0),(-1,-1), 10),
+            ("RIGHTPADDING", (0,0),(-1,-1), 10),
+            ("TOPPADDING",   (0,0),(-1,-1), 8),
+            ("BOTTOMPADDING",(0,0),(-1,-1), 8),
+            ("LINEAFTER",    (0,0),(0,-1),  3, borda_c),
+            ("BOX",          (0,0),(-1,-1), 0.5, borda_c),
+        ]))
+        story.append(KeepTogether([inner, Spacer(1, 0.35*cm)]))
+
+    # ── RANKING DE SERVIDORES ─────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Ranking de Oportunidades — Servidores", SEC_TITULO))
+    story.append(HRFlowable(width="100%", thickness=2, color=ROXO, spaceAfter=8))
+    story.append(Paragraph(
+        "Ordenado por prioridade comercial — do servidor com maior potencial de conversão "
+        "ao de menor urgência imediata.", BODY))
+    story.append(Spacer(1, 0.3*cm))
+
+    r_hdr = [Paragraph(h, TABLE_HEADER) for h in
+             ["#","Nome","Prefeitura","Regime","Emp.Disp.","Concorr.","Oportunidade"]]
+    r_rows = [r_hdr]
+    _COR_OPP_PDF = {
+        "🔥 Compra Dívida + Empréstimo": "#92400e",
+        "💳 Compra de Dívida":           "#1e3a8a",
+        "💵 Empréstimo Disponível":      "#14532d",
+        "🔄 Refinanciamento":            "#4c1d95",
+        "💵 Margem Disponível":          "#065f46",
+        "❓ Prefeitura Não Mapeada":     "#374151",
+        "⛔ Margem Lotada":              "#991b1b",
+    }
+    for idx, r in enumerate(resultados[:40], 1):  # máx 40 linhas
+        opp_cor = _COR_OPP_PDF.get(r["oportunidade"], "#374151")
+        conc_str = (f"R$ {r['total_concorrentes']:,.2f}".replace(",","X").replace(".",",").replace("X",".")
+                    if r["qt_concorrentes"] > 0 else "—")
+        emp_str  = (f"R$ {r['emp_disp']:,.2f}".replace(",","X").replace(".",",").replace("X",".")
+                    if r["emp_disp"] > 0 else "—")
+        bg_row = colors.white if idx % 2 == 0 else CINZA_CLARO
+        r_rows.append([
+            Paragraph(str(idx), TABLE_CELL_C),
+            Paragraph(r["nome"][:22], TABLE_CELL),
+            Paragraph(r["prefeitura"][:18], TABLE_CELL),
+            Paragraph(r["regime"][:12], TABLE_CELL),
+            Paragraph(emp_str, TABLE_CELL_C),
+            Paragraph(conc_str, TABLE_CELL_C),
+            Paragraph(f'<font color="{opp_cor}"><b>{r["oportunidade"]}</b></font>', TABLE_CELL),
+        ])
+
+    tr = Table(r_rows, colWidths=[(W-3*cm)*x for x in [0.05,0.2,0.17,0.12,0.13,0.13,0.2]])
+    tr.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0),  ROXO),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, CINZA_CLARO]),
+        ("BOX",           (0,0), (-1,-1), 0.5, BORDA),
+        ("INNERGRID",     (0,0), (-1,-1), 0.3, BORDA),
+        ("TOPPADDING",    (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("LEFTPADDING",   (0,0), (-1,-1), 4),
+        ("FONTSIZE",      (0,0), (-1,-1), 7.5),
+    ]))
+    story.append(tr)
+
+    if len(resultados) > 40:
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph(
+            f"<i>Exibindo os 40 primeiros de {len(resultados)} servidores. "
+            f"Use o dashboard para visualizar o lote completo.</i>", BODY))
+
+    # ── NOTA FINAL ────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 1*cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=BORDA))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(Paragraph(
+        f"Relatório gerado automaticamente pelo StarCheck · Starbank Grupo · "
+        f"{datetime.now().strftime('%d/%m/%Y às %H:%M')} · "
+        f"Documento confidencial — uso interno.",
+        RODAPE))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
 def render_dashboard_lote(resultados: list):
     """Renderiza o dashboard inteligente da análise em lote."""
     if not resultados:
@@ -4057,6 +4586,35 @@ def render_dashboard_lote(resultados: list):
         # Salva market_payload no session_state para o chat da Stella usar
         st.session_state["intel_mercado_payload"] = market_payload
 
+            # ── BOTÃO DOWNLOAD PDF ────────────────────────────────────────────────
+        st.markdown("<hr style='border-color:#f3f4f6;margin:1.5rem 0;'>", unsafe_allow_html=True)
+        st.markdown("##### 📄 Exportar Análise Completa")
+
+        col_pdf1, col_pdf2 = st.columns([2, 3])
+        with col_pdf1:
+            with st.spinner("Preparando PDF..."):
+                try:
+                    pdf_bytes = gerar_pdf_intel(
+                        resultados,
+                        st.session_state.get("insights_ia_lote", []),
+                        market_payload
+                    )
+                    st.download_button(
+                        label="📥 Baixar Relatório em PDF",
+                        data=pdf_bytes,
+                        file_name=f"intel_mercado_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                    )
+                except Exception as e:
+                    st.error(f"Erro ao gerar PDF: {e}. Verifique se kaleido está instalado.")
+        with col_pdf2:
+            st.caption(
+                "PDF completo com capa, KPIs executivos, market share, "
+                "mapa competitivo, análise por prefeitura, insights estratégicos da Stella "
+                "e ranking de oportunidades."
+            )
+
     with tab_exp:
         st.markdown("#### Exportar dados completos")
         # Monta DataFrame para exportação (sem objetos internos)
@@ -4244,6 +4802,9 @@ def main():
 
     elif modo == "Feedback":
         render_feedback_page()
+
+    elif modo == "Busca CRM":
+        render_crm_page()
 
 
 if __name__ == "__main__":
