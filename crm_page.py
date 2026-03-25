@@ -16,10 +16,10 @@ from urllib.parse import quote
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIG OAuth2
 # ══════════════════════════════════════════════════════════════════════════════
-_CLIENT_ID     = "a4dbcd41-7c50-4640-b3f0-1d3707e3eab8"
-_CLIENT_SECRET = "d33400da8f96440493cc5b9e2dd55650"
+_CLIENT_ID     = "b3d84db1-2264-4ffe-aa92-c659405aa41b"
+_CLIENT_SECRET = "ef1ca47f4b74486080071218913b02b7"
 _TOKEN_FILE    = "rd_crm_tokens.json"
-_REDIRECT_URI  = "https://improved-zebra-gp5j7g6q6773w9vj-8501.app.github.dev/"
+_REDIRECT_URI  = "https://starbank-holerites-xyzp.streamlit.app/"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GERENCIAMENTO DE TOKENS
