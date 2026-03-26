@@ -630,6 +630,8 @@ def render_crm_page():
     if not tok:
         auth_link = _auth_url()
         redirect  = _redirect_uri()
+        import streamlit.components.v1 as components
+        
         st.markdown(f"""
         <div class="crm-auth-wrap">
             <div class="crm-auth-icon">🔐</div>
@@ -638,12 +640,32 @@ def render_crm_page():
                 Para buscar servidores, autorize o acesso ao CRM.<br>
                 Após autorizar você será redirecionado de volta automaticamente.
             </div>
-            <a class="crm-auth-cta" href="{auth_link}" target="_top">
-                🔑 &nbsp;Autorizar acesso ao CRM
-            </a>
-            <div class="crm-auth-note">Redirect URI: <code>{redirect}</code></div>
         </div>
         """, unsafe_allow_html=True)
+        
+        components.html(f"""
+        <style>
+          .auth-btn {{
+            display: inline-flex; align-items: center; gap: .5rem;
+            background: linear-gradient(135deg, #7C3AED, #4C1D95);
+            color: white; font-weight: 700; font-size: .9rem;
+            padding: .8rem 2.25rem; border-radius: .75rem;
+            border: none; cursor: pointer;
+            box-shadow: 0 6px 20px rgba(124,58,237,.35);
+            font-family: Inter, sans-serif; letter-spacing: .02em;
+          }}
+          .auth-btn:hover {{ opacity: .9; }}
+        </style>
+        <div style="text-align:center; padding: .5rem 0 1rem;">
+          <button class="auth-btn"
+            onclick="window.top.location.href='{auth_link}'">
+            🔑 &nbsp;Autorizar acesso ao CRM
+          </button>
+          <p style="font-size:.7rem;color:#A78BFA;margin-top:.75rem;">
+            Redirect URI: {_redirect_uri()}
+          </p>
+        </div>
+        """, height=120)
         return
 
     # ── Status bar + desconectar ──────────────────────────────────────────────
