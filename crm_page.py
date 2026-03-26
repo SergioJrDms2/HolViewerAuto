@@ -638,7 +638,7 @@ def render_crm_page():
                 Para buscar servidores, autorize o acesso ao CRM.<br>
                 Após autorizar você será redirecionado de volta automaticamente.
             </div>
-            <a class="crm-auth-cta" href="{auth_link}" target="_self">
+            <a class="crm-auth-cta" href="{auth_link}" target="_top">
                 🔑 &nbsp;Autorizar acesso ao CRM
             </a>
             <div class="crm-auth-note">Redirect URI: <code>{redirect}</code></div>
