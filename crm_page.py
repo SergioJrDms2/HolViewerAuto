@@ -646,10 +646,6 @@ def render_crm_page():
             <div class="crm-auth-note">Redirect URI: <code>{redirect}</code></div>
         </div>
         """, unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("✅ Já autorizei — recarregar", use_container_width=False):
-            st.rerun()
         return
 
   
