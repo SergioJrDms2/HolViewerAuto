@@ -23,7 +23,6 @@ from reportlab.platypus import (
     KeepTogether, PageBreak, PageTemplate, Paragraph,
     Spacer, Table, TableStyle,
 )
-from __future__ import annotations
 
 import io as _io
 from collections import Counter, defaultdict
