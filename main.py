@@ -4,6 +4,33 @@ Motor: Groq (Llama 4 Scout) | Assistente: Stella ✨
 Cálculo de Margem Consignável integrado via IA
 """
 
+from __future__ import annotations
+
+import io as _io
+from collections import Counter, defaultdict
+from datetime import datetime
+from typing import List
+
+import plotly.graph_objects as go
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import cm, mm
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
+    HRFlowable,
+    Image as RLImage,
+    KeepTogether,
+    PageBreak,
+    PageTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
 import streamlit as st
 import re, io, json, os, base64
 import pandas as pd
@@ -3347,33 +3374,6 @@ JSON (exatamente 6 insights):
 gerar_pdf_intel — Versão 2.0 Completa
 Relatório PDF Premium · Inteligência de Mercado · StarCheck
 """
-
-from __future__ import annotations
-
-import io as _io
-from collections import Counter, defaultdict
-from datetime import datetime
-from typing import List
-
-import plotly.graph_objects as go
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.units import cm, mm
-from reportlab.platypus import (
-    BaseDocTemplate,
-    Frame,
-    HRFlowable,
-    Image as RLImage,
-    KeepTogether,
-    PageBreak,
-    PageTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
-)
 
 # ─── helpers que o app já define ─────────────────────────────────────────────
 def _abs_val(v) -> float:
