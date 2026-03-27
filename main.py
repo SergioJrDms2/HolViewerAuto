@@ -3570,7 +3570,6 @@ _BASE_LAYOUT = dict(
     paper_bgcolor="white",
     plot_bgcolor="white",
     font=dict(family="Helvetica, Arial, sans-serif", size=11, color="#374151"),
-    margin=dict(t=30, b=30, l=30, r=30),
 )
 
 
