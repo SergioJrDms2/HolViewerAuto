@@ -1931,8 +1931,8 @@ def render_margem_cards(margem: Dict, dados: Dict = None):
                     '<div style="color:#6D28D9;font-weight:700;margin-bottom:10px;'
                     'border-bottom:2px solid #F3F4F6;padding-bottom:7px;">💰 BASE DE CÁLCULO</div>')
 
-            html += '<div style="font-size:.72rem;color:#9ca3af;padding:4px 0;">(+) VENCIMENTOS</div>'
             html += item_extrato("Salário Bruto", sal_bruto, negrito=True)
+            html += '<div style="font-size:.72rem;color:#9ca3af;padding:4px 0;">(+) VENCIMENTOS</div>'
             if vf and prov_campos_cfg:
                 for campo in prov_campos_cfg:
                     v = _abs_val(vf.get(campo, 0))
