@@ -27,6 +27,7 @@ openpyxl>=3.1.0
 
 # === VISUALIZAÇÃO ===
 plotly>=5.14.0
+reportlab
 
 # === AUTENTICAÇÃO ===
 supabase>=1.0.0
