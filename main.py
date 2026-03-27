@@ -4106,12 +4106,11 @@ def gerar_pdf_intel(resultados: list, insights_ia: list, market_payload: dict) -
     story.append(Spacer(1, 0.4 * cm))
 
     # --- Row B: Regime distribution (bar) + Consign rate by salary (bar) ---
-    f_reg = _vbar(
-        list(regimes.keys()), list(regimes.values()),
-        [C_PURPLE.hexval()[1:] if hasattr(C_PURPLE,"hexval") else "#7C3AED"
-         for _ in regimes],
-        px=380, py=260
-    )
+    f_reg2 = _vbar(
+       list(regimes.keys()), list(regimes.values()),
+       ["#7C3AED"] * len(regimes),
+       px=380, py=260
+   )
     # Fix colors
     f_reg2 = _vbar(
         list(regimes.keys()), list(regimes.values()),
