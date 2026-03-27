@@ -1766,8 +1766,40 @@ def render_margem_cards(margem: Dict, dados: Dict = None):
                                ("insalubridade","Insalubridade")]:
                     v = _abs_val(vf.get(k, 0))
                     if v > 0: html += item_extrato(lb, v)
+
             html += '<div style="font-size:.72rem;color:#9ca3af;padding:4px 0;">(-) DESCONTOS</div>'
-            html += item_extrato("Total Descontos", deducs, "red")
+
+            # Resolve fontes de desconto pelo config da prefeitura
+            desc_campos_cfg = cfg_pref.get("descontos_campos", [])
+            desc_kw_cfg     = cfg_pref.get("descontos_kw", [])
+            _do_vals        = (dados or {}).get("descontos_obrigatorios", {}) if dados else {}
+            _desc_raw       = (dados or {}).get("descontos_raw", []) if dados else []
+            _CAMPO_DESC_LBL = {
+                "inss": "INSS", "irrf": "IRRF", "previdencia": "Previdência",
+            }
+            
+            # 1) Campos nomeados (inss / irrf / previdencia)
+            shown_desc = False
+            for campo in desc_campos_cfg:
+                v  = _abs_val(_do_vals.get(campo, 0))
+                lb = _CAMPO_DESC_LBL.get(campo, campo.replace("_", " ").title())
+                if v > 0:
+                    html += item_extrato(lb, v, "red")
+                    shown_desc = True
+            
+            # 2) Matches por keyword no descontos_raw (plano de saúde, pensão, etc.)
+            if desc_kw_cfg and _desc_raw:
+                for _item in _desc_raw:
+                    _dsc = _item.get("descricao", "")
+                    _v   = _abs_val(_item.get("valor", 0))
+                    if _v > 0 and _kw_match(_dsc, desc_kw_cfg):
+                        html += item_extrato(str(_dsc)[:28], _v, "red")
+                        shown_desc = True
+            
+            # Fallback: se nada foi exibido mas há dedução, mostra o total
+            if not shown_desc and deducs > 0:
+                html += item_extrato("Total Descontos", deducs, "red")
+            
             html += item_extrato("BASE CÁLCULO", base, "blue", True, False)
             html += '</div>'
             st.markdown(html, unsafe_allow_html=True)
