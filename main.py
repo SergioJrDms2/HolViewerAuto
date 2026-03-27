@@ -4880,12 +4880,12 @@ def render_dashboard_lote(resultados: list):
 # ============================================================================
 # POPUP DAYCOVAL
 # ============================================================================
-@st.dialog("⚠️ Aviso Importante")
-def show_daycoval_warning():
-    st.warning("**Não compramos mais o cartão Daycoval**")
-    st.markdown("Por favor, desconsidere este cartão nas suas análises e operações.")
-    if st.button("Entendi", use_container_width=True, type="primary"):
-        st.rerun()
+# @st.dialog("⚠️ Aviso Importante")
+# def show_daycoval_warning():
+#     st.warning("**Não compramos mais o cartão Daycoval**")
+#     st.markdown("Por favor, desconsidere este cartão nas suas análises e operações.")
+#     if st.button("Entendi", use_container_width=True, type="primary"):
+#         st.rerun()
 
 
 # ============================================================================
