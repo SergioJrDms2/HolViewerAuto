@@ -70,92 +70,199 @@ FLUXO DE DECISÃO:
 # ============================================================================
 # CONFIGURAÇÃO DE MARGEM POR PREFEITURA
 # ============================================================================
+
+# Nome do provento no holerite é fixo e único?
+#     → usa proventos_kw, deixa proventos_campos vazio
+
+# Nome é ambíguo ou muito variável?
+#     → usa proventos_campos, não coloca keyword correspondente
+
+
+# Ao longo dessa revisão, chegamos a um padrão onde:
+
+# proventos_kw virou a camada principal e mais confiável
+
+# proventos_campos só sobrevive quando há um provento com nome muito ambíguo no holerite, onde o campo estruturado é mais seguro que uma keyword
+
+# Na prática, nas prefeituras que revisamos, sempre optamos pela Opção A (só keywords) justamente porque os nomes dos proventos nos holerites são fixos e únicos o suficiente.
+
+# O que faz sentido daqui pra frente
+# Usar só proventos_kw como regra geral, e proventos_campos apenas como exceção explícita — como no caso de Bauru com vantagens_pessoais, onde o campo estruturado é mais confiável que tentar fazer keyword para "VANT PESS VL".
+
+# O que não faz sentido é manter os dois preenchidos para o mesmo provento "para ter mais segurança" — porque na realidade isso não dá mais segurança, só duplica o valor.
+
 PREFEITURAS_CONFIG = {
 
-    "POA": {
-        "emp": 0.35, "cc": 0.15, "cb": 0.15,
-        "proventos_campos": [
-            "adicional_tempo_servico", "gratificacao", "hora_ativ_extra_classe",
-            "sexta_parte", "insalubridade",
-        ],
-        "proventos_kw": ["bienio","biênio","sexta parte","vant pess","vant pe"],
-        "descontos_campos": ["inss","irrf","previdencia"],
-        "descontos_kw": ["plano de saude","plano saude","pensao aliment","pensão aliment"],
-    },
+   "POA": {
+       "emp": 0.35, "cc": 0.15, "cb": 0.15,
+       "proventos_campos": [
+           "adicional_tempo_servico",  # → lê vencimentos_fixos.adicional_tempo_servico
+           "gratificacao",             # → lê vencimentos_fixos.gratificacao
+       ],
+       "proventos_kw": [
+           # Apenas proventos SEM campo estruturado próprio
+           "adicional por risco de vida", "adicional por riso de vida",
+           "adicional local de exercicio"
+           "bienio", "biênio", "vant pess", "vant pe",
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           # Apenas descontos SEM campo estruturado próprio
+           "pensao aliment", "pensão aliment",
+           "plano de saude", "plano saude",
+       ],
+   },
 
-    "BAURU": {
-        "emp": 0.35, "cc": 0.10, "cb": 0.00,
-        "proventos_campos": [
-            "sexta_parte", "ativ_trab_pedag", "vantagens_pessoais",
-        ],
-        "proventos_kw": ["bienio","biênio","sexta parte","vant pess","vant pe","ativ trab pedag"],
-        "descontos_campos": ["irrf","previdencia"],
-        "descontos_kw": ["plano de saude","plano saude","pensao aliment","pensão aliment"],
-    },
+   "BAURU": {
+       "emp": 0.35, "cc": 0.10, "cb": 0.00,
+       "proventos_campos": [
+           "sexta_parte",        # → lê vencimentos_fixos.sexta_parte
+           "ativ_trab_pedag",    # → lê vencimentos_fixos.ativ_trab_pedag
+           "vantagens_pessoais", # → lê vencimentos_fixos.vantagens_pessoais (VANT PESS VL)
+       ],
+       "proventos_kw": [
+           # Apenas proventos SEM campo estruturado próprio
+           "bienio", "biênio",   # → BIENIO
+           "vant pe l",          # → VANT PE L25/17 (específico o suficiente para não bater em "vant pess")
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           # Apenas descontos SEM campo estruturado próprio
+           "plano de saude", "plano saude",
+           "pensao aliment", "pensão aliment",
+       ],
+   },
 
-    "ARACATUBA": {
-        "emp": 0.40, "cc": 0.10, "cb": 0.00,
-        "proventos_campos": [
-            "adicional_tempo_servico","insalubridade","sexta_parte",
-        ],
-        "proventos_kw": [],
-        "descontos_campos": ["irrf","previdencia"],
-        "descontos_kw": [
-            "pensao aliment","pensão aliment","fundo de custeio","abatimento de teto",
-        ],
-    },
+   "ARACATUBA": {
+       "emp": 0.40, "cc": 0.10, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Descrições exatas do holerite
+           "adicional por tempo de servico", "adicional por tempo",
+           "insalubridade",
+           "sexta parte",
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "pensao aliment", "pensão aliment",
+           "fundo de custeio", "fdo custeio", "f. custeio",
+           "abatimento de teto", "abat. teto", "abat teto",
+       ],
+   },
 
-    "CAMPOS_JORDAO": {
-        "emp": 0.30, "cc": 0.10, "cb": 0.00,
-        "proventos_campos": ["adicional_tempo_servico","sexta_parte"],
-        "proventos_kw": [],
-        "descontos_campos": ["inss","irrf","previdencia"],
-        "descontos_kw": [
-            "assistencia medica","plano de saude","pensao aliment","custeio de beneficio",
-        ],
-    },
+   "CAMPOS_JORDAO": {
+       "emp": 0.30, "cc": 0.10, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Descrições exatas do holerite (salário base é automático)
+           "adicional por tempo",
+           "sexta parte",
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "assistencia medica", "plano de saude",
+           "pensao aliment", "pensão aliment",
+           "custeio de beneficio",
+       ],
+   },
 
-    "HORTOLANDIA": {
-        "emp": 0.30, "cc": 0.10, "cb": 0.30,
-        "proventos_campos": [
-            "adicional_tempo_servico","gratificacao","sexta_parte","insalubridade",
-            "hora_ativ_extra_classe","grat_desempenho","adicional_noturno",
-        ],
-        "proventos_kw": ["bienio","biênio","quinquenio","quinquênio","vantagem pessoal"],
-        "descontos_campos": ["inss","irrf","previdencia"],
-        "descontos_kw": ["pensao aliment","pensão aliment"],
-    },
+   "HORTOLANDIA": {
+       "emp": 0.30, "cc": 0.10, "cb": 0.30,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Descrições exatas do holerite (salário base é automático)
+           "adicional por tempo",
+           "sexta parte",
+           "grat. fixa", "gratificacao fixa", "gratificação fixa",
+           "insalubridade",
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "pensao aliment", "pensão aliment",
+       ],
+   },
 
-    "PIRACICABA": {
-        "emp": 0.00, "cc": 0.10, "cb": 0.00,
-        "proventos_campos": ["sexta_parte"],
-        "proventos_kw": ["corporacao fg","corporação fg"],
-        "descontos_campos": ["irrf","previdencia"],
-        "descontos_kw": ["pensao aliment","pensão aliment","previdencia proporcial"],
-    },
+   "PIRACICABA": {
+       "emp": 0.00, "cc": 0.10, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Descrições exatas do holerite (salário é automático)
+           "corporacao fg", "corporação fg",
+           "sexta parte",
+       ],
+       "descontos_campos": [
+           "irrf",  # → lê descontos_obrigatorios.irrf
+       ],
+       "descontos_kw": [
+           # Nome exato do holerite — evita pegar qualquer "previdencia" genérica
+           "previdencia proporcial",
+           "pensao aliment", "pensão aliment",
+       ],
+   },
 
-    "SALTO": {
-        "emp": 0.35, "cc": 0.05, "cb": 0.00,
-        "proventos_campos": [
-            "adicional_tempo_servico","gratificacao","sexta_parte","insalubridade",
-            "hora_ativ_extra_classe","grat_desempenho","adicional_noturno",
-            "quinquenio","trienio","representacao","abono",
-        ],
-        "proventos_kw": ["bienio","biênio","quinquenio","vantagem pessoal"],
-        "descontos_campos": ["inss","irrf","previdencia"],
-        "descontos_kw": [
-            "pensao aliment","pensão aliment","vale transporte",
-            "imposto sindical","contribuicao sindical",
-        ],
-    },
+   "SALTO": {
+       "emp": 0.35, "cc": 0.05, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Proventos permanentes/fixos (salário base é automático)
+           "adicional por tempo", "adicional tempo",
+           "sexta parte",
+           "insalubridade",
+           "quinquenio", "quinquênio",
+           "trienio", "triênio",
+           "bienio", "biênio",
+           "representacao", "representação",
+           "abono",
+           "vantagem pessoal",
+           "gratificacao", "gratificação",  # genérico — ver nota abaixo
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "pensao aliment", "pensão aliment",
+           "vale transporte",
+           "imposto sindical",
+           "contribuicao sindical", "contribuição sindical",
+           "reposicao", "reposição",
+           "indenizacao", "indenização",
+       ],
+   },
 
-    "TUPA": {
-        "emp": 0.30, "cc": 0.10, "cb": 0.00,
-        "proventos_campos": ["adicional_tempo_servico","sexta_parte"],
-        "proventos_kw": ["bienio","biênio"],
-        "descontos_campos": ["irrf","previdencia"],
-        "descontos_kw": ["plano de saude","plano saude","pensao aliment","pensão aliment"],
-    },
+   "TUPA": {
+       "emp": 0.30, "cc": 0.10, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Descrições exatas do holerite (salário base é automático)
+           "adic. tempo de servico", "adicional tempo de servico", "adicional por tempo",
+           "bienio", "biênio",
+           "sexta parte",
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "plano de saude", "plano saude",
+           "pensao aliment", "pensão aliment",
+       ],
+   },
 
     "VINHEDO": {
         "emp": 0.30, "cc": 0.00, "cb": 0.00,
@@ -174,84 +281,155 @@ PREFEITURAS_CONFIG = {
         "descontos_kw": [],
     },
 
-    "BARUERI": {
-        "emp": 0.35, "cc": 0.00, "cb": 0.00,
-        "proventos_campos": ["trienio"],
-        "proventos_kw": ["trienio","triênio","vencimento basico","vencimento básico"],
-        "descontos_campos": ["inss","irrf","previdencia"],
-        "descontos_kw": [
-            "vale transporte","faltas","licenca medica","licença medica",
-            "ipresb","pensao","pensão","p.just",
-        ],
-    },
+   "BARUERI": {
+       "emp": 0.35, "cc": 0.00, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Vencimento Básico é automático como salariobase — NÃO entra aqui
+           "trienio", "triênio",  # TRIÊNIO (adicional por tempo serviço)
+       ],
+       "descontos_campos": [
+           "inss",   # → I.H.S.S.
+           "irrf",   # → I.R.R.F.
+       ],
+       "descontos_kw": [
+           # Descontos SEM campo estruturado próprio
+           "ipresb",                            # IPRESB (previdência municipal)
+           "vale transporte",                   # DESC. VALE TRANSPORTE
+           "faltas",                            # FALTAS
+           "licenca medica", "licença medica",  # LICENCA MEDICA
+           "p.just", "p. just",                 # P. JUST. SAL. MIN. + SAL. FAM.
+           "pensao just", "pensão just",        # PENSAO JUSTIÇA
+           "pensao liq", "pensão liq",          # PENSAO LIQ. + S.F.
+       ],
+   },
 
-    "EMBU": {
-        "emp": 0.35, "cc": 0.05, "cb": 0.10,
-        "proventos_campos": ["adicional_tempo_servico", "gratificacao"],
-        "proventos_kw": [
-            "funcao gratificada","funcao grat","funcao gratif",
-            "horas estudo","hora estudo","horas estudo e pesquisa",
-        ],
-        "descontos_campos": ["irrf","previdencia"],
-        "descontos_kw": [
-            "contrib previdenciaria","contribuicao previdenciaria","contribuição previdenciaria",
-            "previdencia","previdência","rpps","ipsm","funprev","ipresb",
-            "contribuicao sindical","contribuição sindical",
-            "pensao aliment","pensão aliment",
-        ],
-    },
+   "EMBU": {
+       "emp": 0.35, "cc": 0.05, "cb": 0.10,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Vencimento Base é automático como salariobase — NÃO entra aqui
+           "adicional tempo servico", "adicional tempo serviço",
+           "horas estudo e pesquisa", "horas estudo", "hora estudo",
+       ],
+       "descontos_campos": [
+           "irrf",  # → lê descontos_obrigatorios.irrf
+       ],
+       "descontos_kw": [
+           # Previdência via keywords específicos do RPPS de Embu (sem campo genérico)
+           "contrib previdenciaria", "contribuicao previdenciaria",
+           "rpps", "ipsm", "funprev", "ipresb",
+           # Outros descontos compulsórios
+           "contribuicao sindical", "contribuição sindical",
+           "pensao aliment", "pensão aliment",
+       ],
+   },
 
-    "RIBEIRAO_PRETO": {
-        "emp": 0.40, "cc": 0.10, "cb": 0.00,
-        "proventos_campos": [
-            "adicional_tempo_servico","insalubridade","gratificacao",
-            "grat_desempenho","sexta_parte","quinquenio","trienio",
-        ],
-        "proventos_kw": ["acresc","adicional","grat."],
-        "descontos_campos": ["inss","irrf","previdencia"],
-        "descontos_kw": ["pensao","pensão","indenizacao","restituicao"],
-    },
+   "RIBEIRAO_PRETO": {
+       "emp": 0.40, "cc": 0.10, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Salário é automático — NÃO entra aqui
+           "adicional",       # ADICIONAL (captura todos os adicionais — intencional per roteiro)
+           "acresc",          # ACRESC (acréscimos)
+           "insalubridade",   # INSALUBRIDADE
+           "grat.",           # GRATIFICAÇÕES FIXAS via abreviação (ex: GRAT. MAGISTÉRIO)
+           "gratificac",      # GRATIFICAÇÕES por extenso (GRATIFICACAO, GRATIFICAÇÃO)
+           "quinquenio", "quinquênio",
+           "trienio", "triênio",
+           "sexta parte",
+       ],
+       "descontos_campos": [
+           "irrf",       # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "pensao aliment", "pensão aliment",  # específico para pensão alimentícia
+           "indenizacao", "indenização",
+           "restituicao", "restituição",
+       ],
+   },
 
-    "SOROCABA": {
-        "emp": 0.30, "cc": 0.00, "cb": 0.20,
-        "proventos_campos": ["adicional_tempo_servico","insalubridade"],
-        "proventos_kw": [],
-        "descontos_campos": ["inss","irrf","previdencia"],
-        "descontos_kw": ["pensao aliment","pensão aliment","plano de saude","plano saude"],
-    },
+   "SOROCABA": {
+       "emp": 0.30, "cc": 0.00, "cb": 0.20,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Descrições exatas do holerite (vencimento é automático)
+           "adic. tempo servico", "adic. tempo serviço",
+           "adicional tempo servico", "adicional por tempo",
+           "insalubridade",
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "pensao aliment", "pensão aliment",
+           "plano de saude", "plano saude",
+       ],
+   },
 
-    "SAO_JOSE_RIO_PRETO": {
-        "emp": 0.35, "cc": 0.05, "cb": 0.00,
-        "proventos_campos": ["adicional_fixo","gratificacao_fixa","gratificacao"],
-        "proventos_kw": ["adic. fixo","adicional fixo","grat. fixa","gratificacao fixa"],
-        "descontos_campos": ["inss","irrf","previdencia"],
-        "descontos_kw": ["reposicao","indenizacao","contribuicao sindical"],
-    },
+   "SAO_JOSE_RIO_PRETO": {
+       "emp": 0.35, "cc": 0.05, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Vencimento é automático — NÃO entra aqui
+           "adic. fixo", "adicional fixo",         # ADIC. FIXO
+           "grat. fixa", "gratificacao fixa",       # GRAT. FIXA
+           "gratificação fixa",                     # variação com acento
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "reposicao", "reposição",
+           "indenizacao", "indenização",
+           "contribuicao sindical", "contribuição sindical",
+       ],
+   },
 
-    "VALINHOS": {
-        "emp": 0.30, "cc": 0.00, "cb": 0.00,
-        "proventos_campos": [
-            "adicional_tempo_servico","sexta_parte",
-        ],
-        "proventos_kw": [
-            "lei 5801","adic. funcao","adic funcao","adicional funcao",
-            "funcao encorporada","função encorporada",
-        ],
-        "descontos_campos": ["irrf","previdencia"],
-        "descontos_kw": ["pensao aliment","pensão aliment"],
-    },
+   "VALINHOS": {
+       "emp": 0.30, "cc": 0.00, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Descrições exatas do holerite (salário base é automático)
+           "adic. t. servico", "adic. t. serviço",   # ADIC. T. SERVIÇO
+           "adicional tempo", "adicional t. serv",    # variações possíveis
+           "sexta parte",                             # SEXTA PARTE
+           "lei 5801",                                # LEI 5801
+           "adic. funcao", "adic funcao",             # ADIC. FUNÇÃO
+           "adicional funcao", "adicional função",    # variações
+           "funcao encorporada", "função encorporada",# FUNÇÃO ENCORPORADA
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "pensao aliment", "pensão aliment",  # PENSÃO ALIMT.
+       ],
+   },
 
-    "COTIA": {
-        "emp": 0.35, "cc": 0.05, "cb": 0.00,
-        "proventos_campos": [
-            "adicional_tempo_servico","gratificacao",
-        ],
-        "proventos_kw": [
-            "risco de vida","adicional por risco","adicional local","local de exercicio",
-        ],
-        "descontos_campos": ["irrf","previdencia"],
-        "descontos_kw": ["pensao aliment","pensão aliment"],
-    },
+   "COTIA": {
+       "emp": 0.35, "cc": 0.05, "cb": 0.00,
+       "proventos_campos": [],
+       "proventos_kw": [
+           # Descrições exatas do holerite (salário base é automático)
+           "gratificacao", "gratificação",                          # GRATIFICAÇÃO
+           "adicional por riso de vida", "adicional por risco de vida", # ADICIONAL POR RISO DE VIDA
+           "adicional por tempo de servico", "adicional por tempo", # ADICIONAL POR TEMPO DE SERVIÇO
+           "adicional local de exercicio",                          # ADICIONAL LOCAL DE EXERCICIO
+           "local de exercicio",                                    # variação abreviada
+       ],
+       "descontos_campos": [
+           "irrf",        # → lê descontos_obrigatorios.irrf
+           "previdencia", # → lê descontos_obrigatorios.previdencia
+       ],
+       "descontos_kw": [
+           "pensao aliment", "pensão aliment",  # PENSÃO ALIMENTÍCIA
+       ],
+   },
 
     "MARINGA": {
         "emp": 0.35, "cc": 0.10, "cb": 0.00,
