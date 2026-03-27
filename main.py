@@ -4880,12 +4880,12 @@ def render_dashboard_lote(resultados: list):
 # ============================================================================
 # POPUP DAYCOVAL
 # ============================================================================
-# @st.dialog("⚠️ Aviso Importante")
-# def show_daycoval_warning():
-#     st.warning("**Não compramos mais o cartão Daycoval**")
-#     st.markdown("Por favor, desconsidere este cartão nas suas análises e operações.")
-#     if st.button("Entendi", use_container_width=True, type="primary"):
-#         st.rerun()
+@st.dialog("⚠️ Aviso Importante")
+def show_daycoval_warning():
+    st.warning("**Não compramos mais o cartão Daycoval**")
+    st.markdown("Por favor, desconsidere este cartão nas suas análises e operações.")
+    if st.button("Entendi", use_container_width=True, type="primary"):
+        st.rerun()
 
 
 # ============================================================================
@@ -4931,11 +4931,11 @@ def main():
     if not render_auth_page():
         st.stop()
 
-    if "daycoval_warning_shown" not in st.session_state:
-        st.session_state["daycoval_warning_shown"] = False
-    if not st.session_state["daycoval_warning_shown"]:
-        show_daycoval_warning()
-        st.session_state["daycoval_warning_shown"] = True
+    # if "daycoval_warning_shown" not in st.session_state:
+    #     st.session_state["daycoval_warning_shown"] = False
+    # if not st.session_state["daycoval_warning_shown"]:
+    #     show_daycoval_warning()
+    #     st.session_state["daycoval_warning_shown"] = True
 
     prefeitura_selecionada, modo = render_sidebar(
         PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS
