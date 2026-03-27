@@ -16,6 +16,7 @@ streamlit>=1.28.0
 # === PROCESSAMENTO DE PDF ===
 PyPDF2>=3.0.0
 pdfplumber>=0.10.0
+kaleido
 
 # === PROCESSAMENTO DE IMAGENS E OCR (NOVO) ===
 pytesseract>=0.3.10
