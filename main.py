@@ -9,6 +9,25 @@ from __future__ import annotations
 import io as _io
 from collections import Counter, defaultdict
 from datetime import datetime
+
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    BaseDocTemplate, Frame, HRFlowable, Image as RLImage,
+    KeepTogether, PageBreak, PageTemplate, Paragraph,
+    Spacer, Table, TableStyle,
+)
+from __future__ import annotations
+
+import io as _io
+from collections import Counter, defaultdict
+from datetime import datetime
 from typing import List
 
 import plotly.graph_objects as go
@@ -3371,1251 +3390,931 @@ JSON (exatamente 6 insights):
 # GERADOR DE PDF — INTELIGÊNCIA DE MERCADO
 # ============================================================================
 """
-gerar_pdf_intel — Versão 2.0 Completa
-Relatório PDF Premium · Inteligência de Mercado · StarCheck
+gerar_pdf_intel_v2 — Replicação fiel da aba "Inteligência de Mercado"
+Mesmas cores, mesmos gráficos, mesma ordem da UI Streamlit.
 """
 
-# ─── helpers que o app já define ─────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def _abs_val(v) -> float:
-    try:
-        return abs(float(v or 0))
-    except Exception:
-        return 0.0
-
+    try: return abs(float(v or 0))
+    except: return 0.0
 
 def fmt(v) -> str:
+    try: return f"R$ {float(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
+    except: return "R$ 0,00"
+
+# ── PALETA — idêntica ao app ──────────────────────────────────────────────────
+COR_TIPO = {
+    "nosso":       "#7c3aed",
+    "concorrente": "#1d4ed8",
+    "nao_comprado":"#be185d",
+    "emprestimo":  "#d97706",
+    "desconhecido":"#6b7280",
+}
+LABEL_TIPO = {
+    "nosso":       "Starbank (Nossos)",
+    "concorrente": "Concorrentes",
+    "nao_comprado":"Não Compramos",
+    "emprestimo":  "Empréstimos",
+    "desconhecido":"Não Identificados",
+}
+COR_OPP = {
+    "🔥 Compra Dívida + Empréstimo": "#d97706",
+    "💳 Compra de Dívida":           "#1d4ed8",
+    "💵 Empréstimo Disponível":      "#16a34a",
+    "🔄 Refinanciamento":            "#7c3aed",
+    "💵 Margem Disponível":          "#059669",
+    "❓ Prefeitura Não Mapeada":     "#6b7280",
+    "⛔ Margem Lotada":              "#dc2626",
+}
+COR_OPP_ESC = {
+    "🔥 Compra Dívida + Empréstimo": "#92400e",
+    "💳 Compra de Dívida":           "#1e3a8a",
+    "💵 Empréstimo Disponível":      "#14532d",
+    "🔄 Refinanciamento":            "#4c1d95",
+    "💵 Margem Disponível":          "#065f46",
+    "❓ Prefeitura Não Mapeada":     "#374151",
+    "⛔ Margem Lotada":              "#991b1b",
+}
+COR_NIVEL = {
+    "critico":      ("#fef2f2","#dc2626"),
+    "oportunidade": ("#fef3c7","#d97706"),
+    "atencao":      ("#eff6ff","#1d4ed8"),
+    "positivo":     ("#f0fdf4","#16a34a"),
+}
+LABEL_NIVEL = {
+    "critico":"CRÍTICO","oportunidade":"OPORTUNIDADE",
+    "atencao":"ATENÇÃO","positivo":"POSITIVO",
+}
+ORDEM_FAIXAS = ["< R$2k","R$2k–3k","R$3k–5k","R$5k–8k","R$8k–12k","> R$12k"]
+CORES_FAIXA  = ["#c4b5fd","#a78bfa","#8b5cf6","#7c3aed","#6d28d9","#5b21b6"]
+
+W, H = A4
+
+# ── Plotly → PNG ──────────────────────────────────────────────────────────────
+def _fig_img(fig, w_cm=16, h_cm=7):
+    w_px = int(w_cm / 2.54 * 96)
+    h_px = int(h_cm / 2.54 * 96)
     try:
-        return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        data = fig.to_image(format="png", width=w_px, height=h_px, scale=2)
+        return RLImage(_io.BytesIO(data), width=w_cm*cm, height=h_cm*cm, hAlign="CENTER")
     except Exception:
-        return "R$ 0,00"
+        return Paragraph("(gráfico indisponível)", _S("body"))
 
+# ── Estilos ───────────────────────────────────────────────────────────────────
+def _S(name, **kw): return ParagraphStyle(name, **kw)
 
-def fmt_n(v) -> str:
-    """Formata número sem prefixo R$"""
-    try:
-        return f"{float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        return "0,00"
-
-
-# ─── PALETA GLOBAL ────────────────────────────────────────────────────────────
-C = {
-    "roxo":        colors.HexColor("#7C3AED"),
-    "roxo_esc":    colors.HexColor("#4C1D95"),
-    "roxo_med":    colors.HexColor("#6D28D9"),
-    "roxo_claro":  colors.HexColor("#EDE9FE"),
-    "roxo_pale":   colors.HexColor("#F5F3FF"),
-    "azul":        colors.HexColor("#1D4ED8"),
-    "azul_claro":  colors.HexColor("#DBEAFE"),
-    "verde":       colors.HexColor("#16A34A"),
-    "verde_claro": colors.HexColor("#DCFCE7"),
-    "vermelho":    colors.HexColor("#DC2626"),
-    "verm_claro":  colors.HexColor("#FEF2F2"),
-    "laranja":     colors.HexColor("#D97706"),
-    "laran_claro": colors.HexColor("#FEF3C7"),
-    "rosa":        colors.HexColor("#BE185D"),
-    "cinza_esc":   colors.HexColor("#111827"),
-    "cinza_med":   colors.HexColor("#374151"),
-    "cinza":       colors.HexColor("#6B7280"),
-    "cinza_claro": colors.HexColor("#F9FAFB"),
-    "borda":       colors.HexColor("#E5E7EB"),
-    "borda2":      colors.HexColor("#F3F4F6"),
-    "branco":      colors.white,
+ST = {
+    "capa_tag":  _S("ct", fontSize=9,  fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#C4B5FD"), leading=13),
+    "capa_tit":  _S("cti",fontSize=28, fontName="Helvetica-Bold",
+                    textColor=colors.white, leading=34),
+    "capa_sub":  _S("csu",fontSize=12, fontName="Helvetica",
+                    textColor=colors.HexColor("#DDD6FE"), leading=17),
+    "capa_desc": _S("cde",fontSize=9,  fontName="Helvetica",
+                    textColor=colors.HexColor("#C4B5FD"), leading=14),
+    "sec":       _S("s",  fontSize=13, fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#111827"), leading=18,
+                    spaceBefore=8, spaceAfter=3),
+    "subsec":    _S("ss", fontSize=10, fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#374151"), leading=14,
+                    spaceBefore=6, spaceAfter=2),
+    "body":      _S("b",  fontSize=9,  fontName="Helvetica",
+                    textColor=colors.HexColor("#374151"), leading=13),
+    "caption":   _S("cap",fontSize=7.5,fontName="Helvetica",
+                    textColor=colors.HexColor("#6b7280"), leading=11),
+    "kpi_num":   _S("kn", fontSize=18, fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#7c3aed"),
+                    leading=22, alignment=TA_CENTER),
+    "kpi_lbl":   _S("kl", fontSize=7.5,fontName="Helvetica",
+                    textColor=colors.HexColor("#6b7280"),
+                    leading=10, alignment=TA_CENTER),
+    "kpi_dlt":   _S("kd", fontSize=7.5,fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#16a34a"),
+                    leading=10, alignment=TA_CENTER),
+    "kpi_dlt_r": _S("kdr",fontSize=7.5,fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#dc2626"),
+                    leading=10, alignment=TA_CENTER),
+    "th":        _S("th", fontSize=8,  fontName="Helvetica-Bold",
+                    textColor=colors.white, leading=11, alignment=TA_CENTER),
+    "th_l":      _S("thl",fontSize=8,  fontName="Helvetica-Bold",
+                    textColor=colors.white, leading=11),
+    "td":        _S("td", fontSize=8,  fontName="Helvetica",
+                    textColor=colors.HexColor("#374151"), leading=11),
+    "td_c":      _S("tdc",fontSize=8,  fontName="Helvetica",
+                    textColor=colors.HexColor("#374151"), leading=11, alignment=TA_CENTER),
+    "td_r":      _S("tdr",fontSize=8,  fontName="Helvetica",
+                    textColor=colors.HexColor("#374151"), leading=11, alignment=TA_RIGHT),
+    "td_b":      _S("tdb",fontSize=8,  fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#111827"), leading=11),
+    "ins_tit":   _S("it", fontSize=10, fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#111827"), leading=14, spaceAfter=2),
+    "ins_txt":   _S("itx",fontSize=9,  fontName="Helvetica",
+                    textColor=colors.HexColor("#374151"), leading=13),
+    "rodape":    _S("rod",fontSize=7,  fontName="Helvetica",
+                    textColor=colors.HexColor("#9ca3af"), alignment=TA_CENTER),
 }
 
-# Hex strings para uso no plotly
-HEX = {
-    "roxo":       "#7C3AED",
-    "roxo_esc":   "#4C1D95",
-    "roxo_med":   "#6D28D9",
-    "roxo_claro": "#EDE9FE",
-    "azul":       "#1D4ED8",
-    "azul_esc":   "#1E3A8A",
-    "verde":      "#16A34A",
-    "verde_esc":  "#14532D",
-    "vermelho":   "#DC2626",
-    "verm_esc":   "#991B1B",
-    "laranja":    "#D97706",
-    "laran_esc":  "#92400E",
-    "rosa":       "#BE185D",
-    "cinza":      "#6B7280",
-    "cinza_med":  "#374151",
-}
-
-W, H = A4  # 595.27 x 841.89 pt
-
-
-# ─── ESTILOS ─────────────────────────────────────────────────────────────────
-def _S(name: str, **kw) -> ParagraphStyle:
-    return ParagraphStyle(name, **kw)
-
-
-STYLES = {
-    # Capa
-    "capa_tag":    _S("CapaTag",    fontSize=9,  fontName="Helvetica-Bold",
-                       textColor=colors.HexColor("#C4B5FD"), leading=13),
-    "capa_titulo": _S("CapaTit",    fontSize=32, fontName="Helvetica-Bold",
-                       textColor=colors.white, leading=38),
-    "capa_sub":    _S("CapaSub",    fontSize=14, fontName="Helvetica",
-                       textColor=colors.HexColor("#DDD6FE"), leading=20),
-    "capa_meta":   _S("CapaMeta",   fontSize=10, fontName="Helvetica",
-                       textColor=colors.HexColor("#A78BFA"), leading=14),
-    # Seções
-    "sec_titulo":  _S("SecTit",     fontSize=15, fontName="Helvetica-Bold",
-                       textColor=C["roxo_esc"], leading=20, spaceBefore=14, spaceAfter=4),
-    "sec_sub":     _S("SecSub",     fontSize=11, fontName="Helvetica-Bold",
-                       textColor=C["cinza_esc"], leading=15, spaceBefore=10, spaceAfter=4),
-    "sec_mini":    _S("SecMini",    fontSize=9,  fontName="Helvetica-Bold",
-                       textColor=C["cinza"], leading=13, spaceBefore=6, spaceAfter=2),
-    # Corpo
-    "body":        _S("Body",       fontSize=9,  fontName="Helvetica",
-                       textColor=C["cinza_med"], leading=14, spaceAfter=4),
-    "body_bold":   _S("BodyBold",   fontSize=9,  fontName="Helvetica-Bold",
-                       textColor=C["cinza_esc"], leading=14),
-    "body_just":   _S("BodyJust",   fontSize=9,  fontName="Helvetica",
-                       textColor=C["cinza_med"], leading=14, alignment=TA_JUSTIFY),
-    # KPI
-    "kpi_num":     _S("KpiNum",     fontSize=20, fontName="Helvetica-Bold",
-                       textColor=C["roxo"], leading=24, alignment=TA_CENTER),
-    "kpi_num_sm":  _S("KpiNumSm",   fontSize=14, fontName="Helvetica-Bold",
-                       textColor=C["roxo"], leading=18, alignment=TA_CENTER),
-    "kpi_label":   _S("KpiLab",     fontSize=7,  fontName="Helvetica",
-                       textColor=C["cinza"], leading=10, alignment=TA_CENTER),
-    "kpi_delta":   _S("KpiDel",     fontSize=7,  fontName="Helvetica-Bold",
-                       textColor=C["verde"], leading=10, alignment=TA_CENTER),
-    # Tabelas
-    "tbl_hdr":     _S("TblHdr",     fontSize=8,  fontName="Helvetica-Bold",
-                       textColor=colors.white, leading=11, alignment=TA_CENTER),
-    "tbl_hdr_l":   _S("TblHdrL",    fontSize=8,  fontName="Helvetica-Bold",
-                       textColor=colors.white, leading=11),
-    "tbl_cell":    _S("TblCell",    fontSize=8,  fontName="Helvetica",
-                       textColor=C["cinza_med"], leading=11),
-    "tbl_cell_c":  _S("TblCellC",   fontSize=8,  fontName="Helvetica",
-                       textColor=C["cinza_med"], leading=11, alignment=TA_CENTER),
-    "tbl_cell_r":  _S("TblCellR",   fontSize=8,  fontName="Helvetica",
-                       textColor=C["cinza_med"], leading=11, alignment=TA_RIGHT),
-    "tbl_bold":    _S("TblBold",    fontSize=8,  fontName="Helvetica-Bold",
-                       textColor=C["cinza_esc"], leading=11),
-    # Insights
-    "ins_titulo":  _S("InsTit",     fontSize=10, fontName="Helvetica-Bold",
-                       textColor=C["cinza_esc"], leading=14, spaceAfter=2),
-    "ins_texto":   _S("InsTxt",     fontSize=9,  fontName="Helvetica",
-                       textColor=C["cinza_med"], leading=13),
-    # Rodapé
-    "rodape":      _S("Rodape",     fontSize=7,  fontName="Helvetica",
-                       textColor=colors.HexColor("#9CA3AF"), alignment=TA_CENTER),
-}
-
-S = STYLES
-
-
-# ─── HELPERS DE TABELA ────────────────────────────────────────────────────────
-BASE_TBL = TableStyle([
-    ("TOPPADDING",    (0, 0), (-1, -1), 5),
-    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-    ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-    ("BOX",           (0, 0), (-1, -1), 0.5, C["borda"]),
-    ("INNERGRID",     (0, 0), (-1, -1), 0.3, C["borda"]),
-])
-
-HDR_ROXO = TableStyle([
-    ("BACKGROUND",    (0, 0), (-1, 0),  C["roxo"]),
-    ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, C["cinza_claro"]]),
-])
-
-HDR_AZUL = TableStyle([
-    ("BACKGROUND",    (0, 0), (-1, 0),  C["azul"]),
-    ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, C["cinza_claro"]]),
-])
-
-HDR_VERDE = TableStyle([
-    ("BACKGROUND",    (0, 0), (-1, 0),  C["verde"]),
-    ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, C["cinza_claro"]]),
-])
-
-
-def make_table(rows, col_fracs, style_extras=None, header_style=HDR_ROXO):
-    usable = W - 3 * cm
-    widths = [usable * f for f in col_fracs]
-    t = Table(rows, colWidths=widths)
-    ts = TableStyle(BASE_TBL.getCommands() + header_style.getCommands())
-    if style_extras:
-        for cmd in style_extras:
-            ts.add(*cmd)
-    t.setStyle(ts)
+# ── Tabela helper ─────────────────────────────────────────────────────────────
+def _tbl(rows, fracs, hdr_color="#7c3aed", extra=None):
+    usable = W - 3*cm
+    t = Table(rows, colWidths=[usable*f for f in fracs], repeatRows=1)
+    cmds = [
+        ("BACKGROUND",    (0,0),(-1,0),  colors.HexColor(hdr_color)),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1), [colors.white, colors.HexColor("#f9fafb")]),
+        ("BOX",           (0,0),(-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+        ("INNERGRID",     (0,0),(-1,-1), 0.3, colors.HexColor("#e5e7eb")),
+        ("TOPPADDING",    (0,0),(-1,-1), 5),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+        ("LEFTPADDING",   (0,0),(-1,-1), 6),
+        ("RIGHTPADDING",  (0,0),(-1,-1), 6),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+    ]
+    if extra: cmds += extra
+    t.setStyle(TableStyle(cmds))
     return t
 
-
-# ─── GERADOR DE IMAGEM PLOTLY ─────────────────────────────────────────────────
-def _fig_to_img(fig: go.Figure, width_cm: float = 16, height_cm: float = 8) -> _io.BytesIO | None:
-    try:
-        px_w = int(width_cm / 2.54 * 150)
-        px_h = int(height_cm / 2.54 * 150)
-        png = fig.to_image(format="png", width=px_w, height=px_h, scale=2)
-        return _io.BytesIO(png)
-    except Exception:
-        return None
-
-
-def _img_flowable(fig, width_cm=14, height_cm=7, h_align="CENTER"):
-    buf = _fig_to_img(fig, width_cm, height_cm)
-    if buf is None:
-        return Paragraph("(gráfico indisponível — instale kaleido)", S["body"])
-    return RLImage(buf, width=width_cm * cm, height=height_cm * cm, hAlign=h_align)
-
-
-# ─── LAYOUT PLOTLY PADRÃO ────────────────────────────────────────────────────
-_BASE_LAYOUT = dict(
-    paper_bgcolor="white",
-    plot_bgcolor="white",
-    font=dict(family="Helvetica, Arial, sans-serif", size=11, color="#374151"),
-)
-
-
-# ─── DECORAÇÕES DE PÁGINA ────────────────────────────────────────────────────
+# ── Decoradores de página ─────────────────────────────────────────────────────
 def _draw_capa(canvas, doc):
     canvas.saveState()
-    # fundo principal
-    canvas.setFillColor(C["roxo_esc"])
+    canvas.setFillColor(colors.HexColor("#4C1D95"))
     canvas.rect(0, 0, W, H, fill=True, stroke=False)
-    # faixa superior clara
-    canvas.setFillColor(C["roxo"])
-    canvas.rect(0, H * 0.45, W, H * 0.55, fill=True, stroke=False)
-    # acento diagonal
-    canvas.setFillColor(C["roxo_med"])
-    p = canvas.beginPath()
-    p.moveTo(0, H * 0.45)
-    p.lineTo(W * 0.6, H * 0.45)
-    p.lineTo(W * 0.6 - 80, H * 0.45 - 60)
-    p.lineTo(0, H * 0.45 - 60)
-    p.close()
-    canvas.drawPath(p, fill=True, stroke=False)
-    # barra lateral
+    canvas.setFillColor(colors.HexColor("#7C3AED"))
+    canvas.rect(0, H*0.40, W, H*0.60, fill=True, stroke=False)
     canvas.setFillColor(colors.HexColor("#8B5CF6"))
-    canvas.rect(0, 0, 6, H, fill=True, stroke=False)
-    # círculo decorativo
-    canvas.setFillColor(colors.HexColor("#6D28D940"))
-    canvas.circle(W - 60, H * 0.72, 110, fill=True, stroke=False)
-    canvas.setFillColor(colors.HexColor("#7C3AED30"))
-    canvas.circle(W - 40, H * 0.72, 70, fill=True, stroke=False)
-    # estrelinhas decorativas
-    canvas.setFillColor(colors.HexColor("#A78BFA60"))
-    for x, y, r in [(80, 80, 4), (500, 120, 3), (450, 200, 2), (100, 300, 2.5)]:
-        canvas.circle(x, y, r, fill=True, stroke=False)
-    # rodapé capa
+    canvas.rect(0, H*0.70, W, H*0.30, fill=True, stroke=False)
+    canvas.setFillColor(colors.HexColor("#6D28D9"))
+    canvas.rect(0, 0, 8, H, fill=True, stroke=False)
+    canvas.setFillColor(colors.HexColor("#6D28D930"))
+    canvas.circle(W-80, H*0.76, 130, fill=True, stroke=False)
+    canvas.setFillColor(colors.HexColor("#4C1D9525"))
+    canvas.circle(W-40, H*0.70, 75, fill=True, stroke=False)
     canvas.setFillColor(colors.HexColor("#2E1065"))
-    canvas.rect(0, 0, W, 1.8 * cm, fill=True, stroke=False)
+    canvas.rect(0, 0, W, 22, fill=True, stroke=False)
     canvas.setFillColor(colors.HexColor("#A78BFA"))
     canvas.setFont("Helvetica", 7)
-    canvas.drawString(
-        1.5 * cm, 0.65 * cm,
+    canvas.drawString(1.5*cm, 7,
         f"Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}  ·  "
-        f"Starbank Grupo  ·  Uso interno e confidencial"
-    )
+        "Starbank Grupo  ·  Confidencial — uso interno")
     canvas.restoreState()
-
 
 def _draw_normal(canvas, doc):
     canvas.saveState()
-    pg = canvas.getPageNumber()
-    # Cabeçalho
-    canvas.setFillColor(C["roxo_esc"])
-    canvas.rect(0, H - 28, W, 28, fill=True, stroke=False)
+    canvas.setFillColor(colors.HexColor("#4C1D95"))
+    canvas.rect(0, H-26, W, 26, fill=True, stroke=False)
     canvas.setFillColor(colors.HexColor("#6D28D9"))
-    canvas.rect(0, H - 28, 4, 28, fill=True, stroke=False)
+    canvas.rect(0, H-26, 5, 26, fill=True, stroke=False)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 8)
-    canvas.drawString(1.2 * cm, H - 18, "StarCheck · Inteligência de Mercado")
+    canvas.drawString(1.3*cm, H-16, "StarCheck · Inteligência de Mercado")
     canvas.setFont("Helvetica", 8)
-    canvas.drawRightString(W - 1.2 * cm, H - 18, datetime.now().strftime("%d/%m/%Y"))
-    # Rodapé
-    canvas.setFillColor(C["borda2"])
-    canvas.rect(0, 0, W, 20, fill=True, stroke=False)
-    canvas.setFillColor(C["cinza"])
+    canvas.drawRightString(W-1.3*cm, H-16, datetime.now().strftime("%d/%m/%Y"))
+    canvas.setFillColor(colors.HexColor("#f3f4f6"))
+    canvas.rect(0, 0, W, 18, fill=True, stroke=False)
+    canvas.setFillColor(colors.HexColor("#6b7280"))
     canvas.setFont("Helvetica", 7)
-    canvas.drawCentredString(W / 2, 6, f"Starbank Grupo  ·  Página {pg}  ·  Confidencial")
+    canvas.drawCentredString(W/2, 5,
+        f"Starbank Grupo  ·  Página {canvas.getPageNumber()}  ·  Confidencial")
     canvas.restoreState()
 
-
-# ─── SEÇÃO HEADER ────────────────────────────────────────────────────────────
-def _sec_header(title: str, subtitle: str = "", icon: str = "") -> list:
-    label = f"{icon} {title}" if icon else title
-    items = [
-        Paragraph(label, S["sec_titulo"]),
-        HRFlowable(width="100%", thickness=2.5, color=C["roxo"], spaceAfter=6),
+# ── Seção header ──────────────────────────────────────────────────────────────
+def _sec(titulo):
+    return [
+        Paragraph(titulo, ST["sec"]),
+        HRFlowable(width="100%", thickness=1.5,
+                   color=colors.HexColor("#e5e7eb"), spaceAfter=5),
     ]
-    if subtitle:
-        items.append(Paragraph(subtitle, S["body"]))
-        items.append(Spacer(1, 4))
-    return items
 
-
-# ─── KPI CARD ────────────────────────────────────────────────────────────────
-def _kpi_grid(items: list[dict], ncols=4) -> Table:
-    """
-    items = [{"num": "R$ X", "label": "...", "delta": "...", "delta_neg": False}, ...]
-    """
-    # Dividir em linhas de ncols
-    rows_data = []
-    for i in range(0, len(items), ncols):
-        chunk = items[i: i + ncols]
-        row_num = [Paragraph(it["num"], S["kpi_num"] if len(it["num"]) < 14 else S["kpi_num_sm"])
-                   for it in chunk]
-        row_lbl = [Paragraph(it["label"], S["kpi_label"]) for it in chunk]
-        row_del = []
-        for it in chunk:
-            d = it.get("delta", "")
-            neg = it.get("delta_neg", False)
-            style = ParagraphStyle("_kd", parent=S["kpi_delta"],
-                                   textColor=C["vermelho"] if neg else C["verde"])
-            row_del.append(Paragraph(d, style) if d else Paragraph("", S["kpi_label"]))
-        rows_data += [row_num, row_lbl, row_del]
-        if i + ncols < len(items):
-            rows_data.append([Paragraph("", S["kpi_label"])] * min(ncols, len(chunk)))
-
-    # Preencher para ncols colunas
-    for row in rows_data:
-        while len(row) < ncols:
-            row.append(Paragraph("", S["kpi_label"]))
-
-    usable = W - 3 * cm
-    t = Table(rows_data, colWidths=[usable / ncols] * ncols)
-    ts = TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), C["roxo_pale"]),
-        ("BOX",           (0, 0), (-1, -1), 1, C["borda"]),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.4, C["borda"]),
-        ("TOPPADDING",    (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [C["roxo_pale"], C["roxo_claro"], colors.white]),
-        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-    ])
-    t.setStyle(ts)
-    return t
-
-
-# ─── INSIGHT CARD ─────────────────────────────────────────────────────────────
-_NIVEL_MAP = {
-    "critico":      (C["verm_claro"],  C["vermelho"],  "CRÍTICO"),
-    "oportunidade": (C["laran_claro"], C["laranja"],   "OPORTUNIDADE"),
-    "atencao":      (C["azul_claro"],  C["azul"],      "ATENÇÃO"),
-    "positivo":     (C["verde_claro"], C["verde"],     "POSITIVO"),
-}
-
-
-def _insight_block(ins: dict) -> KeepTogether:
-    nivel = ins.get("nivel", "atencao")
-    bg, borda_c, label_nivel = _NIVEL_MAP.get(nivel, (C["cinza_claro"], C["cinza"], "INFO"))
-    icone  = ins.get("icone", "💡")
-    titulo = ins.get("titulo", "")
-    texto  = ins.get("texto", "")
-    nivel_p = Paragraph(
-        f'<font size="7" color="#{borda_c.hexval()[2:] if hasattr(borda_c,"hexval") else "374151"}">'
-        f'[{label_nivel}]</font>',
-        S["kpi_label"]
-    )
-    titulo_p = Paragraph(f"{icone}  {titulo}", S["ins_titulo"])
-    texto_p  = Paragraph(texto, S["ins_texto"])
-
-    inner = Table(
-        [[titulo_p], [texto_p]],
-        colWidths=[W - 4.5 * cm],
-    )
-    inner.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), bg),
-        ("TOPPADDING",    (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
-        ("LINEAFTER",     (0, 0), (0, -1),  4, borda_c),
-        ("BOX",           (0, 0), (-1, -1), 0.5, borda_c),
-        ("ROWBACKGROUNDS",(0, 0), (-1, -1), [bg, bg]),
-    ]))
-    return KeepTogether([inner, Spacer(1, 5)])
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 # FUNÇÃO PRINCIPAL
-# ═══════════════════════════════════════════════════════════════════════════════
-def gerar_pdf_intel(
-    resultados: list,
-    insights_ia: list,
-    market_payload: dict,
-    # Referências ao contexto do app (passadas opcionalmente)
-    NOSSOS_PRODUTOS: list = None,
-) -> bytes:
+# ═════════════════════════════════════════════════════════════════════════════
+def gerar_pdf_intel(resultados: list, insights_ia: list,
+                    market_payload: dict,
+                    NOSSOS_PRODUTOS: list = None) -> bytes:
 
     if NOSSOS_PRODUTOS is None:
-        NOSSOS_PRODUTOS = ["STARCARD", "ANTICIPAY", "STARBANK", "UASPREV"]
+        NOSSOS_PRODUTOS = ["STARCARD","ANTICIPAY","STARBANK","UASPREV"]
 
     buf = _io.BytesIO()
-
-    # ── DocTemplate ───────────────────────────────────────────────────────────
     doc = BaseDocTemplate(
         buf, pagesize=A4,
-        leftMargin=1.5 * cm, rightMargin=1.5 * cm,
-        topMargin=0.8 * cm, bottomMargin=1.2 * cm,
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        topMargin=0.8*cm, bottomMargin=1.2*cm,
     )
-    frame_capa = Frame(
-        0, 0, W, H,
-        leftPadding=2.2 * cm, rightPadding=2 * cm,
-        topPadding=0, bottomPadding=2.5 * cm, id="capa",
-    )
-    frame_normal = Frame(
-        1.5 * cm, 1.3 * cm, W - 3 * cm, H - 3.3 * cm,
-        id="normal",
-    )
+    f_capa   = Frame(0, 0, W, H, leftPadding=2.2*cm, rightPadding=2*cm,
+                     topPadding=0, bottomPadding=2.8*cm, id="capa")
+    f_normal = Frame(1.5*cm, 1.2*cm, W-3*cm, H-3.1*cm, id="normal")
     doc.addPageTemplates([
-        PageTemplate(id="Capa",   frames=[frame_capa],   onPage=_draw_capa),
-        PageTemplate(id="Normal", frames=[frame_normal], onPage=_draw_normal),
+        PageTemplate(id="Capa",   frames=[f_capa],   onPage=_draw_capa),
+        PageTemplate(id="Normal", frames=[f_normal], onPage=_draw_normal),
     ])
 
-    # ── PRÉ-CÁLCULOS ──────────────────────────────────────────────────────────
-    mp       = market_payload
-    total    = len(resultados)
-    prefs    = set(r["prefeitura"] for r in resultados)
-    n_prefs  = len(prefs)
+    # ── PRÉ-CÁLCULOS (espelho do tab_intel) ───────────────────────────────────
+    total   = len(resultados)
+    n_prefs = len(set(r.get("prefeitura","") for r in resultados))
 
-    com_emp  = [r for r in resultados if r.get("emp_disp", 0) > 0]
-    com_conc = [r for r in resultados if r.get("qt_concorrentes", 0) > 0]
-    com_nos  = [r for r in resultados if r.get("qt_nossos", 0) > 0]
-
-    sem_consig = [r for r in resultados
-                  if r.get("total_cartoes", 0) == 0 and r.get("total_emprestimos", 0) == 0]
-    so_nosso   = [r for r in resultados
-                  if r.get("qt_nossos", 0) > 0 and r.get("qt_concorrentes", 0) == 0]
-    so_conc    = [r for r in resultados
-                  if r.get("qt_nossos", 0) == 0 and r.get("qt_concorrentes", 0) > 0]
-    misto      = [r for r in resultados
-                  if r.get("qt_nossos", 0) > 0 and r.get("qt_concorrentes", 0) > 0]
-
-    marg_disp_total   = sum(r.get("emp_disp", 0)           for r in com_emp)
-    total_conc_mensal = sum(r.get("total_concorrentes", 0)  for r in com_conc)
-
-    # Inst data
-    inst_data: dict = defaultdict(lambda: {"contratos": 0, "valor": 0.0,
-                                           "servidores": set(), "tipo": ""})
-    n_nossos_ct = n_conc_ct = n_ncomp_ct = n_emp_ct = n_desc_ct = 0
-    total_nosso_val = total_conc_val = total_naocomp_val = total_emp_val = total_desc_val = 0.0
+    inst_data = defaultdict(lambda:{"contratos":0,"valor":0.0,"servidores":set(),"tipo":""})
+    n_nos_ct=n_con_ct=n_nco_ct=n_emp_ct=n_des_ct=0
+    vol_nos=vol_con=vol_nco=vol_emp=vol_des=0.0
 
     for idx_r, r in enumerate(resultados):
-        d = r.get("_dados", {})
-        for c in d.get("cartoes", []):
-            desc  = str(c.get("descricao", "")).strip()
-            tipo  = c.get("tipo", "desconhecido")
-            valor = _abs_val(c.get("valor", 0))
-            if not desc or valor <= 0:
-                continue
-            inst_data[desc]["contratos"]    += 1
-            inst_data[desc]["valor"]        += valor
-            inst_data[desc]["tipo"]          = tipo
+        d = r.get("_dados",{})
+        for c in d.get("cartoes",[]):
+            desc  = str(c.get("descricao","")).strip()
+            tipo  = c.get("tipo","desconhecido")
+            valor = _abs_val(c.get("valor",0))
+            if not desc or valor<=0: continue
+            inst_data[desc]["contratos"]   +=1
+            inst_data[desc]["valor"]       +=valor
+            inst_data[desc]["tipo"]         =tipo
             inst_data[desc]["servidores"].add(idx_r)
-            if tipo == "nosso":          n_nossos_ct += 1; total_nosso_val  += valor
-            elif tipo == "concorrente":  n_conc_ct   += 1; total_conc_val   += valor
-            elif tipo == "nao_comprado": n_ncomp_ct  += 1; total_naocomp_val+= valor
-            elif tipo == "desconhecido": n_desc_ct   += 1; total_desc_val   += valor
-        for e in d.get("emprestimos", []):
-            desc  = str(e.get("descricao", "")).strip()
-            valor = _abs_val(e.get("valor", 0))
-            if not desc or valor <= 0:
-                continue
-            tipo_emp = "nosso" if any(p.upper() in desc.upper()
-                                      for p in NOSSOS_PRODUTOS) else "emprestimo"
-            inst_data[desc]["contratos"]    += 1
-            inst_data[desc]["valor"]        += valor
-            inst_data[desc]["tipo"]          = tipo_emp
+            if   tipo=="nosso":        n_nos_ct+=1; vol_nos+=valor
+            elif tipo=="concorrente":  n_con_ct+=1; vol_con+=valor
+            elif tipo=="nao_comprado": n_nco_ct+=1; vol_nco+=valor
+            elif tipo=="desconhecido": n_des_ct+=1; vol_des+=valor
+        for e in d.get("emprestimos",[]):
+            desc  = str(e.get("descricao","")).strip()
+            valor = _abs_val(e.get("valor",0))
+            if not desc or valor<=0: continue
+            tipo_e = ("nosso" if any(p.upper() in desc.upper() for p in NOSSOS_PRODUTOS)
+                      else "emprestimo")
+            inst_data[desc]["contratos"]   +=1
+            inst_data[desc]["valor"]       +=valor
+            inst_data[desc]["tipo"]         =tipo_e
             inst_data[desc]["servidores"].add(idx_r)
-            if tipo_emp == "nosso": n_nossos_ct += 1; total_nosso_val += valor
-            else:                   n_emp_ct    += 1; total_emp_val   += valor
+            if tipo_e=="nosso": n_nos_ct+=1; vol_nos+=valor
+            else:               n_emp_ct+=1; vol_emp+=valor
 
     inst_list = sorted([
-        {
-            "desc":       k,
-            "contratos":  v["contratos"],
-            "valor":      v["valor"],
-            "servidores": len(v["servidores"]),
-            "tipo":       v["tipo"],
-            "ticket":     v["valor"] / v["contratos"] if v["contratos"] > 0 else 0,
-        }
-        for k, v in inst_data.items()
-    ], key=lambda x: x["valor"], reverse=True)
+        {"desc":k,"contratos":v["contratos"],"valor":v["valor"],
+         "servidores":len(v["servidores"]),"tipo":v["tipo"],
+         "ticket":v["valor"]/v["contratos"] if v["contratos"]>0 else 0}
+        for k,v in inst_data.items()
+    ], key=lambda x:x["valor"], reverse=True)
 
-    total_consig_val = (total_nosso_val + total_conc_val + total_naocomp_val
-                        + total_emp_val + total_desc_val)
-    total_ct = n_nossos_ct + n_conc_ct + n_ncomp_ct + n_emp_ct + n_desc_ct
+    total_ct     = n_nos_ct+n_con_ct+n_nco_ct+n_emp_ct+n_des_ct
+    total_consig = vol_nos+vol_con+vol_nco+vol_emp+vol_des
+    pct_nosso    = (vol_nos/total_consig*100) if total_consig>0 else 0
+    pct_conc     = (vol_con/total_consig*100) if total_consig>0 else 0
+    com_nos      = [r for r in resultados if r.get("qt_nossos",0)>0]
+    taxa_penet   = (len(com_nos)/total*100) if total>0 else 0
 
-    pct_nosso = (total_nosso_val / total_consig_val * 100) if total_consig_val > 0 else 0
-    pct_conc  = (total_conc_val  / total_consig_val * 100) if total_consig_val > 0 else 0
-    taxa_penet = (len(com_nos) / total * 100) if total > 0 else 0
+    sem_consig = [r for r in resultados
+                  if r.get("total_cartoes",0)==0 and r.get("total_emprestimos",0)==0]
+    so_nosso   = [r for r in resultados
+                  if r.get("qt_nossos",0)>0  and r.get("qt_concorrentes",0)==0]
+    so_conc    = [r for r in resultados
+                  if r.get("qt_nossos",0)==0 and r.get("qt_concorrentes",0)>0]
+    misto      = [r for r in resultados
+                  if r.get("qt_nossos",0)>0  and r.get("qt_concorrentes",0)>0]
+    marg_disp  = sum(r.get("emp_disp",0) for r in resultados if r.get("emp_disp",0)>0)
 
-    # Prefeituras
-    pref_map: dict = {}
-    for r in resultados:
-        p = r.get("prefeitura") or "Desconhecida"
-        if p not in pref_map:
-            pref_map[p] = dict(
-                servidores=0, emp_disp=0.0, emp_total=0.0, conc_total=0.0,
-                qt_conc=0, qt_nossos=0, liquido_total=0.0, base_total=0.0,
-                qt_marg_disp=0, qt_marg_lot=0, qt_sem=0,
-            )
-        v = pref_map[p]
-        v["servidores"]   += 1
-        v["emp_disp"]     += max(r.get("emp_disp", 0), 0)
-        v["emp_total"]    += max(r.get("emp_total", 0), 0)
-        v["conc_total"]   += r.get("total_concorrentes", 0)
-        v["qt_conc"]      += r.get("qt_concorrentes", 0)
-        v["qt_nossos"]    += r.get("qt_nossos", 0)
-        v["liquido_total"]+= r.get("liquido", 0)
-        if not r.get("margem_ok"):   v["qt_sem"]      += 1
-        elif r.get("emp_disp",0)>0:  v["qt_marg_disp"]+= 1
-        else:                         v["qt_marg_lot"] += 1
-    pref_sorted = sorted(pref_map.items(), key=lambda x: x[1]["emp_disp"], reverse=True)
-
-    # Faixas salariais
     def faixa(v):
-        if v < 2000:  return "< R$2k"
-        if v < 3000:  return "R$2k–3k"
-        if v < 5000:  return "R$3k–5k"
-        if v < 8000:  return "R$5k–8k"
-        if v < 12000: return "R$8k–12k"
+        if v<2000: return "< R$2k"
+        if v<3000: return "R$2k–3k"
+        if v<5000: return "R$3k–5k"
+        if v<8000: return "R$5k–8k"
+        if v<12000:return "R$8k–12k"
         return "> R$12k"
-    _ORDEM_FAIXAS = ["< R$2k","R$2k–3k","R$3k–5k","R$5k–8k","R$8k–12k","> R$12k"]
+
     faixas  = Counter(faixa(r.get("salario_base",0)) for r in resultados)
     regimes = Counter(r.get("regime","N/A") for r in resultados)
     opps    = Counter(r.get("oportunidade","") for r in resultados)
 
-    # Produto nossos
-    prod_freq: dict = defaultdict(lambda: {"contratos": 0, "valor": 0.0})
+    prod_freq = defaultdict(lambda:{"contratos":0,"valor":0.0})
     for r in resultados:
-        d = r.get("_dados", {})
-        for c in d.get("cartoes", []):
-            if c.get("tipo") != "nosso": continue
+        d = r.get("_dados",{})
+        for c in d.get("cartoes",[]):
+            if c.get("tipo")!="nosso": continue
             desc = str(c.get("descricao","")).upper()
-            m = next((p for p in NOSSOS_PRODUTOS if p.upper() in desc), "OUTROS")
-            prod_freq[m]["contratos"] += 1
-            prod_freq[m]["valor"]     += _abs_val(c.get("valor", 0))
-        for e in d.get("emprestimos", []):
+            m = next((p for p in NOSSOS_PRODUTOS if p.upper() in desc),"OUTROS")
+            prod_freq[m]["contratos"]+=1
+            prod_freq[m]["valor"]+=_abs_val(c.get("valor",0))
+        for e in d.get("emprestimos",[]):
             desc = str(e.get("descricao","")).upper()
-            m = next((p for p in NOSSOS_PRODUTOS if p.upper() in desc), None)
+            m = next((p for p in NOSSOS_PRODUTOS if p.upper() in desc),None)
             if m:
-                prod_freq[m]["contratos"] += 1
-                prod_freq[m]["valor"]     += _abs_val(e.get("valor", 0))
+                prod_freq[m]["contratos"]+=1
+                prod_freq[m]["valor"]+=_abs_val(e.get("valor",0))
 
-    # Faixa × consignação
-    faixa_consig: dict = defaultdict(lambda: {"total": 0, "com": 0})
+    pref_map = {}
     for r in resultados:
-        f = faixa(r.get("salario_base", 0))
-        faixa_consig[f]["total"] += 1
-        if r.get("total_cartoes", 0) > 0 or r.get("total_emprestimos", 0) > 0:
-            faixa_consig[f]["com"] += 1
+        p = r.get("prefeitura") or "Desconhecida"
+        if p not in pref_map:
+            pref_map[p] = dict(servidores=0,emp_disp=0.0,emp_total=0.0,
+                               conc_total=0.0,qt_conc=0,qt_nossos=0,
+                               liquido_total=0.0,qt_marg=0,qt_lot=0,qt_sem=0)
+        v = pref_map[p]
+        v["servidores"]   +=1
+        v["emp_disp"]     +=max(r.get("emp_disp",0),0)
+        v["emp_total"]    +=max(r.get("emp_total",0),0)
+        v["conc_total"]   +=r.get("total_concorrentes",0)
+        v["qt_conc"]      +=r.get("qt_concorrentes",0)
+        v["qt_nossos"]    +=r.get("qt_nossos",0)
+        v["liquido_total"]+=r.get("liquido",0)
+        if not r.get("margem_ok"):   v["qt_sem"] +=1
+        elif r.get("emp_disp",0)>0:  v["qt_marg"]+=1
+        else:                         v["qt_lot"] +=1
+    pref_sorted = sorted(pref_map.items(), key=lambda x:x[1]["emp_disp"], reverse=True)
 
+    faixa_consig = defaultdict(lambda:{"total":0,"com":0})
+    for r in resultados:
+        f = faixa(r.get("salario_base",0))
+        faixa_consig[f]["total"]+=1
+        if r.get("total_cartoes",0)>0 or r.get("total_emprestimos",0)>0:
+            faixa_consig[f]["com"]+=1
+
+    # ── STORY ─────────────────────────────────────────────────────────────────
     story = []
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 1. CAPA
-    # ══════════════════════════════════════════════════════════════════════════
-    story.append(Spacer(1, 5 * cm))
-    story.append(Paragraph("STARCHECK", S["capa_tag"]))
-    story.append(Spacer(1, 0.4 * cm))
-    story.append(Paragraph("Inteligência", S["capa_titulo"]))
-    story.append(Paragraph("de Mercado", S["capa_titulo"]))
-    story.append(Spacer(1, 0.8 * cm))
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CAPA
+    # ═══════════════════════════════════════════════════════════════════════════
+    story.append(Spacer(1, 5.5*cm))
+    story.append(Paragraph("STARCHECK · ANÁLISE ESTRATÉGICA", ST["capa_tag"]))
+    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph("Inteligência de Mercado", ST["capa_tit"]))
+    story.append(Spacer(1, 1*cm))
     story.append(Paragraph(
-        f"{total} servidores  ·  {n_prefs} prefeitura(s)  ·  "
+        f"{total} servidores analisados  ·  {n_prefs} prefeitura(s)  ·  "
         f"{datetime.now().strftime('%B de %Y').capitalize()}",
-        S["capa_sub"]
+        ST["capa_sub"]
     ))
-    story.append(Spacer(1, 0.5 * cm))
+    story.append(Spacer(1, 0.4*cm))
     story.append(Paragraph(
-        f"Análise estratégica gerada automaticamente pela Stella IA",
-        S["capa_meta"]
+        "Análise estratégica baseada nos holerites processados — market share, "
+        "mapa competitivo, perfil de cliente e oportunidades para gestão e liderança.",
+        ST["capa_desc"]
     ))
     story.append(PageBreak())
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 2. SUMÁRIO EXECUTIVO
-    # ══════════════════════════════════════════════════════════════════════════
-    story += _sec_header("Sumário Executivo", icon="📌")
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 1. INDICADORES ESTRATÉGICOS  (6 st.metric)
+    # ═══════════════════════════════════════════════════════════════════════════
+    story += _sec("📌 Indicadores Estratégicos")
 
-    story.append(Paragraph(
-        f"Este relatório consolida a análise estratégica de "
-        f"<b>{total} servidores públicos</b> de <b>{n_prefs} prefeitura(s)</b>. "
-        f"O volume total de consignações identificado é de "
-        f"<b>{fmt(total_consig_val)}/mês</b>, com "
-        f"<b>{pct_nosso:.1f}%</b> já em nossos produtos e "
-        f"<b>{pct_conc:.1f}%</b> com concorrentes — "
-        f"representando <b>{fmt(total_conc_val)}/mês</b> de receita a ser capturada.",
-        S["body_just"]
-    ))
-    story.append(Spacer(1, 8))
+    def _mc(num, lbl, delta="", red=False):
+        ds = ST["kpi_dlt_r"] if red else ST["kpi_dlt"]
+        return [Paragraph(num, ST["kpi_num"]),
+                Paragraph(lbl, ST["kpi_lbl"]),
+                Paragraph(delta, ds) if delta else Paragraph("", ST["kpi_lbl"])]
 
-    # KPI grid — linha 1 (6 itens)
-    kpi_items_1 = [
-        {"num": fmt(total_consig_val), "label": "Volume Consig./Mês",
-         "delta": f"{total_ct} contratos ativos"},
-        {"num": fmt(total_nosso_val),  "label": "Nossa Receita/Mês",
-         "delta": f"{pct_nosso:.1f}% do mercado"},
-        {"num": fmt(total_conc_val),   "label": "Volume Concorrentes/Mês",
-         "delta": f"{pct_conc:.1f}% do mercado", "delta_neg": True},
-        {"num": f"{taxa_penet:.0f}%",  "label": "Nossa Penetração na Base",
-         "delta": f"{len(com_nos)}/{total} servidores"},
-        {"num": str(len(so_conc)),     "label": "Alvos Puros (só concorrente)",
-         "delta": f"{len(so_conc)/total*100:.0f}% da base", "delta_neg": True},
-        {"num": str(len(sem_consig)),  "label": "Mercado Novo (sem consig.)",
-         "delta": "Sem histórico de crédito"},
-    ]
-    story.append(_kpi_grid(kpi_items_1, ncols=3))
-    story.append(Spacer(1, 6))
+    def _kpi_tbl(cells3):
+        r_num   = [c[0] for c in cells3]
+        r_lbl   = [c[1] for c in cells3]
+        r_del   = [c[2] for c in cells3]
+        usable  = W-3*cm
+        t = Table([r_num, r_lbl, r_del], colWidths=[usable/3]*3)
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#F5F3FF")),
+            ("BOX",           (0,0),(-1,-1), 1, colors.HexColor("#DDD6FE")),
+            ("INNERGRID",     (0,0),(-1,-1), 0.5, colors.HexColor("#DDD6FE")),
+            ("TOPPADDING",    (0,0),(-1,0),  10),
+            ("BOTTOMPADDING", (0,0),(-1,0),  4),
+            ("TOPPADDING",    (0,1),(-1,-1), 2),
+            ("BOTTOMPADDING", (0,2),(-1,-1), 8),
+            ("ALIGN",         (0,0),(-1,-1), "CENTER"),
+            ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+        ]))
+        return t
 
-    # KPI grid — linha 2
-    ticket_nosso = total_nosso_val / n_nossos_ct if n_nossos_ct > 0 else 0
-    ticket_conc  = total_conc_val  / n_conc_ct  if n_conc_ct  > 0 else 0
-    kpi_items_2 = [
-        {"num": fmt(marg_disp_total), "label": "Margem Emp. Disponível Total",
-         "delta": f"{len(com_emp)} servidores elegíveis"},
-        {"num": fmt(ticket_nosso),    "label": "Ticket Médio Nosso",
-         "delta": f"{n_nossos_ct} contrato(s)"},
-        {"num": fmt(ticket_conc),     "label": "Ticket Médio Concorrente",
-         "delta": f"{n_conc_ct} contrato(s)", "delta_neg": True},
-        {"num": str(len(misto)),      "label": "Clientes Mistos (nós + concorrente)",
-         "delta": "Expansão possível"},
-        {"num": str(len(so_nosso)),   "label": "Exclusivos Nossos",
-         "delta": "Base a defender"},
-        {"num": f"{n_prefs}",         "label": "Prefeituras no Lote",
-         "delta": "Diversificação geográfica"},
-    ]
-    story.append(_kpi_grid(kpi_items_2, ncols=3))
-    story.append(PageBreak())
+    story.append(_kpi_tbl([
+        _mc(fmt(total_consig),    "💰 Volume Consig./Mês",       f"{total_ct} contratos ativos"),
+        _mc(fmt(vol_nos),         "🏆 Nossa Receita/Mês",        f"{pct_nosso:.1f}% do mercado"),
+        _mc(fmt(vol_con),         "💳 Volume Concorrentes",      f"{pct_conc:.1f}% do mercado", red=True),
+    ]))
+    story.append(Spacer(1, 4))
+    story.append(_kpi_tbl([
+        _mc(f"{taxa_penet:.0f}%", "📈 Nossa Penetração",         f"{len(com_nos)}/{total} servidores"),
+        _mc(str(len(so_conc)),    "🎯 Alvo Puro (sem nós)",      f"{len(so_conc)/total*100:.0f}% da base", red=True),
+        _mc(str(len(sem_consig)), "🌱 Mercado Novo",              "Sem histórico de crédito"),
+    ]))
+    story.append(Spacer(1, 12))
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 3. MARKET SHARE
-    # ══════════════════════════════════════════════════════════════════════════
-    story += _sec_header("Market Share & Posicionamento Competitivo", icon="📊")
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 2. MARKET SHARE — duas pizzas (idêntico ao app)
+    # ═══════════════════════════════════════════════════════════════════════════
+    story += _sec("Market Share")
 
-    # ── Gráfico: pizza volume + pizza contratos lado a lado ──────────────────
-    _TIPO_LABEL = {
-        "nosso": "Starbank (Nossos)",
-        "concorrente": "Concorrentes",
-        "nao_comprado": "Não Compramos",
-        "emprestimo": "Empréstimos",
-        "desconhecido": "Não Identificados",
-    }
-    _TIPO_COR = {
-        "nosso":       HEX["roxo"],
-        "concorrente": HEX["azul"],
-        "nao_comprado":HEX["rosa"],
-        "emprestimo":  HEX["laranja"],
-        "desconhecido":HEX["cinza"],
-    }
-    _tipo_vol  = {t: 0.0 for t in _TIPO_LABEL}
-    _tipo_ct   = {t: 0   for t in _TIPO_LABEL}
-    for i in inst_list:
-        t = i["tipo"]
-        if t in _tipo_vol:
-            _tipo_vol[t] += i["valor"]
-            _tipo_ct[t]  += i["contratos"]
+    ms_l=[]; ms_v=[]; ms_c=[]
+    ct_l=[]; ct_v=[]; ct_c=[]
+    vol_map = {"nosso":vol_nos,"concorrente":vol_con,"nao_comprado":vol_nco,
+               "emprestimo":vol_emp,"desconhecido":vol_des}
+    cnt_map = {"nosso":n_nos_ct,"concorrente":n_con_ct,"nao_comprado":n_nco_ct,
+               "emprestimo":n_emp_ct,"desconhecido":n_des_ct}
+    for tipo in ["nosso","concorrente","nao_comprado","emprestimo","desconhecido"]:
+        if vol_map[tipo]>0:
+            ms_l.append(LABEL_TIPO[tipo]); ms_v.append(vol_map[tipo])
+            ms_c.append(COR_TIPO[tipo])
+        if cnt_map[tipo]>0:
+            ct_l.append(LABEL_TIPO[tipo]); ct_v.append(cnt_map[tipo])
+            ct_c.append(COR_TIPO[tipo])
 
-    pie_labels_v = [_TIPO_LABEL[t] for t, v in _tipo_vol.items() if v > 0]
-    pie_values_v = [v for t, v in _tipo_vol.items() if v > 0]
-    pie_colors_v = [_TIPO_COR[t] for t, v in _tipo_vol.items() if v > 0]
-
-    pie_labels_c = [_TIPO_LABEL[t] for t, v in _tipo_ct.items() if v > 0]
-    pie_values_c = [v for t, v in _tipo_ct.items() if v > 0]
-    pie_colors_c = [_TIPO_COR[t] for t, v in _tipo_ct.items() if v > 0]
-
-    # Pizza dupla lado a lado
-    fig_ms = go.Figure()
-    fig_ms = go.Figure(data=[
-        go.Pie(labels=pie_labels_v, values=pie_values_v,
-               marker_colors=pie_colors_v, hole=0.48,
-               domain={"x":[0, 0.46]},
-               textinfo="percent", textfont_size=10,
-               name="Volume",
-               hovertemplate="%{label}<br>%{value:,.2f}/mês<extra></extra>"),
-        go.Pie(labels=pie_labels_c, values=pie_values_c,
-               marker_colors=pie_colors_c, hole=0.48,
-               domain={"x":[0.54, 1.0]},
-               textinfo="percent", textfont_size=10,
-               name="Contratos",
-               hovertemplate="%{label}<br>%{value} contratos<extra></extra>"),
-    ])
+    fig_ms = make_subplots(
+        rows=1, cols=2,
+        specs=[[{"type":"pie"},{"type":"pie"}]],
+        subplot_titles=["Por Volume Mensal (R$)", "Por Número de Contratos"],
+    )
+    if ms_v:
+        fig_ms.add_trace(go.Pie(
+            labels=ms_l, values=ms_v, marker_colors=ms_c, hole=0.5,
+            textinfo="label+percent", textfont_size=10, showlegend=True,
+        ), row=1, col=1)
+    if ct_v:
+        fig_ms.add_trace(go.Pie(
+            labels=ct_l, values=ct_v, marker_colors=ct_c, hole=0.5,
+            textinfo="label+percent", textfont_size=10, showlegend=False,
+        ), row=1, col=2)
     fig_ms.update_layout(
-        **_BASE_LAYOUT,
-        width=800, height=290,
-        margin=dict(t=40, b=40, l=10, r=10),
-        showlegend=True,
+        paper_bgcolor="white", plot_bgcolor="white",
+        font=dict(family="sans-serif", size=10, color="#374151"),
+        margin=dict(t=50, b=70, l=10, r=10),
         legend=dict(orientation="h", y=-0.18, font_size=10, x=0.5, xanchor="center"),
-        annotations=[
-            dict(text=f"R${total_consig_val/1000:.1f}k<br>/mês",
-                 x=0.22, y=0.5, showarrow=False, font_size=10, font_color=HEX["cinza_med"]),
-            dict(text=f"{total_ct}<br>contratos",
-                 x=0.78, y=0.5, showarrow=False, font_size=10, font_color=HEX["cinza_med"]),
-            dict(text="Por Volume R$/mês", x=0.22, y=1.08, showarrow=False,
-                 font_size=11, font_color=HEX["roxo_esc"], font_family="Helvetica"),
-            dict(text="Por Nº de Contratos", x=0.78, y=1.08, showarrow=False,
-                 font_size=11, font_color=HEX["roxo_esc"], font_family="Helvetica"),
+        height=360, width=900,
+        annotations=list(fig_ms.layout.annotations) + [
+            dict(text=f"<b>{fmt(total_consig)}</b><br>/mês",
+                 x=0.21, y=0.5, showarrow=False, font_size=9, font_color="#374151"),
+            dict(text=f"<b>{total_ct}</b><br>contratos",
+                 x=0.79, y=0.5, showarrow=False, font_size=9, font_color="#374151"),
         ],
     )
-    story.append(_img_flowable(fig_ms, width_cm=16, height_cm=8))
-    story.append(Spacer(1, 6))
+    story.append(_fig_img(fig_ms, w_cm=16, h_cm=8.5))
+    story.append(Spacer(1, 10))
 
-    # Tabela de categorias
-    story.append(Paragraph("Distribuição por Categoria", S["sec_sub"]))
-    cat_hdr = [
-        Paragraph("Categoria", S["tbl_hdr_l"]),
-        Paragraph("Volume/Mês", S["tbl_hdr"]),
-        Paragraph("% Volume", S["tbl_hdr"]),
-        Paragraph("Contratos", S["tbl_hdr"]),
-        Paragraph("% Contratos", S["tbl_hdr"]),
-        Paragraph("Ticket Médio", S["tbl_hdr"]),
-    ]
-    cat_rows = [cat_hdr]
-    for tipo, label in _TIPO_LABEL.items():
-        vol = _tipo_vol.get(tipo, 0)
-        ct  = _tipo_ct.get(tipo, 0)
-        if vol <= 0 and ct <= 0:
-            continue
-        pct_v = vol / total_consig_val * 100 if total_consig_val > 0 else 0
-        pct_c = ct  / total_ct         * 100 if total_ct         > 0 else 0
-        ticket = vol / ct if ct > 0 else 0
-        cat_rows.append([
-            Paragraph(f'<font color="{_TIPO_COR.get(tipo,"#374151")}"><b>{label}</b></font>',
-                      S["tbl_cell"]),
-            Paragraph(fmt(vol), S["tbl_cell_r"]),
-            Paragraph(f"{pct_v:.1f}%", S["tbl_cell_c"]),
-            Paragraph(str(ct), S["tbl_cell_c"]),
-            Paragraph(f"{pct_c:.1f}%", S["tbl_cell_c"]),
-            Paragraph(fmt(ticket), S["tbl_cell_r"]),
-        ])
-    story.append(make_table(cat_rows, [0.30, 0.18, 0.12, 0.12, 0.12, 0.16]))
-    story.append(PageBreak())
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # 4. MAPA COMPETITIVO
-    # ══════════════════════════════════════════════════════════════════════════
-    story += _sec_header("Mapa Competitivo — Instituições Identificadas na Folha", icon="⚔️")
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 3. MAPA COMPETITIVO — bar horizontal (idêntico ao app)
+    # ═══════════════════════════════════════════════════════════════════════════
+    story += _sec("Mapa Competitivo — Instituições Presentes na Folha")
 
     top15 = inst_list[:15]
     if top15:
         fig_comp = go.Figure(go.Bar(
-            y=[i["desc"][:26] for i in top15][::-1],
-            x=[i["valor"] for i in top15][::-1],
+            y=[i["desc"][:24] for i in top15][::-1],
+            x=[i["valor"]     for i in top15][::-1],
             orientation="h",
-            marker_color=[_TIPO_COR.get(i["tipo"], HEX["cinza"]) for i in top15][::-1],
+            marker_color=[COR_TIPO.get(i["tipo"],"#6b7280") for i in top15][::-1],
             text=[fmt(i["valor"]) for i in top15][::-1],
-            textposition="outside",
-            textfont=dict(size=9),
+            textposition="outside", textfont=dict(size=9),
         ))
         fig_comp.update_layout(
-            **_BASE_LAYOUT,
-            height=max(300, len(top15) * 26 + 80),
-            margin=dict(t=20, b=20, l=10, r=90),
-            xaxis=dict(tickprefix="R$ ", gridcolor="#F3F4F6", tickfont_size=9),
+            paper_bgcolor="white", plot_bgcolor="white",
+            font=dict(family="sans-serif", size=10, color="#374151"),
+            margin=dict(t=20, b=20, l=10, r=110),
+            xaxis=dict(tickprefix="R$ ", gridcolor="#f3f4f6", tickfont_size=9),
             yaxis=dict(tickfont_size=9),
             showlegend=False,
+            height=max(320, len(top15)*28+80), width=900,
         )
-        story.append(_img_flowable(fig_comp, width_cm=16, height_cm=max(8, len(top15) * 0.65)))
-        story.append(Spacer(1, 4))
+        story.append(_fig_img(fig_comp, w_cm=16, h_cm=max(8, len(top15)*0.75)))
 
-    # Legenda de cores
-    leg_html = "  ".join(
-        f'<font color="{cor}">■</font> {lbl}'
-        for cor, lbl in [
-            (HEX["roxo"], "Nossos"),
-            (HEX["azul"], "Concorrentes"),
-            (HEX["rosa"], "Não Compramos"),
-            (HEX["laranja"], "Empréstimos"),
-            (HEX["cinza"], "Não Identificados"),
-        ]
+    # legenda (igual ao app)
+    leg = "  ".join(
+        f'<font color="{cor}">■</font> <font size="8" color="#374151">{lbl}</font>'
+        for cor, lbl in [("#7c3aed","Nossos"),("#1d4ed8","Concorrentes"),
+                         ("#be185d","Não Compramos"),("#d97706","Empréstimos"),
+                         ("#6b7280","Não Identificados")]
     )
-    story.append(Paragraph(leg_html, ParagraphStyle("_leg", fontSize=8, fontName="Helvetica",
-                                                     textColor=C["cinza_med"], leading=12)))
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(leg, _S("leg", fontSize=8, fontName="Helvetica", leading=12)))
+    story.append(Spacer(1, 10))
 
-    # Tabela detalhada top concorrentes
-    conc_list = [i for i in inst_list if i["tipo"] == "concorrente"][:10]
-    if conc_list:
-        story.append(Paragraph("Top Concorrentes — Detalhamento", S["sec_sub"]))
-        c_hdr = [
-            Paragraph("Instituição", S["tbl_hdr_l"]),
-            Paragraph("Volume/Mês", S["tbl_hdr"]),
-            Paragraph("% do Mercado", S["tbl_hdr"]),
-            Paragraph("Contratos", S["tbl_hdr"]),
-            Paragraph("Servidores", S["tbl_hdr"]),
-            Paragraph("Ticket Médio", S["tbl_hdr"]),
-        ]
-        c_rows = [c_hdr]
-        for inst in conc_list:
-            pct_m = inst["valor"] / total_consig_val * 100 if total_consig_val > 0 else 0
-            c_rows.append([
-                Paragraph(inst["desc"][:32], S["tbl_bold"]),
-                Paragraph(fmt(inst["valor"]), S["tbl_cell_r"]),
-                Paragraph(f"{pct_m:.1f}%", S["tbl_cell_c"]),
-                Paragraph(str(inst["contratos"]), S["tbl_cell_c"]),
-                Paragraph(str(inst["servidores"]), S["tbl_cell_c"]),
-                Paragraph(fmt(inst["ticket"]), S["tbl_cell_r"]),
-            ])
-        story.append(make_table(c_rows, [0.32, 0.18, 0.13, 0.12, 0.12, 0.13],
-                                header_style=HDR_AZUL))
-
-    # Tabela nossos vs concorrentes (resumo comparativo)
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("Comparativo Estratégico Nós vs Concorrentes", S["sec_sub"]))
-    comp_hdr = [Paragraph(h, S["tbl_hdr"]) for h in
-                ["Métrica","Starbank (Nossos)","Concorrentes","Vantagem"]]
-    def _adv(a, b, inverse=False):
-        if a == b: return Paragraph("Empate", S["tbl_cell_c"])
-        winner = (a > b) if not inverse else (a < b)
-        if winner: return Paragraph('<font color="#16A34A"><b>✓ Nosso</b></font>', S["tbl_cell_c"])
-        return Paragraph('<font color="#DC2626">✗ Concorrente</font>', S["tbl_cell_c"])
-    comp_rows = [comp_hdr,
-        [Paragraph("Volume Mensal",   S["tbl_bold"]),
-         Paragraph(fmt(total_nosso_val), S["tbl_cell_c"]),
-         Paragraph(fmt(total_conc_val),  S["tbl_cell_c"]),
-         _adv(total_nosso_val, total_conc_val)],
-        [Paragraph("Nº de Contratos", S["tbl_bold"]),
-         Paragraph(str(n_nossos_ct), S["tbl_cell_c"]),
-         Paragraph(str(n_conc_ct),   S["tbl_cell_c"]),
-         _adv(n_nossos_ct, n_conc_ct)],
-        [Paragraph("Ticket Médio",    S["tbl_bold"]),
-         Paragraph(fmt(ticket_nosso), S["tbl_cell_c"]),
-         Paragraph(fmt(ticket_conc),  S["tbl_cell_c"]),
-         _adv(ticket_nosso, ticket_conc)],
-        [Paragraph("Market Share Vol.", S["tbl_bold"]),
-         Paragraph(f"{pct_nosso:.1f}%", S["tbl_cell_c"]),
-         Paragraph(f"{pct_conc:.1f}%",  S["tbl_cell_c"]),
-         _adv(pct_nosso, pct_conc)],
+    # Tabela detalhada (idêntica ao expander do app)
+    story.append(Paragraph("Tabela Detalhada por Instituição", ST["subsec"]))
+    tipo_lbl = {"nosso":"Nosso","concorrente":"Concorrente",
+                "nao_comprado":"Não Compramos","emprestimo":"Empréstimo","desconhecido":"?"}
+    tbl_hdr = [
+        Paragraph("Instituição",  ST["th_l"]),
+        Paragraph("Tipo",        ST["th"]),
+        Paragraph("Vol./Mês",    ST["th"]),
+        Paragraph("% Total",     ST["th"]),
+        Paragraph("Contratos",   ST["th"]),
+        Paragraph("Servidores",  ST["th"]),
+        Paragraph("Ticket Médio",ST["th"]),
     ]
-    story.append(make_table(comp_rows, [0.35, 0.22, 0.22, 0.21],
-                            header_style=HDR_ROXO))
+    tbl_rows = [tbl_hdr]
+    for inst in inst_list:
+        pct_t = inst["valor"]/total_consig*100 if total_consig>0 else 0
+        cor   = COR_TIPO.get(inst["tipo"],"#6b7280")
+        tbl_rows.append([
+            Paragraph(inst["desc"][:30], ST["td_b"]),
+            Paragraph(f'<font color="{cor}"><b>{tipo_lbl.get(inst["tipo"],"?")}</b></font>',
+                      ST["td_c"]),
+            Paragraph(fmt(inst["valor"]),    ST["td_r"]),
+            Paragraph(f"{pct_t:.1f}%",       ST["td_c"]),
+            Paragraph(str(inst["contratos"]),ST["td_c"]),
+            Paragraph(str(inst["servidores"]),ST["td_c"]),
+            Paragraph(fmt(inst["ticket"]),   ST["td_r"]),
+        ])
+    story.append(_tbl(tbl_rows, [0.30,0.14,0.16,0.10,0.10,0.10,0.10],
+                      hdr_color="#1D4ED8"))
     story.append(PageBreak())
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 5. SEGMENTAÇÃO DE CLIENTES
-    # ══════════════════════════════════════════════════════════════════════════
-    story += _sec_header("Segmentação da Base de Clientes", icon="👥")
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 4. SEGMENTAÇÃO DE CLIENTES  (4 gráficos em 2 linhas × 2 cols)
+    # ═══════════════════════════════════════════════════════════════════════════
+    story += _sec("Segmentação da Base de Clientes")
 
-    # ── 5a. Perfil de relacionamento (pizza) + faixa salarial (bar) ──────────
-    story.append(Paragraph("Perfil de Relacionamento Consignado", S["sec_sub"]))
-
-    seg_lv = []; seg_vv = []; seg_cv = []
-    for label, grupo, cor in [
-        ("Sem Consignação",       sem_consig, HEX["verde"]),
-        ("Só Nossos Produtos",    so_nosso,   HEX["roxo"]),
-        ("Só Concorrentes",       so_conc,    HEX["azul"]),
-        ("Nossos + Concorrentes", misto,      HEX["laranja"]),
+    # Linha 1 — Perfil relacionamento (pie) + Faixa salarial (bar)
+    story.append(Paragraph("Perfil de Relacionamento Consignado  ·  Faixa Salarial",
+                            ST["subsec"]))
+    seg_l=[]; seg_v=[]; seg_c=[]
+    for lbl, grp, cor in [
+        ("🌱 Sem Consignações",      sem_consig,"#059669"),
+        ("🏆 Só Nossos Produtos",    so_nosso,  "#7c3aed"),
+        ("🎯 Só Concorrentes",       so_conc,   "#1d4ed8"),
+        ("🔀 Nossos + Concorrentes", misto,     "#d97706"),
     ]:
-        if grupo:
-            seg_lv.append(label); seg_vv.append(len(grupo)); seg_cv.append(cor)
-    outros_n = total - sum(seg_vv)
-    if outros_n > 0:
-        seg_lv.append("Outros"); seg_vv.append(outros_n); seg_cv.append(HEX["cinza"])
+        if grp: seg_l.append(lbl); seg_v.append(len(grp)); seg_c.append(cor)
+    outros = total-sum(seg_v)
+    if outros>0: seg_l.append("❓ Outros"); seg_v.append(outros); seg_c.append("#9ca3af")
+    fx_ord = [(f, faixas.get(f,0)) for f in ORDEM_FAIXAS if faixas.get(f,0)>0]
 
-    # Faixa salarial (bar)
-    fx_ord = [(f, faixas.get(f, 0)) for f in _ORDEM_FAIXAS if faixas.get(f, 0) > 0]
-    _CORES_FAIXA = ["#C4B5FD","#A78BFA","#8B5CF6","#7C3AED","#6D28D9","#5B21B6"]
-
-    fig_seg_row = go.Figure()
-    if seg_vv:
-        fig_seg_row.add_trace(go.Pie(
-            labels=seg_lv, values=seg_vv, marker_colors=seg_cv,
-            hole=0.46, textinfo="value+percent", textfont_size=10,
-            domain={"x":[0, 0.44]},
-            name="Segmento",
-        ))
+    fig_r1 = make_subplots(
+        rows=1, cols=2,
+        specs=[[{"type":"pie"},{"type":"bar"}]],
+        subplot_titles=["Perfil de Relacionamento","Faixa Salarial (Salário Base)"],
+        column_widths=[0.45, 0.55],
+    )
+    if seg_v:
+        fig_r1.add_trace(go.Pie(
+            labels=seg_l, values=seg_v, marker_colors=seg_c,
+            hole=0.42, textinfo="value+percent", textfont_size=9, showlegend=True,
+        ), row=1, col=1)
     if fx_ord:
-        fig_seg_row.add_trace(go.Bar(
+        fig_r1.add_trace(go.Bar(
             x=[f[0] for f in fx_ord], y=[f[1] for f in fx_ord],
-            marker_color=_CORES_FAIXA[:len(fx_ord)],
-            text=[f[1] for f in fx_ord],
-            textposition="outside", textfont_size=10,
-            xaxis="x2", yaxis="y2", name="Faixa Salarial",
-        ))
-
-    fig_seg_row.update_layout(
-        **_BASE_LAYOUT,
-        height=280, width=800,
-        margin=dict(t=40, b=60, l=10, r=10),
-        xaxis2=dict(domain=[0.54, 1.0], anchor="y2", tickfont_size=9),
-        yaxis2=dict(anchor="x2", gridcolor="#F3F4F6", title="Servidores", tickfont_size=9),
-        showlegend=True,
+            marker_color=CORES_FAIXA[:len(fx_ord)],
+            text=[f[1] for f in fx_ord], textposition="outside", textfont_size=10,
+            showlegend=False,
+        ), row=1, col=2)
+    fig_r1.update_layout(
+        paper_bgcolor="white", plot_bgcolor="white",
+        font=dict(family="sans-serif", size=10),
+        margin=dict(t=50, b=75, l=20, r=20),
         legend=dict(orientation="h", y=-0.25, font_size=9, x=0.22, xanchor="center"),
-        annotations=[
-            dict(text="Relacionamento", x=0.22, y=1.08, showarrow=False,
-                 font_size=11, font_color=HEX["roxo_esc"], font_family="Helvetica"),
-            dict(text="Faixa Salarial (Salário Base)", x=0.77, y=1.08, showarrow=False,
-                 font_size=11, font_color=HEX["roxo_esc"], font_family="Helvetica"),
-        ],
+        height=340, width=900,
+        yaxis2=dict(gridcolor="#f3f4f6", title="Servidores"),
     )
-    story.append(_img_flowable(fig_seg_row, width_cm=16, height_cm=7.5))
-    story.append(Spacer(1, 8))
+    story.append(_fig_img(fig_r1, w_cm=16, h_cm=8.5))
+    story.append(Spacer(1, 10))
 
-    # ── 5b. Regime + Taxa consignação por faixa ──────────────────────────────
-    story.append(Paragraph("Regime de Trabalho e Taxa de Consignação", S["sec_sub"]))
-
+    # Linha 2 — Distribuição por regime + Taxa consignação por faixa
+    story.append(Paragraph("Distribuição por Regime  ·  Taxa de Consignação por Faixa Salarial",
+                            ST["subsec"]))
     reg_l = list(regimes.keys()); reg_v = list(regimes.values())
-    fx_tc_l, fx_tc_v = [], []
-    for f in _ORDEM_FAIXAS:
-        fc = faixa_consig.get(f, {})
-        if fc.get("total", 0) > 0:
+    fx_tc_l=[]; fx_tc_v=[]
+    for f in ORDEM_FAIXAS:
+        fc = faixa_consig.get(f,{})
+        if fc.get("total",0)>0:
             fx_tc_l.append(f)
-            fx_tc_v.append(round(fc["com"] / fc["total"] * 100, 1))
+            fx_tc_v.append(round(fc["com"]/fc["total"]*100,1))
 
-    fig_reg_tc = go.Figure()
-    if reg_l:
-        fig_reg_tc.add_trace(go.Bar(
-            x=reg_l, y=reg_v,
-            marker_color=HEX["roxo"],
-            text=reg_v, textposition="outside", textfont_size=10,
-            name="Regime", xaxis="x1", yaxis="y1",
-        ))
-    if fx_tc_l:
-        fig_reg_tc.add_trace(go.Bar(
-            x=fx_tc_l, y=fx_tc_v,
-            marker_color=[HEX["laranja"] if p > 70 else HEX["roxo"] if p > 40
-                          else "#A78BFA" for p in fx_tc_v],
-            text=[f"{p:.0f}%" for p in fx_tc_v],
-            textposition="outside", textfont_size=10,
-            name="Taxa Consig. %", xaxis="x2", yaxis="y2",
-        ))
-
-    fig_reg_tc.update_layout(
-        **_BASE_LAYOUT,
-        height=250, width=800,
-        margin=dict(t=40, b=40, l=10, r=10),
-        xaxis=dict(domain=[0, 0.44], tickfont_size=9),
-        yaxis=dict(anchor="x1", gridcolor="#F3F4F6",
-                   title="Servidores", tickfont_size=9),
-        xaxis2=dict(domain=[0.54, 1.0], anchor="y2", tickfont_size=9),
-        yaxis2=dict(anchor="x2", gridcolor="#F3F4F6",
-                    title="%", range=[0, 120], tickfont_size=9),
-        showlegend=True,
-        legend=dict(orientation="h", y=-0.28, font_size=9),
-        annotations=[
-            dict(text="Distribuição por Regime", x=0.22, y=1.1, showarrow=False,
-                 font_size=11, font_color=HEX["roxo_esc"], font_family="Helvetica"),
-            dict(text="Taxa de Consignação por Faixa Salarial", x=0.77, y=1.1, showarrow=False,
-                 font_size=11, font_color=HEX["roxo_esc"], font_family="Helvetica"),
-        ],
+    fig_r2 = make_subplots(
+        rows=1, cols=2,
+        specs=[[{"type":"bar"},{"type":"bar"}]],
+        subplot_titles=["Distribuição por Regime","Taxa de Consignação por Faixa (%)"],
+        column_widths=[0.45, 0.55],
     )
-    story.append(_img_flowable(fig_reg_tc, width_cm=16, height_cm=7))
+    if reg_l:
+        fig_r2.add_trace(go.Bar(
+            x=reg_l, y=reg_v, marker_color="#7c3aed",
+            text=reg_v, textposition="outside", textfont_size=10,
+            showlegend=False,
+        ), row=1, col=1)
+    if fx_tc_l:
+        fig_r2.add_trace(go.Bar(
+            x=fx_tc_l, y=fx_tc_v,
+            marker_color=["#f97316" if p>70 else "#7c3aed" if p>40 else "#a78bfa"
+                          for p in fx_tc_v],
+            text=[f"{p:.0f}%" for p in fx_tc_v],
+            textposition="outside", textfont_size=10, showlegend=False,
+        ), row=1, col=2)
+    fig_r2.update_layout(
+        paper_bgcolor="white", plot_bgcolor="white",
+        font=dict(family="sans-serif", size=10),
+        margin=dict(t=50, b=50, l=20, r=20),
+        height=300, width=900,
+        yaxis=dict(gridcolor="#f3f4f6"),
+        yaxis2=dict(gridcolor="#f3f4f6", range=[0,120], title="%"),
+    )
+    story.append(_fig_img(fig_r2, w_cm=16, h_cm=7.5))
     story.append(PageBreak())
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 6. PENETRAÇÃO DE PRODUTOS & FUNIL
-    # ══════════════════════════════════════════════════════════════════════════
-    story += _sec_header("Penetração de Produtos & Funil de Mercado", icon="📈")
-
-    # ── 6a. Produtos nossos (bar horizontal) ─────────────────────────────────
-    story.append(Paragraph("Presença dos Nossos Produtos", S["sec_sub"]))
-    if prod_freq:
-        p_names = list(prod_freq.keys())
-        p_vals  = [prod_freq[p]["valor"]     for p in p_names]
-        p_cts   = [prod_freq[p]["contratos"] for p in p_names]
-        fig_prod = go.Figure()
-        fig_prod.add_bar(
-            name="Volume R$/mês", x=p_names, y=p_vals,
-            marker_color=HEX["roxo"], yaxis="y1",
-            text=[fmt(v) for v in p_vals], textposition="outside", textfont_size=10,
-        )
-        fig_prod.add_scatter(
-            name="Nº Contratos", x=p_names, y=p_cts,
-            mode="markers+text",
-            marker=dict(size=12, color=HEX["laranja"],
-                        symbol="diamond", line=dict(width=2, color="white")),
-            text=p_cts, textposition="top center", textfont_size=11,
-            yaxis="y2",
-        )
-        fig_prod.update_layout(
-            **_BASE_LAYOUT, height=280,
-            margin=dict(t=20, b=30, l=10, r=60),
-            yaxis=dict(title="R$/mês", tickprefix="R$ ", gridcolor="#F3F4F6"),
-            yaxis2=dict(title="Contratos", overlaying="y", side="right", showgrid=False),
-            legend=dict(font_size=10, orientation="h", y=-0.18),
-            barmode="group",
-        )
-        story.append(_img_flowable(fig_prod, width_cm=16, height_cm=7))
-    else:
-        story.append(Paragraph("Nenhum produto nosso identificado nos holerites.", S["body"]))
-    story.append(Spacer(1, 8))
-
-    # ── 6b. Funil de oportunidade ─────────────────────────────────────────────
-    story.append(Paragraph("Funil de Oportunidade de Mercado", S["sec_sub"]))
-    com_nos_total     = len(com_nos)
-    sem_nos_com_conc  = len([r for r in resultados
-                              if r.get("qt_nossos",0)==0 and r.get("qt_concorrentes",0)>0])
-    sem_nos_com_emp   = len([r for r in resultados
-                              if r.get("qt_nossos",0)==0 and r.get("total_emprestimos",0)>0
-                              and r.get("qt_concorrentes",0)==0])
-    fig_funil = go.Figure(go.Funnel(
-        y=["Total Analisado", "Com Nossos Produtos", "Alvo (só concorrente)",
-           "Emp. sem nós", "Mercado Novo"],
-        x=[total, com_nos_total, sem_nos_com_conc, sem_nos_com_emp, len(sem_consig)],
-        textinfo="value+percent initial",
-        marker_color=["#4C1D95","#7C3AED","#1D4ED8","#D97706","#16A34A"],
-        textfont=dict(size=11),
-        connector=dict(line=dict(color="#E5E7EB", width=2)),
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 5. PENETRAÇÃO DOS NOSSOS PRODUTOS  (bar+scatter + funil)
+    # ═══════════════════════════════════════════════════════════════════════════
+    story += _sec("Penetração dos Nossos Produtos")
+    story.append(Paragraph(
+        "Presença por Produto (Volume e Contratos)  ·  Funil de Oportunidade de Mercado",
+        ST["subsec"]
     ))
-    fig_funil.update_layout(**_BASE_LAYOUT, height=250, margin=dict(t=10, b=10, l=20, r=20))
-    story.append(_img_flowable(fig_funil, width_cm=15, height_cm=6.5))
-    story.append(Spacer(1, 8))
 
-    # ── 6c. Distribuição de oportunidades (bar horizontal) ───────────────────
-    story.append(Paragraph("Distribuição de Oportunidades Identificadas", S["sec_sub"]))
+    p_names = list(prod_freq.keys())
+    p_vals  = [prod_freq[p]["valor"]     for p in p_names]
+    p_cts   = [prod_freq[p]["contratos"] for p in p_names]
+
+    com_nos_n    = len(com_nos)
+    sem_nos_conc = len([r for r in resultados
+                        if r.get("qt_nossos",0)==0 and r.get("qt_concorrentes",0)>0])
+    sem_nos_emp  = len([r for r in resultados
+                        if r.get("qt_nossos",0)==0 and r.get("total_emprestimos",0)>0
+                        and r.get("qt_concorrentes",0)==0])
+
+    fig_pen = make_subplots(
+        rows=1, cols=2,
+        specs=[[{"secondary_y":True},{"type":"funnel"}]],
+        subplot_titles=["Presença por Produto","Funil de Oportunidade de Mercado"],
+        column_widths=[0.55, 0.45],
+    )
+    if p_names:
+        fig_pen.add_trace(go.Bar(
+            name="Volume R$/mês", x=p_names, y=p_vals, marker_color="#7c3aed",
+            text=[fmt(v) for v in p_vals], textposition="outside", textfont_size=9,
+            showlegend=True,
+        ), row=1, col=1, secondary_y=False)
+        fig_pen.add_trace(go.Scatter(
+            name="Nº Contratos", x=p_names, y=p_cts, mode="markers+text",
+            marker=dict(size=10, color="#f97316", symbol="diamond"),
+            text=p_cts, textposition="top center", textfont_size=10, showlegend=True,
+        ), row=1, col=1, secondary_y=True)
+    fig_pen.add_trace(go.Funnel(
+        y=["Total Servidores","Com Nossos Produtos","Alvo (só concorrente)",
+           "Emp. sem nós","Mercado Novo"],
+        x=[total, com_nos_n, sem_nos_conc, sem_nos_emp, len(sem_consig)],
+        textinfo="value+percent initial",
+        marker_color=["#4c1d95","#7c3aed","#1d4ed8","#d97706","#059669"],
+        textfont_size=10, showlegend=False,
+        connector=dict(line=dict(color="#e5e7eb", width=1.5)),
+    ), row=1, col=2)
+    fig_pen.update_layout(
+        paper_bgcolor="white", plot_bgcolor="white",
+        font=dict(family="sans-serif", size=10),
+        margin=dict(t=60, b=70, l=20, r=20),
+        legend=dict(orientation="h", y=-0.22, font_size=9),
+        height=340, width=900,
+    )
+    fig_pen.update_yaxes(title_text="R$/mês", tickprefix="R$ ",
+                         gridcolor="#f3f4f6", row=1, col=1, secondary_y=False)
+    fig_pen.update_yaxes(title_text="Contratos", row=1, col=1,
+                         secondary_y=True, showgrid=False)
+    story.append(_fig_img(fig_pen, w_cm=16, h_cm=8.5))
+    story.append(Spacer(1, 10))
+
+    # Distribuição de oportunidades — bar horizontal (igual ao app)
+    story += _sec("Distribuição de Oportunidades Identificadas")
     opp_sorted = opps.most_common()
-    _COR_OPP = {
-        "🔥 Compra Dívida + Empréstimo": HEX["laranja"],
-        "💳 Compra de Dívida":           HEX["azul"],
-        "💵 Empréstimo Disponível":      HEX["verde"],
-        "🔄 Refinanciamento":            HEX["roxo"],
-        "💵 Margem Disponível":          "#059669",
-        "❓ Prefeitura Não Mapeada":     HEX["cinza"],
-        "⛔ Margem Lotada":              HEX["vermelho"],
-    }
     if opp_sorted:
         fig_opp = go.Figure(go.Bar(
             y=[o[0] for o in opp_sorted][::-1],
             x=[o[1] for o in opp_sorted][::-1],
             orientation="h",
-            marker_color=[_COR_OPP.get(o[0], HEX["cinza"]) for o in opp_sorted][::-1],
+            marker_color=[COR_OPP.get(o[0],"#6b7280") for o in opp_sorted][::-1],
             text=[o[1] for o in opp_sorted][::-1],
             textposition="outside", textfont_size=11,
         ))
         fig_opp.update_layout(
-            **_BASE_LAYOUT, height=max(200, len(opp_sorted) * 35 + 60),
-            margin=dict(t=10, b=10, l=10, r=50),
-            xaxis=dict(title="Servidores", gridcolor="#F3F4F6"),
+            paper_bgcolor="white", plot_bgcolor="white",
+            font=dict(family="sans-serif", size=10),
+            margin=dict(t=20, b=20, l=10, r=55),
+            xaxis=dict(title="Servidores", gridcolor="#f3f4f6"),
             showlegend=False,
+            height=max(220, len(opp_sorted)*40+80), width=900,
         )
-        story.append(_img_flowable(fig_opp, width_cm=15, height_cm=max(5, len(opp_sorted)*1.0)))
+        story.append(_fig_img(fig_opp, w_cm=16, h_cm=max(5.5, len(opp_sorted)*1.1)))
     story.append(PageBreak())
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 7. ANÁLISE POR PREFEITURA
-    # ══════════════════════════════════════════════════════════════════════════
-    story += _sec_header("Análise por Prefeitura", icon="🏛️")
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 6. ANÁLISE POR PREFEITURA  (espelho do tab_pref)
+    # ═══════════════════════════════════════════════════════════════════════════
+    story += _sec("📊 Análise por Prefeitura")
 
     if pref_sorted:
-        pnames = [p[:22] for p, _ in pref_sorted]
-        pemp_d = [v["emp_disp"] for _, v in pref_sorted]
-        pemp_u = [max(v["emp_total"] - v["emp_disp"], 0) for _, v in pref_sorted]
-        pconc  = [v["conc_total"] for _, v in pref_sorted]
+        pnames = [p[:20] for p,_ in pref_sorted]
+        pemp_d = [max(v["emp_disp"],0)               for _,v in pref_sorted]
+        pemp_u = [max(v["emp_total"]-v["emp_disp"],0) for _,v in pref_sorted]
+        pconc  = [v["conc_total"]                     for _,v in pref_sorted]
+        p_disp = [v["qt_marg"]                        for _,v in pref_sorted]
+        p_lot  = [v["qt_lot"]                         for _,v in pref_sorted]
+        p_sem  = [v["qt_sem"]                         for _,v in pref_sorted]
 
-        # Margem usada vs disponível
-        fig_pref_marg = go.Figure()
-        fig_pref_marg.add_bar(
-            name="Comprometido", x=pnames, y=pemp_u,
-            marker_color=HEX["laranja"],
-            text=[fmt(u) if u > 0 else "" for u in pemp_u],
+        # Margem disponível vs comprometida — stacked (igual ao app)
+        story.append(Paragraph("💰 Margem de Empréstimo: Disponível vs Utilizada", ST["subsec"]))
+        fig_marg = go.Figure()
+        fig_marg.add_bar(
+            name="Já Comprometido", x=pnames, y=pemp_u, marker_color="#f97316",
+            text=[fmt(u) if u>0 else "" for u in pemp_u],
             textposition="inside", textfont_color="white", textfont_size=9,
         )
-        fig_pref_marg.add_bar(
-            name="Disponível", x=pnames, y=[max(d, 0) for d in pemp_d],
-            marker_color=HEX["roxo"],
-            text=[fmt(d) if d > 0 else "" for d in pemp_d],
+        fig_marg.add_bar(
+            name="Disponível", x=pnames, y=[max(d,0) for d in pemp_d],
+            marker_color="#7c3aed",
+            text=[fmt(d) if d>0 else "" for d in pemp_d],
             textposition="inside", textfont_color="white", textfont_size=9,
         )
-        fig_pref_marg.update_layout(
-            **_BASE_LAYOUT, barmode="stack", height=280,
-            margin=dict(t=30, b=40, l=10, r=10),
-            legend=dict(orientation="h", y=-0.22, font_size=10),
-            yaxis=dict(tickprefix="R$ ", gridcolor="#F3F4F6"),
-            annotations=[dict(text="Margem de Empréstimo: Disponível vs Comprometida",
-                              x=0.5, y=1.08, xref="paper", yref="paper",
-                              showarrow=False, font_size=11, font_color=HEX["roxo_esc"])],
+        fig_marg.update_layout(
+            barmode="stack", paper_bgcolor="white", plot_bgcolor="white",
+            font=dict(family="sans-serif", size=10),
+            margin=dict(t=20, b=55, l=20, r=20),
+            legend=dict(orientation="h", y=-0.28, font_size=10),
+            yaxis=dict(tickprefix="R$ ", gridcolor="#f3f4f6"),
+            height=280, width=900,
         )
-        story.append(_img_flowable(fig_pref_marg, width_cm=16, height_cm=7.5))
+        story.append(_fig_img(fig_marg, w_cm=16, h_cm=7))
         story.append(Spacer(1, 6))
 
-        # Volume concorrentes por pref
-        fig_pref_conc = go.Figure(go.Bar(
-            x=pnames, y=pconc,
-            marker_color=HEX["azul"],
-            text=[fmt(c) if c > 0 else "" for c in pconc],
+        # Concorrentes por prefeitura (igual ao app)
+        story.append(Paragraph("💳 Cartões Concorrentes — Volume Mensal Saindo da Folha",
+                                ST["subsec"]))
+        fig_conc = go.Figure(go.Bar(
+            name="Concorrentes R$/mês", x=pnames, y=pconc, marker_color="#1d4ed8",
+            text=[fmt(c) if c>0 else "" for c in pconc],
             textposition="outside", textfont_size=9,
         ))
-        fig_pref_conc.update_layout(
-            **_BASE_LAYOUT, height=230,
-            margin=dict(t=30, b=40, l=10, r=10),
-            yaxis=dict(tickprefix="R$ ", gridcolor="#F3F4F6"),
-            showlegend=False,
-            annotations=[dict(text="Volume Concorrentes/Mês por Prefeitura",
-                              x=0.5, y=1.1, xref="paper", yref="paper",
-                              showarrow=False, font_size=11, font_color=HEX["roxo_esc"])],
+        fig_conc.update_layout(
+            paper_bgcolor="white", plot_bgcolor="white",
+            font=dict(family="sans-serif", size=10),
+            margin=dict(t=20, b=50, l=20, r=20),
+            yaxis=dict(tickprefix="R$ ", gridcolor="#f3f4f6"),
+            showlegend=False, height=240, width=900,
         )
-        story.append(_img_flowable(fig_pref_conc, width_cm=16, height_cm=6))
+        story.append(_fig_img(fig_conc, w_cm=16, h_cm=6))
+        story.append(Spacer(1, 6))
+
+        # Oportunidades (pizza) + Status margem (stacked) — igual ao app
+        story.append(Paragraph(
+            "🎯 Distribuição de Oportunidades  ·  📊 Status de Margem por Prefeitura",
+            ST["subsec"]
+        ))
+        opp_sorted_pref = opps.most_common()
+        fig_2col = make_subplots(
+            rows=1, cols=2,
+            specs=[[{"type":"pie"},{"type":"bar"}]],
+            subplot_titles=["Distribuição de Oportunidades",
+                            "Status de Margem por Prefeitura"],
+            column_widths=[0.45, 0.55],
+        )
+        if opp_sorted_pref:
+            fig_2col.add_trace(go.Pie(
+                labels=[o[0] for o in opp_sorted_pref],
+                values=[o[1] for o in opp_sorted_pref],
+                marker_colors=[COR_OPP.get(o[0],"#9ca3af") for o in opp_sorted_pref],
+                hole=0.45, textinfo="value+percent", textfont_size=9, showlegend=True,
+            ), row=1, col=1)
+        for name, yvals, cor in [
+            ("✅ Margem Disponível", p_disp, "#16a34a"),
+            ("⛔ Margem Lotada",     p_lot,  "#dc2626"),
+            ("❓ Sem Mapeamento",    p_sem,  "#9ca3af"),
+        ]:
+            fig_2col.add_trace(go.Bar(
+                name=name, x=pnames, y=yvals, marker_color=cor, showlegend=True,
+            ), row=1, col=2)
+        fig_2col.update_layout(
+            barmode="stack", paper_bgcolor="white", plot_bgcolor="white",
+            font=dict(family="sans-serif", size=9),
+            margin=dict(t=55, b=85, l=20, r=20),
+            legend=dict(orientation="h", y=-0.35, font_size=9, x=0.5, xanchor="center"),
+            height=330, width=900,
+            yaxis2=dict(title="Servidores", gridcolor="#f3f4f6"),
+        )
+        story.append(_fig_img(fig_2col, w_cm=16, h_cm=8.5))
         story.append(Spacer(1, 8))
 
         # Tabela por prefeitura
-        story.append(Paragraph("Métricas por Prefeitura", S["sec_sub"]))
+        story.append(Paragraph("Métricas Consolidadas por Prefeitura", ST["subsec"]))
         p_hdr = [
-            Paragraph("Prefeitura", S["tbl_hdr_l"]),
-            Paragraph("Serv.", S["tbl_hdr"]),
-            Paragraph("Emp. Disp.", S["tbl_hdr"]),
-            Paragraph("Concorr./Mês", S["tbl_hdr"]),
-            Paragraph("Nossos", S["tbl_hdr"]),
-            Paragraph("Liq. Médio", S["tbl_hdr"]),
-            Paragraph("% Marg. Disp.", S["tbl_hdr"]),
+            Paragraph("Prefeitura",   ST["th_l"]),
+            Paragraph("Serv.",        ST["th"]),
+            Paragraph("Emp. Disp.",   ST["th"]),
+            Paragraph("Concorr./Mês",ST["th"]),
+            Paragraph("Nossos",       ST["th"]),
+            Paragraph("Liq. Médio",  ST["th"]),
+            Paragraph("% Marg.",      ST["th"]),
         ]
         p_rows = [p_hdr]
-        for pref, v in pref_sorted:
-            ml = v["liquido_total"] / v["servidores"] if v["servidores"] else 0
-            pmd = v["qt_marg_disp"] / v["servidores"] * 100 if v["servidores"] else 0
+        for pref,v in pref_sorted:
+            ml  = v["liquido_total"]/v["servidores"] if v["servidores"] else 0
+            pmd = v["qt_marg"]/v["servidores"]*100   if v["servidores"] else 0
             p_rows.append([
-                Paragraph(pref[:28], S["tbl_bold"]),
-                Paragraph(str(v["servidores"]), S["tbl_cell_c"]),
-                Paragraph(fmt(v["emp_disp"]), S["tbl_cell_r"]),
-                Paragraph(fmt(v["conc_total"]), S["tbl_cell_r"]),
-                Paragraph(str(v["qt_nossos"]), S["tbl_cell_c"]),
-                Paragraph(fmt(ml), S["tbl_cell_r"]),
-                Paragraph(f"{pmd:.0f}%", S["tbl_cell_c"]),
+                Paragraph(pref[:28], ST["td_b"]),
+                Paragraph(str(v["servidores"]), ST["td_c"]),
+                Paragraph(fmt(v["emp_disp"]),   ST["td_r"]),
+                Paragraph(fmt(v["conc_total"]), ST["td_r"]),
+                Paragraph(str(v["qt_nossos"]),  ST["td_c"]),
+                Paragraph(fmt(ml),              ST["td_r"]),
+                Paragraph(f"{pmd:.0f}%",        ST["td_c"]),
             ])
-        story.append(make_table(p_rows, [0.30, 0.08, 0.15, 0.15, 0.1, 0.12, 0.10]))
+        story.append(_tbl(p_rows, [0.31,0.09,0.15,0.15,0.09,0.13,0.08]))
     story.append(PageBreak())
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 8. INSIGHTS ESTRATÉGICOS (IA)
-    # ══════════════════════════════════════════════════════════════════════════
-    story += _sec_header(
-        "Insights Estratégicos · Stella IA",
-        subtitle=(
-            "Os insights abaixo foram gerados pela Stella, assistente de IA do StarCheck, "
-            "com base nos dados agregados deste lote. Cada item inclui uma conclusão "
-            "acionável para apoiar decisões de liderança e gestão comercial."
-        ),
-        icon="✨",
-    )
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 7. INSIGHTS ESTRATÉGICOS (IA)  — idêntico ao app
+    # ═══════════════════════════════════════════════════════════════════════════
+    story += _sec("💡 Insights Estratégicos · Stella IA")
 
     if insights_ia:
         for ins in insights_ia:
-            story.append(_insight_block(ins))
+            nivel = ins.get("nivel","atencao")
+            bg_hex, borda_hex = COR_NIVEL.get(nivel,("#f9fafb","#6b7280"))
+            label_n = LABEL_NIVEL.get(nivel, nivel.upper())
+            icone  = ins.get("icone","💡")
+            titulo = ins.get("titulo","")
+            texto  = ins.get("texto","")
+            bloco  = Table(
+                [[Paragraph(
+                    f'{icone}  <b>{titulo}</b>'
+                    f'  <font size="7" color="{borda_hex}"> [{label_n}]</font>',
+                    ST["ins_tit"])],
+                 [Paragraph(texto, ST["ins_txt"])]],
+                colWidths=[W-4.5*cm],
+            )
+            bloco.setStyle(TableStyle([
+                ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor(bg_hex)),
+                ("TOPPADDING",    (0,0),(-1,-1), 8),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 8),
+                ("LEFTPADDING",   (0,0),(-1,-1), 12),
+                ("RIGHTPADDING",  (0,0),(-1,-1), 10),
+                ("BOX",           (0,0),(-1,-1), 0.5, colors.HexColor(borda_hex)),
+                ("LINEAFTER",     (0,0),(0,-1),  4,   colors.HexColor(borda_hex)),
+            ]))
+            story.append(KeepTogether([bloco, Spacer(1,5)]))
     else:
-        story.append(Paragraph(
-            "Insights estratégicos não disponíveis — verifique a conexão com a API.",
-            S["body"]
-        ))
-    story.append(Spacer(1, 6))
-
-    # Quadro de síntese estratégica
-    # Monta um mini-resumo em tabela de 2 colunas
-    story.append(Paragraph("Síntese Estratégica", S["sec_sub"]))
-    pontos_chave = [
-        ("Volume a capturar/mês", fmt(total_conc_val + total_naocomp_val)),
-        ("Servidores alvo puro (só concorrente)", str(len(so_conc))),
-        ("Ticket médio concorrente/mês", fmt(ticket_conc)),
-        ("Ticket médio nosso/mês", fmt(ticket_nosso)),
-        ("Potencial se converter 50% dos alvos",
-         fmt((total_conc_val / n_conc_ct * len(so_conc) * 0.5) if n_conc_ct > 0 else 0)),
-        ("Penetração atual na base", f"{taxa_penet:.1f}%"),
-        ("Margem emp. total disponível", fmt(marg_disp_total)),
-        ("Market share nosso (volume)", f"{pct_nosso:.1f}%"),
-    ]
-    sint_data = [
-        [Paragraph(k, S["tbl_bold"]), Paragraph(v, S["tbl_cell_c"])]
-        for k, v in pontos_chave
-    ]
-    sint_t = Table(sint_data, colWidths=[(W - 3 * cm) * 0.6, (W - 3 * cm) * 0.4])
-    sint_t.setStyle(TableStyle([
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [C["roxo_pale"], colors.white]),
-        ("BOX",            (0, 0), (-1, -1), 0.5, C["borda"]),
-        ("INNERGRID",      (0, 0), (-1, -1), 0.3, C["borda"]),
-        ("TOPPADDING",     (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
-        ("LEFTPADDING",    (0, 0), (-1, -1), 8),
-        ("ALIGN",          (1, 0), (1, -1),  "CENTER"),
-        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-        ("LINEAFTER",      (0, 0), (0, -1),  1.5, C["roxo"]),
-    ]))
-    story.append(sint_t)
+        story.append(Paragraph("Insights não disponíveis.", ST["body"]))
     story.append(PageBreak())
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 9. RANKING DE OPORTUNIDADES
-    # ══════════════════════════════════════════════════════════════════════════
-    story += _sec_header(
-        "Ranking de Oportunidades — Servidores",
-        subtitle=(
-            "Ordenado por prioridade comercial — do maior potencial de conversão "
-            "ao de menor urgência imediata. Exibe até 50 registros."
-        ),
-        icon="🏆",
-    )
-
-    _COR_OPP_TXT = {
-        "🔥 Compra Dívida + Empréstimo": HEX["laran_esc"],
-        "💳 Compra de Dívida":           HEX["azul_esc"],
-        "💵 Empréstimo Disponível":      HEX["verde_esc"],
-        "🔄 Refinanciamento":            HEX["roxo_esc"],
-        "💵 Margem Disponível":          "#065F46",
-        "❓ Prefeitura Não Mapeada":     HEX["cinza_med"],
-        "⛔ Margem Lotada":              HEX["verm_esc"],
-    }
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 8. RANKING DE OPORTUNIDADES  (espelho do tab_rank)
+    # ═══════════════════════════════════════════════════════════════════════════
+    story += _sec("🏆 Ranking de Oportunidades — Servidores")
+    story.append(Paragraph(
+        "Ordenado por prioridade comercial — do maior potencial de conversão ao menor urgência.",
+        ST["body"]
+    ))
+    story.append(Spacer(1, 6))
 
     r_hdr = [
-        Paragraph("#",          S["tbl_hdr"]),
-        Paragraph("Nome",       S["tbl_hdr_l"]),
-        Paragraph("Prefeitura", S["tbl_hdr_l"]),
-        Paragraph("Regime",     S["tbl_hdr"]),
-        Paragraph("Emp. Disp.", S["tbl_hdr"]),
-        Paragraph("Concorr.",   S["tbl_hdr"]),
-        Paragraph("Cart. Disp.",S["tbl_hdr"]),
-        Paragraph("Oportunidade",S["tbl_hdr_l"]),
+        Paragraph("#",           ST["th"]),
+        Paragraph("Nome",        ST["th_l"]),
+        Paragraph("Prefeitura",  ST["th_l"]),
+        Paragraph("Regime",      ST["th"]),
+        Paragraph("Emp. Disp.", ST["th"]),
+        Paragraph("Concorr.",    ST["th"]),
+        Paragraph("Cart. Disp.",ST["th"]),
+        Paragraph("Oportunidade",ST["th_l"]),
     ]
     r_rows = [r_hdr]
     for idx, r in enumerate(resultados[:50], 1):
-        opp_cor = _COR_OPP_TXT.get(r.get("oportunidade",""), HEX["cinza_med"])
+        opp_cor = COR_OPP_ESC.get(r.get("oportunidade",""),"#374151")
         conc_s  = fmt(r.get("total_concorrentes",0)) if r.get("qt_concorrentes",0)>0 else "—"
         emp_s   = fmt(r.get("emp_disp",0))           if r.get("emp_disp",0)>0        else "—"
         cc_s    = fmt(r.get("cc_disp",0))            if r.get("cc_disp",0)>0         else "—"
         r_rows.append([
-            Paragraph(str(idx), S["tbl_cell_c"]),
-            Paragraph(r.get("nome","")[:22], S["tbl_bold"]),
-            Paragraph(r.get("prefeitura","")[:20], S["tbl_cell"]),
-            Paragraph(r.get("regime","")[:12],     S["tbl_cell_c"]),
-            Paragraph(emp_s, S["tbl_cell_r"]),
-            Paragraph(conc_s, S["tbl_cell_r"]),
-            Paragraph(cc_s, S["tbl_cell_r"]),
+            Paragraph(str(idx),                    ST["td_c"]),
+            Paragraph(r.get("nome","")[:22],       ST["td_b"]),
+            Paragraph(r.get("prefeitura","")[:20], ST["td"]),
+            Paragraph(r.get("regime","")[:12],     ST["td_c"]),
+            Paragraph(emp_s,  ST["td_r"]),
+            Paragraph(conc_s, ST["td_r"]),
+            Paragraph(cc_s,   ST["td_r"]),
             Paragraph(
                 f'<font color="{opp_cor}"><b>{r.get("oportunidade","")}</b></font>',
-                S["tbl_cell"]
+                ST["td"]
             ),
         ])
-
-    tr = Table(
+    rt = Table(
         r_rows,
-        colWidths=[(W - 3 * cm) * f for f in [0.04,0.18,0.16,0.1,0.12,0.11,0.11,0.18]],
+        colWidths=[(W-3*cm)*f for f in [0.04,0.18,0.16,0.10,0.11,0.11,0.11,0.19]],
         repeatRows=1,
     )
-    ts_r = TableStyle(
-        BASE_TBL.getCommands() + HDR_ROXO.getCommands() + [
-            ("FONTSIZE",      (0,0),(-1,-1), 7.5),
-            ("TOPPADDING",    (0,0),(-1,-1), 4),
-            ("BOTTOMPADDING", (0,0),(-1,-1), 4),
-        ]
-    )
-    tr.setStyle(ts_r)
-    story.append(tr)
+    rt.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0),(-1,0),  colors.HexColor("#7c3aed")),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1), [colors.white, colors.HexColor("#f9fafb")]),
+        ("BOX",           (0,0),(-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+        ("INNERGRID",     (0,0),(-1,-1), 0.3, colors.HexColor("#e5e7eb")),
+        ("TOPPADDING",    (0,0),(-1,-1), 4),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+        ("LEFTPADDING",   (0,0),(-1,-1), 5),
+        ("RIGHTPADDING",  (0,0),(-1,-1), 5),
+        ("FONTSIZE",      (0,0),(-1,-1), 7.5),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+    ]))
+    story.append(rt)
 
-    if len(resultados) > 50:
-        story.append(Spacer(1, 4))
+    if len(resultados)>50:
+        story.append(Spacer(1,4))
         story.append(Paragraph(
-            f"<i>Exibindo os 50 primeiros de {len(resultados)} servidores. "
-            "Use o dashboard para visualizar o lote completo.</i>",
-            S["body"]
+            f"<i>Exibindo os 50 primeiros de {len(resultados)} servidores.</i>",
+            ST["caption"]
         ))
 
-    # ── NOTA FINAL ────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 1.2 * cm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=C["borda"]))
+    # ── rodapé ───────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 1.2*cm))
+    story.append(HRFlowable(width="100%", thickness=0.5,
+                             color=colors.HexColor("#e5e7eb")))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
-        f"Relatório gerado automaticamente pelo StarCheck · Starbank Grupo · "
-        f"{datetime.now().strftime('%d/%m/%Y às %H:%M')} · "
-        "Documento confidencial — uso interno exclusivo.",
-        S["rodape"]
+        f"Relatório gerado pelo StarCheck · Starbank Grupo · "
+        f"{datetime.now().strftime('%d/%m/%Y às %H:%M')} · Confidencial — uso interno.",
+        ST["rodape"]
     ))
 
     doc.build(story)
