@@ -2961,7 +2961,7 @@ def render_resultado(dados: Dict):
         if not st.session_state.get("stella_estrategia"):
             if st.button("✨ Gerar Estratégia com Stella", type="secondary",
                         key="btn_stella_individual"):
-                with st.spinner("Stella pensando..."):
+                with st.spinner("✨ Stella pensando..."):
                     estr = stella_estrategia(
                         dados,
                         st.session_state.get("margem_calculada", {})
