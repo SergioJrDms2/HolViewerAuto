@@ -2323,7 +2323,7 @@ def render_chat_stella(modo_lote=False, lote_resultados=None):
   style.id = 'sfab-style';
   style.textContent = `
     #sfab-btn {{
-      position:fixed; bottom:28px; right:28px; z-index:999999;
+      position:fixed; bottom:68px; right:28px; z-index:999999;
       width:54px; height:54px; border-radius:50%;
       background:linear-gradient(135deg,#7C3AED,#4C1D95);
       border:none; cursor:pointer;
