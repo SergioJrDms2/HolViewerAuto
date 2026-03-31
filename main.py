@@ -2339,8 +2339,8 @@ def render_chat_stella(modo_lote=False, lote_resultados=None):
       background:#10B981; border:2px solid white;
     }}
     #sfab-panel {{
-      position:fixed; bottom:94px; right:28px; z-index:999998;
-      width:375px; max-height:560px;
+      position:fixed; bottom:130px; right:28px; z-index:999998;
+      width:375px; max-height:600px;
       background:#FFFFFF;
       border-radius:1rem;
       border:1px solid #E5E7EB;
