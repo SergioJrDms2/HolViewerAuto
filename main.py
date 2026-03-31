@@ -28,43 +28,8 @@ from admin import render_admin_page, init_db, load_cartoes
 # PORTFÓLIO — base de conhecimento da Stella
 # ============================================================================
 PORTFOLIO = """
-PORTFÓLIO DE PRODUTOS — STARBANK GRUPO
-
-1. EMPRÉSTIMO CONSIGNADO
-   Crédito com parcelas descontadas direto em folha. Prazo: 12–120 meses. Taxas menores.
-   Diferenciais: parcelas fixas, refinanciamento possível, liberação rápida.
-
-2. CARTÃO CONSIGNADO
-   Cartão de crédito vinculado à margem consignável. Desconto mínimo em folha. Saque disponível.
-   Prazo: 12–120 meses renovável.
-
-3. CARTÃO BENEFÍCIO
-   Como o Cartão Consignado + benefícios extras: telemedicina, auxílio funeral, odontologia.
-   Crédito + proteção em um único produto.
-
-4. AUXÍLIO SERVIDOR
-   Crédito de curto prazo. Prazo: 2 meses (renovação mensal possível).
-   Ideal para emergências pontuais sem comprometer margem por longo prazo.
-
-5. COMPRA DE DÍVIDA
-   Assumimos dívida existente de cartão concorrente, reorganizamos com condições melhores.
-   Pode liberar "troco". USE QUANDO: cliente tem cartão concorrente → tentar compra primeiro.
-
-6. VALE CONSIGNADO
-   Crédito de 1 parcela. Descontado no mês seguinte. Emergências rápidas.
-
-7. AFILIADOS STAR / INDIQUE & GANHE
-   Programas de indicação com bonificação. Para qualquer pessoa.
-
-8. CREDIÁRIO STAR
-   Compras em estabelecimentos parceiros. Público principal: lojistas.
-
-FLUXO DE DECISÃO:
-→ Tem cartão concorrente? → COMPRA DE DÍVIDA
-→ Compra inviável? → EMPRÉSTIMO CONSIGNADO
-→ Sem margem longa? → AUXÍLIO SERVIDOR ou VALE CONSIGNADO
-→ Já é nosso cliente? → Verificar REFINANCIAMENTO
-→ Sempre: oferecer CARTÃO CONSIGNADO ou CARTÃO BENEFÍCIO como produto adicional
+PRODUTOS: Empréstimo Consig.(12-120m) | Cartão Consig. | Cartão Benefício(+telemedicina/odonto) | Auxílio Servidor(2m) | Compra Dívida(concorrente→troco) | Vale Consig.(1 parcela) | Afiliados | Crediário
+FLUXO: cartão concorrente→COMPRA DÍVIDA | sem margem longa→AUXÍLIO/VALE | cliente nosso→REFINANCIAMENTO | sempre oferecer CARTÃO como adicional
 """
 
 # ============================================================================
@@ -1072,6 +1037,12 @@ def analisar_holerite_ia(texto: str) -> Dict:
     key = _groq_key()
     if not key: return {"erro": "GROQ_API_KEY não configurada"}
 
+    def _comprimir_texto_holerite(texto: str, limite: int = 4000) -> str:
+        """Remove linhas vazias, espaços duplos e trunca."""
+        linhas = [l.strip() for l in texto.splitlines() if l.strip()]
+        comprimido = "\n".join(linhas)
+        return comprimido[:limite]
+
     prompt = f"""Você é especialista em folha de pagamento brasileira.
 Analise o holerite e retorne APENAS JSON válido (sem markdown).
 
@@ -1080,7 +1051,7 @@ CARTÕES CONCORRENTES: {", ".join(CARTOES_CONHECIDOS)}
 CARTÕES NÃO COMPRAMOS: {", ".join(CARTOES_NAO_COMPRADOS)}
 
 HOLERITE:
-{texto[:8000]}
+{_comprimir_texto_holerite(texto)}
 
 JSON (valores como float sem ponto de milhar, ex: 12371.38):
 {{
@@ -1151,7 +1122,7 @@ REGRAS CRÍTICAS — LEIA COM ATENÇÃO:
         r = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[{"role":"user","content":prompt}],
-            max_tokens=2000, temperature=0
+            max_tokens=1500, temperature=0
         )
         c = r.choices[0].message.content.strip()
         c = re.sub(r"^```json\s*","",c); c = re.sub(r"^```\s*","",c); c = re.sub(r"\s*```$","",c)
@@ -1561,7 +1532,7 @@ RETORNE SO O JSON."""
         r = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=2800,
+            max_tokens=2000,
             temperature=0.3,
         )
         c = r.choices[0].message.content.strip()
@@ -1678,10 +1649,11 @@ REGRA CRÍTICA DE MARGEM — NUNCA VIOLE:
 • NUNCA sugira Cartão Consignado se a margem de cartão disponível for ≤ 0.
 • NUNCA sugira Cartão Benefício se a margem de cartão disponível for ≤ 0.
 • NUNCA sugira Empréstimo Consignado se a margem de empréstimo disponível for ≤ 0.
-• EXCEÇÃO: Se houver Compra de Dívida viável, ela LIBERA margem de cartão → aí pode recomendar o cartão APÓS a compra, explicando que a margem será liberada."""
+• EXCEÇÃO: Se houver Compra de Dívida viável, ela LIBERA margem de cartão → aí pode recomendar o cartão APÓS a compra, explicando que a margem será liberada.
+• NUNCA fale sobre taxas ou valores liberados."""
 
     msgs = [{"role": "system", "content": system}]
-    for h in historico[-8:]:
+    for h in historico[-4:]:
         msgs.append({"role": h["role"], "content": h["content"]})
     msgs.append({"role": "user", "content": pergunta})
 
@@ -1690,7 +1662,7 @@ REGRA CRÍTICA DE MARGEM — NUNCA VIOLE:
         r = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=msgs,
-            max_tokens=800,
+            max_tokens=500,
             temperature=0.45,
         )
         return r.choices[0].message.content.strip()
@@ -1789,7 +1761,7 @@ CONTEXTO PARA DECISÕES GERENCIAIS:
         client = Groq(api_key=key)
         r = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
-            messages=msgs, max_tokens=800, temperature=0.4
+            messages=msgs, max_tokens=500, temperature=0.4
         )
         return r.choices[0].message.content.strip()
     except Exception as e:
@@ -2983,10 +2955,24 @@ def render_resultado(dados: Dict):
                 "#b45309","#fffbeb","#fef3c7", i), unsafe_allow_html=True)
             i += 1
 
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-    render_stella_panel(dados, st.session_state.get("stella_estrategia",{}))
+        st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+    
+        # ── Botão Stella ──────────────────────────────────────────────────────
+        if not st.session_state.get("stella_estrategia"):
+            if st.button("✨ Gerar Estratégia com Stella", type="secondary",
+                        key="btn_stella_individual"):
+                with st.spinner("Stella pensando..."):
+                    estr = stella_estrategia(
+                        dados,
+                        st.session_state.get("margem_calculada", {})
+                    )
+                    st.session_state["stella_estrategia"] = estr
+                    st.rerun()
+        if not st.session_state.get("stella_estrategia"):
+           st.info("Clique para gerar insights estratégicos com IA.")
 
-    render_chat_stella()
+        render_stella_panel(dados, st.session_state.get("stella_estrategia", {}))
+        render_chat_stella()
 
 
 
@@ -3326,7 +3312,7 @@ JSON (exatamente 6 insights):
         r = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1800,
+            max_tokens=1200,
             temperature=0.4,
         )
         c = r.choices[0].message.content.strip()
@@ -5351,9 +5337,13 @@ def render_dashboard_lote(resultados: list):
         }
 
         if "insights_ia_lote" not in st.session_state:
-            with st.spinner("✨ Stella gerando insights estratégicos..."):
-                st.session_state["insights_ia_lote"] = gerar_insights_ia_mercado(market_payload)
-        insights_ia = st.session_state["insights_ia_lote"]
+            if st.button("🔍 Gerar Insights Estratégicos com IA", type="secondary", key="btn_insights"):
+                with st.spinner("✨ Stella gerando insights..."):
+                    st.session_state["insights_ia_lote"] = gerar_insights_ia_mercado(market_payload)
+                    st.rerun()
+            else:
+                st.info("Clique para gerar insights estratégicos com IA.")
+        insights_ia = st.session_state.get("insights_ia_lote", [])
 
         _COR_NIVEL = {
             "critico":     ("#fef2f2", "#dc2626"),
@@ -5382,40 +5372,12 @@ def render_dashboard_lote(resultados: list):
     </div>
   </div>
 </div>""", unsafe_allow_html=True)
-        else:
-            st.info("Não foi possível gerar insights estratégicos. Verifique a API.")
 
         # Salva market_payload no session_state para o chat da Stella usar
         st.session_state["intel_mercado_payload"] = market_payload
 
             # ── BOTÃO DOWNLOAD PDF ────────────────────────────────────────────────
         st.markdown("<hr style='border-color:#f3f4f6;margin:1.5rem 0;'>", unsafe_allow_html=True)
-        st.markdown("##### 📄 Exportar Análise Completa")
-
-        col_pdf1, col_pdf2 = st.columns([2, 3])
-        with col_pdf1:
-            with st.spinner("Preparando PDF..."):
-                try:
-                    pdf_bytes = gerar_pdf_intel(
-                        resultados,
-                        st.session_state.get("insights_ia_lote", []),
-                        market_payload
-                    )
-                    st.download_button(
-                        label="📥 Baixar Relatório em PDF",
-                        data=pdf_bytes,
-                        file_name=f"intel_mercado_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                    )
-                except Exception as e:
-                    st.error(f"Erro ao gerar PDF: {e}. Verifique se kaleido está instalado.")
-        with col_pdf2:
-            st.caption(
-                "PDF completo com capa, KPIs executivos, market share, "
-                "mapa competitivo, análise por prefeitura, insights estratégicos da Stella "
-                "e ranking de oportunidades."
-            )
 
     with tab_exp:
         st.markdown("#### Exportar dados completos")
@@ -5564,11 +5526,9 @@ def main():
                     st.session_state["resultado_individual"] = dados
 
                 if "erro" not in dados:
-                    with st.spinner("✨ Stella gerando estratégia de vendas..."):
-                        margem_temp = calcular_margem_ia(dados)
-                        st.session_state["margem_calculada"] = margem_temp
-                        estr = stella_estrategia(dados, margem_temp)
-                        st.session_state["stella_estrategia"] = estr
+                    margem_temp = calcular_margem_ia(dados)
+                    st.session_state["margem_calculada"] = margem_temp
+                    st.session_state["stella_estrategia"] = {}
 
             if "resultado_individual" in st.session_state:
                 render_resultado(st.session_state["resultado_individual"])
