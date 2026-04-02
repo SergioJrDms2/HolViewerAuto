@@ -1,6 +1,6 @@
 """
 StarCheck — Analisador de Holerite com IA
-Motor: Groq (Llama 4 Scout) | Assistente: Stella ✨
+Motor: Groq (Llama 4 Scout) | Assistente: Stella 
 Cálculo de Margem Consignável integrado via IA
 """
 
