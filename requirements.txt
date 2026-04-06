@@ -16,6 +16,7 @@ streamlit>=1.28.0
 # === PROCESSAMENTO DE PDF ===
 PyPDF2>=3.0.0
 pdfplumber>=0.10.0
+PyMuPDF>=1.23.0
 kaleido
 
 # === PROCESSAMENTO DE IMAGENS E OCR (NOVO) ===
@@ -36,7 +37,10 @@ supabase>=1.0.0
 # === GOOGLE SHEETS (FEEDBACK) ===
 gspread>=5.10.0
 google-auth>=2.20.0
-groq
+google-generativeai
+openai
+json-repair
+openpyxl
 
 # ============================================================================
 # NOTAS DE INSTALAÇÃO
