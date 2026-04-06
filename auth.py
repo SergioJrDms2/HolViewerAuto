@@ -1,5 +1,5 @@
 """
-auth.py — Sistema de Autenticação com Supabase (Design Moderno)
+auth.py — Autenticação com Supabase + Controle de Acesso CORBANs
 """
 
 import streamlit as st
@@ -23,7 +23,7 @@ def get_supabase_client() -> Client:
 
 
 # ============================================================================
-# FUNÇÕES DE AUTENTICAÇÃO
+# VALIDAÇÕES
 # ============================================================================
 
 def validar_email(email: str) -> bool:
@@ -35,13 +35,8 @@ def validar_email(email: str) -> bool:
         username, dominio = email.split('@')
     except ValueError:
         return False
-    dominios_autorizados = ['starbank', 'starbank.tec', 'starbank.tec.br']
-    if dominio in dominios_autorizados:
-        return True
-    sufixos_autorizados = ['.starbank', '.startec']
-    if any(username.endswith(sufixo) for sufixo in sufixos_autorizados):
-        return True
-    return False
+    # CORBANs podem ter qualquer e-mail — removemos restrição de domínio
+    return True
 
 
 def validar_senha(senha: str) -> tuple[bool, str]:
@@ -57,7 +52,17 @@ def extrair_nome_curto(nome_completo: str) -> str:
     return palavras[0] if palavras else nome_completo.strip()
 
 
-def fazer_cadastro(email: str, senha: str, nome: str, setor: str) -> tuple[bool, str]:
+# ============================================================================
+# CADASTRO
+# ============================================================================
+
+def fazer_cadastro(
+    email: str,
+    senha: str,
+    nome: str,
+    setor: str,
+    tipo_solicitado: str = "corban",   # 'operador' | 'corban'
+) -> tuple[bool, str]:
     try:
         supabase = get_supabase_client()
         nome_formatado = extrair_nome_curto(nome)
@@ -68,14 +73,35 @@ def fazer_cadastro(email: str, senha: str, nome: str, setor: str) -> tuple[bool,
                 "data": {
                     "nome": nome_formatado,
                     "setor": setor,
+                    "tipo_solicitado": tipo_solicitado,
                     "data_cadastro": datetime.now().isoformat()
                 }
             }
         })
+
         if response.user:
-            return True, "Cadastro realizado com sucesso! Você já pode fazer login."
+            # Cria perfil pendente na nova tabela
+            try:
+                from user_management import create_user_profile
+                create_user_profile(
+                    user_id=response.user.id,
+                    email=email,
+                    nome=nome_formatado,
+                    setor=setor,
+                    tipo_solicitado=tipo_solicitado,
+                )
+            except Exception as e:
+                print(f"[auth] Erro ao criar perfil: {e}")
+
+            tipo_label = "Operador Interno" if tipo_solicitado == "operador" else "CORBAN Parceiro"
+            return True, (
+                f"✅ Solicitação enviada com sucesso! "
+                f"Sua conta ({tipo_label}) está em análise. "
+                f"Você será notificado assim que o acesso for liberado."
+            )
         else:
             return False, "Erro ao criar conta. Tente novamente."
+
     except Exception as e:
         error_msg = str(e)
         if "already registered" in error_msg.lower() or "already exists" in error_msg.lower():
@@ -86,6 +112,10 @@ def fazer_cadastro(email: str, senha: str, nome: str, setor: str) -> tuple[bool,
             return False, f"Erro: {error_msg}"
 
 
+# ============================================================================
+# LOGIN — agora verifica status do perfil
+# ============================================================================
+
 def fazer_login(email: str, senha: str) -> tuple[bool, str, dict]:
     try:
         supabase = get_supabase_client()
@@ -93,17 +123,92 @@ def fazer_login(email: str, senha: str) -> tuple[bool, str, dict]:
             "email": email,
             "password": senha
         })
-        if response.user:
-            user_data = {
-                "id": response.user.id,
-                "email": response.user.email,
-                "nome": response.user.user_metadata.get("nome", "Usuário"),
-                "setor": response.user.user_metadata.get("setor", "N/A"),
-                "access_token": response.session.access_token
-            }
-            return True, "Login realizado com sucesso!", user_data
-        else:
+
+        if not response.user:
             return False, "Credenciais inválidas.", {}
+
+        user_data = {
+            "id":           response.user.id,
+            "email":        response.user.email,
+            "nome":         response.user.user_metadata.get("nome", "Usuário"),
+            "setor":        response.user.user_metadata.get("setor", "N/A"),
+            "access_token": response.session.access_token,
+        }
+
+        # ── Verificar perfil de acesso ────────────────────────────────────
+        try:
+            from user_management import get_user_profile, create_legacy_profile
+
+            profile = get_user_profile(response.user.id)
+
+            if not profile:
+                # Usuário legado (existia antes do sistema de aprovação)
+                # → cria perfil como operador aprovado automaticamente
+                create_legacy_profile(
+                    user_id=response.user.id,
+                    email=response.user.email,
+                    nome=user_data["nome"],
+                    setor=user_data["setor"],
+                )
+                profile = {
+                    "tipo":         "operador",
+                    "status":       "aprovado",
+                    "nome_empresa": "",
+                    "cor_primaria": "#7C3AED",
+                    "logo_url":     "",
+                }
+
+            status = profile.get("status", "pendente")
+
+            # Bloqueia acesso se não aprovado
+            if status == "pendente":
+                supabase.auth.sign_out()
+                return False, (
+                    "⏳ Sua conta está aguardando aprovação. "
+                    "Assim que for liberada, você receberá acesso. "
+                    "Se tiver dúvidas, entre em contato com o suporte."
+                ), {}
+
+            elif status == "rejeitado":
+                supabase.auth.sign_out()
+                return False, (
+                    "❌ Seu acesso foi negado. "
+                    "Entre em contato com o administrador para mais informações."
+                ), {}
+
+            elif status == "suspenso":
+                supabase.auth.sign_out()
+                return False, (
+                    "🔒 Sua conta está suspensa temporariamente. "
+                    "Entre em contato com o suporte."
+                ), {}
+
+            # Enriquece user_data com dados do perfil
+            user_data["tipo"]         = profile.get("tipo", "corban")
+            user_data["status"]       = status
+            user_data["nome_empresa"] = profile.get("nome_empresa", "")
+            user_data["cor_primaria"] = profile.get("cor_primaria", "#7C3AED")
+            user_data["logo_url"]     = profile.get("logo_url", "")
+            user_data["profile_id"]   = profile.get("id", "")
+
+        except Exception as e:
+            print(f"[auth] Erro ao verificar perfil: {e}")
+            # Fallback seguro — trata como operador se o módulo falhar
+            user_data["tipo"]         = "operador"
+            user_data["status"]       = "aprovado"
+            user_data["nome_empresa"] = ""
+            user_data["cor_primaria"] = "#7C3AED"
+            user_data["logo_url"]     = ""
+
+        # ── Tracking ─────────────────────────────────────────────────────
+        try:
+            from tracking import track_login
+            track_login(user_data)
+        except Exception:
+            pass
+
+        return True, "Login realizado com sucesso!", user_data
+
     except Exception as e:
         error_msg = str(e).lower()
         if "invalid login credentials" in error_msg or "invalid" in error_msg:
@@ -112,11 +217,19 @@ def fazer_login(email: str, senha: str) -> tuple[bool, str, dict]:
             return False, f"Erro ao fazer login: {str(e)}", {}
 
 
+# ============================================================================
+# LOGOUT
+# ============================================================================
+
 def fazer_logout():
     try:
-        supabase = get_supabase_client()
-        supabase.auth.sign_out()
-    except:
+        from tracking import track_logout
+        track_logout()
+    except Exception:
+        pass
+    try:
+        get_supabase_client().auth.sign_out()
+    except Exception:
         pass
     for key in ['usuario', 'autenticado', 'access_token']:
         if key in st.session_state:
@@ -124,9 +237,7 @@ def fazer_logout():
 
 
 def verificar_sessao() -> bool:
-    if 'autenticado' in st.session_state and st.session_state.autenticado:
-        return True
-    return False
+    return ('autenticado' in st.session_state and st.session_state.autenticado)
 
 
 # ============================================================================
@@ -141,196 +252,137 @@ def render_auth_page():
 
     st.markdown("""
     <style>
-        /* Remove padding excessivo do container */
-        .main .block-container {
-            padding-top: 2rem !important;
-            padding-bottom: 2rem !important;
-        }
-
-        /* Estica as colunas para mesma altura */
-        [data-testid="stHorizontalBlock"] {
-            align-items: stretch !important;
-        }
-
-        /* Wrapper da imagem: ocupa toda a altura e centraliza verticalmente */
+        .main .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; }
+        [data-testid="stHorizontalBlock"] { align-items: stretch !important; }
         #login-img-wrapper {
-            position: sticky;
-            top: 2rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            height: 100%;
-            min-height: 460px;
+            position: sticky; top: 2rem;
+            display: flex; align-items: center; justify-content: center;
+            width: 100%; height: 100%; min-height: 460px;
         }
-
-        /* Imagem: 100% da largura da coluna, sem distorcer */
         #login-img-wrapper img {
-            width: 100%;
-            max-width: 100%;
-            height: auto;
-            max-height: 100%;
-            object-fit: contain;
-            border-radius: 1rem;
-            display: block;
+            width: 100%; max-width: 100%; height: auto; max-height: 100%;
+            object-fit: contain; border-radius: 1rem; display: block;
+        }
+        /* Radio buttons de tipo de acesso */
+        div[data-testid="stRadio"] > div { flex-direction: row; gap: 1rem; }
+        div[data-testid="stRadio"] label {
+            background: #f8f7ff; border: 2px solid #ede9fe;
+            border-radius: .65rem; padding: .5rem 1rem;
+            cursor: pointer; transition: all .15s;
+        }
+        div[data-testid="stRadio"] label:has(input:checked) {
+            background: #ede9fe; border-color: #7c3aed;
         }
     </style>
-
-    <script>
-        (function syncImgHeight() {
-            function doSync() {
-                try {
-                    var doc = window.parent.document;
-                    // Pega as duas colunas do layout principal
-                    var cols = doc.querySelectorAll(
-                        'section.main [data-testid="stHorizontalBlock"] > div[data-testid="column"]'
-                    );
-                    if (cols.length < 2) return;
-
-                    var rightCol  = cols[1];
-                    var wrapper   = doc.getElementById('login-img-wrapper');
-                    if (!wrapper) return;
-
-                    var h = rightCol.offsetHeight;
-                    if (h > 100) {
-                        wrapper.style.minHeight = h + 'px';
-                        wrapper.style.height    = h + 'px';
-                    }
-                } catch(e) {}
-            }
-
-            // Dispara em múltiplos momentos para garantir que o DOM esteja pronto
-            [100, 300, 600, 1000, 2000].forEach(function(t) {
-                setTimeout(doSync, t);
-            });
-
-            window.addEventListener('resize', doSync);
-        })();
-    </script>
     """, unsafe_allow_html=True)
 
     col_left, col_right = st.columns([1.2, 1.8], gap="large")
 
-    # ══════════════════════════════════════════════════════════════════════
-    # COLUNA ESQUERDA - Imagem
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Imagem ────────────────────────────────────────────────────────────
     with col_left:
         def get_img_as_base64(file_path):
             with open(file_path, "rb") as f:
                 return base64.b64encode(f.read()).decode()
-
-        image_path = "assets/login.png"
         try:
-            img_base64 = get_img_as_base64(image_path)
+            img_base64 = get_img_as_base64("assets/login.png")
             img_src = f"data:image/png;base64,{img_base64}"
         except Exception:
             img_src = ""
+        st.markdown(f'<div id="login-img-wrapper"><img src="{img_src}" alt="Logo StarCheck"></div>',
+                    unsafe_allow_html=True)
 
-        st.markdown(f"""
-        <div id="login-img-wrapper">
-            <img src="{img_src}" alt="Logo StarCheck">
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════════════════════════
-    # COLUNA DIREITA - Formulário
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Formulário ────────────────────────────────────────────────────────
     with col_right:
         st.markdown(
-            "<h1 style='color: #111827; font-size: 2rem; font-weight: 800; "
-            "margin: 0 0 0.5rem 0; letter-spacing: -0.02em;'>Bem-vindo!</h1>",
+            "<h1 style='color:#111827;font-size:2rem;font-weight:800;margin:0 0 .5rem;letter-spacing:-.02em;'>"
+            "Bem-vindo!</h1>",
             unsafe_allow_html=True
         )
         st.markdown(
-            "<p style='color: #6B7280; font-size: 1rem; margin: 0 0 2rem 0;'>"
-            "Entre com sua conta ou crie uma nova</p>",
+            "<p style='color:#6B7280;font-size:1rem;margin:0 0 2rem;'>"
+            "Entre com sua conta ou solicite acesso</p>",
             unsafe_allow_html=True
         )
 
-        tab_login, tab_cadastro = st.tabs(["🔑 Entrar", "📝 Criar Conta"])
+        tab_login, tab_cadastro = st.tabs(["🔑 Entrar", "📝 Solicitar Acesso"])
 
-        # ── TAB LOGIN ──────────────────────────────────────────────────────
+        # ── TAB LOGIN ─────────────────────────────────────────────────────
         with tab_login:
             with st.form("form_login", clear_on_submit=False):
-                email_login = st.text_input(
-                    "📧 Email",
-                    placeholder="seunome.starbank@gmail.com",
-                    key="email_login"
-                )
-                senha_login = st.text_input(
-                    "🔒 Senha",
-                    type="password",
-                    placeholder="••••••••",
-                    key="senha_login"
-                )
-                st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
-                submit_login = st.form_submit_button(
-                    "Entrar", use_container_width=True, type="primary"
-                )
+                email_login = st.text_input("📧 Email", placeholder="seuemail@exemplo.com", key="email_login")
+                senha_login = st.text_input("🔒 Senha", type="password", placeholder="••••••••", key="senha_login")
+                st.markdown("<div style='margin-top:1.5rem;'>", unsafe_allow_html=True)
+                submit_login = st.form_submit_button("Entrar", use_container_width=True, type="primary")
+                st.markdown("</div>", unsafe_allow_html=True)
 
                 if submit_login:
                     if not email_login or not senha_login:
                         st.error("⚠️ Preencha todos os campos.")
-                    elif not validar_email(email_login):
-                        st.error("⚠️ Email inválido. Use o formato: seunome.starbank@email.com")
                     else:
                         with st.spinner("Autenticando..."):
                             sucesso, mensagem, user_data = fazer_login(email_login, senha_login)
                             if sucesso:
-                                st.session_state.autenticado = True
-                                st.session_state.usuario = user_data
-                                st.session_state.access_token = user_data.get("access_token")
+                                st.session_state.autenticado    = True
+                                st.session_state.usuario        = user_data
+                                st.session_state.access_token   = user_data.get("access_token")
+                                # Se for admin, marcar para redirecionamento direto ao painel admin
+                                if user_data.get("tipo") == "admin":
+                                    st.session_state["is_admin_redirect"] = True
                                 st.success(mensagem)
                                 st.rerun()
                             else:
                                 st.error(f"❌ {mensagem}")
 
-        # ── TAB CADASTRO ───────────────────────────────────────────────────
+        # ── TAB CADASTRO ──────────────────────────────────────────────────
         with tab_cadastro:
+            # Banner informativo
+            st.info(
+                "**Como funciona?**  \n"
+                "Preencha o formulário abaixo. Sua solicitação será analisada pela equipe "
+                "Starbank e você receberá o acesso em até 24h úteis.",
+                icon="ℹ️"
+            )
+
             with st.form("form_cadastro", clear_on_submit=True):
-                nome_cadastro = st.text_input(
-                    "👤 Nome Completo",
-                    placeholder="João da Silva",
-                    key="nome_cadastro"
+                nome_cadastro = st.text_input("👤 Nome Completo",        placeholder="João da Silva")
+                email_cadastro = st.text_input("📧 Email",               placeholder="joao@suaempresa.com.br")
+                setor_cadastro = st.text_input("🏢 Empresa / Setor",     placeholder="Ex: Star Crédito Ltda — Comercial")
+
+                # ── Tipo de acesso ────────────────────────────────────────
+                tipo_solicitado = st.radio(
+                    "🎯 Tipo de acesso",
+                    options=["corban", "operador"],
+                    format_func=lambda x: "🤝 CORBAN / Parceiro Externo" if x == "corban" else "🏢 Operador Interno Starbank",
+                    index=0,
+                    help=(
+                        "CORBAN: parceiro externo com acesso isolado e marca própria.  \n"
+                        "Operador Interno: equipe Starbank com acesso completo."
+                    ),
+                    key="tipo_solicitado_radio"
                 )
-                email_cadastro = st.text_input(
-                    "📧 Email",
-                    placeholder="Seu email institucional",
-                    key="email_cadastro"
-                )
-                setor_cadastro = st.text_input(
-                    "🏢 Setor",
-                    placeholder="Ex: Comercial, Crédito, TI...",
-                    key="setor_cadastro"
-                )
+
                 col1, col2 = st.columns(2)
                 with col1:
-                    senha_cadastro = st.text_input(
-                        "🔒 Senha",
-                        type="password",
-                        placeholder="Mínimo 6 caracteres",
-                        key="senha_cadastro"
-                    )
+                    senha_cadastro = st.text_input("🔒 Senha", type="password", placeholder="Mínimo 6 caracteres")
                 with col2:
-                    senha_confirmacao = st.text_input(
-                        "🔒 Confirmar Senha",
-                        type="password",
-                        placeholder="Digite novamente",
-                        key="senha_confirmacao"
-                    )
-                st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
-                submit_cadastro = st.form_submit_button(
-                    "Criar Conta", use_container_width=True, type="primary"
-                )
+                    senha_confirmacao = st.text_input("🔒 Confirmar Senha", type="password", placeholder="Digite novamente")
+
+                # Aviso extra para CORBANs
+                if tipo_solicitado == "corban":
+                    st.caption("💡 Como CORBAN, você terá acesso exclusivo às suas análises com a sua marca.")
+
+                st.markdown("<div style='margin-top:1.5rem;'>", unsafe_allow_html=True)
+                submit_cadastro = st.form_submit_button("Enviar Solicitação", use_container_width=True, type="primary")
+                st.markdown("</div>", unsafe_allow_html=True)
 
                 if submit_cadastro:
                     erros = []
                     if not nome_cadastro or len(nome_cadastro.strip()) < 3:
                         erros.append("Nome deve ter pelo menos 3 caracteres")
-                    if not email_cadastro or not validar_email(email_cadastro):
-                        erros.append("Email inválido. Use seu email institucional.")
+                    if not email_cadastro:
+                        erros.append("Email é obrigatório")
                     if not setor_cadastro or len(setor_cadastro.strip()) < 2:
-                        erros.append("Setor é obrigatório")
+                        erros.append("Empresa/Setor é obrigatório")
                     valido_senha, msg_senha = validar_senha(senha_cadastro)
                     if not valido_senha:
                         erros.append(msg_senha)
@@ -341,22 +393,22 @@ def render_auth_page():
                         for erro in erros:
                             st.error(f"⚠️ {erro}")
                     else:
-                        with st.spinner("Criando sua conta..."):
+                        with st.spinner("Enviando solicitação..."):
                             sucesso, mensagem = fazer_cadastro(
                                 email_cadastro,
                                 senha_cadastro,
                                 nome_cadastro.strip(),
-                                setor_cadastro.strip()
+                                setor_cadastro.strip(),
+                                tipo_solicitado,
                             )
                             if sucesso:
-                                st.success(f"✅ {mensagem}")
-                                st.info("💡 Agora você pode fazer login na aba 'Entrar'.")
+                                st.success(mensagem)
                             else:
                                 st.error(f"❌ {mensagem}")
 
         st.markdown(
-            "<div style='text-align: center; margin-top: 2rem; color: #9CA3AF; font-size: 0.85rem;'>"
-            "<p style='margin: 0;'>v3.0 · StarCheck · Sistema Inteligente de Análise de Holerites</p></div>",
+            "<div style='text-align:center;margin-top:2rem;color:#9CA3AF;font-size:.85rem;'>"
+            "<p style='margin:0;'>v3.0 · StarCheck · Sistema Inteligente de Análise de Holerites</p></div>",
             unsafe_allow_html=True
         )
 
@@ -364,56 +416,52 @@ def render_auth_page():
 
 
 # ============================================================================
-# SIDEBAR - INFO COMPACTA DO USUÁRIO
+# SIDEBAR — Info compacta do usuário (sem alterações no visual)
 # ============================================================================
 
 def render_user_info_sidebar():
     if verificar_sessao() and 'usuario' in st.session_state:
         user = st.session_state.usuario
-        nome = user.get('nome', 'Usuário')
+        nome  = user.get('nome', 'Usuário')
         setor = user.get('setor', 'N/A')
+        tipo  = user.get('tipo', 'corban')
 
-        prefs = carregar_preferencias()
+        prefs       = carregar_preferencias()
         tema_config = prefs.get('tema_config', TEMAS.get('Roxo Padrão', {
             "gradient": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
-            "shadow": "rgba(139, 92, 246, 0.25)"
+            "shadow":   "rgba(139, 92, 246, 0.25)"
         }))
+
+        # CORBANs usam a cor da empresa como gradiente
+        if tipo == "corban":
+            cor = user.get("cor_primaria", "#7C3AED")
+            tema_config = {
+                "gradient": f"linear-gradient(135deg, {cor}cc, {cor})",
+                "shadow":   "rgba(0,0,0,0.15)"
+            }
+
         avatar = prefs.get('avatar', '👤')
+
+        # Badge de tipo
+        tipo_badge = {
+            "admin":    ("🔑", "#4C1D95"),
+            "operador": ("🏢", "#1D4ED8"),
+            "corban":   ("🤝", "#059669"),
+        }.get(tipo, ("👤", "#6B7280"))
 
         st.markdown(f"""
         <style>
             [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {{
-                align-items: center !important;
-                gap: 8px !important;
+                align-items: center !important; gap: 8px !important;
             }}
             [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button {{
-                background-color: #ffffff !important;
-                color: #444 !important;
-                border: 1px solid #e0e0e0 !important;
-                border-radius: 10px !important;
-                height: 52px !important;
-                width: 45px !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.08) !important;
-                transition: all 0.2s ease !important;
-            }}
-            [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button:hover {{
-                background-color: #f8f8f8 !important;
-                border-color: #d0d0d0 !important;
-                box-shadow: 0 3px 8px rgba(0,0,0,0.12) !important;
-            }}
-            [data-testid="stSidebar"] [data-testid="column"]:nth-child(2) button p {{
-                margin: 0 !important; padding: 0 !important; line-height: 1 !important;
+                background-color: #ffffff !important; color: #444 !important;
+                border: 1px solid #e0e0e0 !important; border-radius: 10px !important;
+                height: 52px !important; width: 45px !important;
+                padding: 0 !important; margin: 0 !important;
                 display: flex !important; align-items: center !important;
-                justify-content: center !important; font-size: 1.2rem !important;
-                width: 100% !important;
-            }}
-            [data-testid="stSidebar"] div[data-testid="column"]:nth-child(2) > div {{
-                padding-top: 0px !important;
+                justify-content: center !important;
+                box-shadow: 0 2px 5px rgba(0,0,0,.08) !important;
             }}
         </style>
         """, unsafe_allow_html=True)
@@ -421,34 +469,34 @@ def render_user_info_sidebar():
         col1, col2 = st.columns([0.8, 0.2], vertical_alignment="center")
 
         with col1:
+            nome_empresa = user.get("nome_empresa", "")
+            subtitulo = nome_empresa if (tipo == "corban" and nome_empresa) else setor
             st.markdown(f"""
             <div style="
                 background: {tema_config['gradient']};
-                border-radius: 0.75rem;
-                padding: 0.75rem 0.85rem;
+                border-radius: .75rem; padding: .75rem .85rem;
                 box-shadow: 0 3px 10px {tema_config['shadow']};
-                display: flex;
-                align-items: center;
-                gap: 0.65rem;
-                height: 45px;
-                margin-bottom: 0.9rem;
-                box-sizing: border-box;
+                display: flex; align-items: center; gap: .65rem;
+                height: 45px; margin-bottom: .9rem; box-sizing: border-box;
             ">
-                <div style="width: 32px; height: 32px; background: rgba(255,255,255,0.25);
-                    border-radius: 50%; display: flex; align-items: center; justify-content: center;
-                    font-size: 1.1rem; border: 1.5px solid rgba(255,255,255,0.3); flex-shrink: 0;">
+                <div style="width:32px;height:32px;background:rgba(255,255,255,.25);
+                    border-radius:50%;display:flex;align-items:center;justify-content:center;
+                    font-size:1.1rem;border:1.5px solid rgba(255,255,255,.3);flex-shrink:0;">
                     {avatar}
                 </div>
-                <div style="flex: 1; min-width: 0;">
-                    <div style="font-weight: 600; color: white; font-size: 0.85rem; line-height: 1.2;
-                        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{nome}</div>
-                    <div style="font-size: 0.7rem; color: rgba(255,255,255,0.8); line-height: 1.2;
-                        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{setor}</div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;color:white;font-size:.85rem;line-height:1.2;
+                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{nome}</div>
+                    <div style="font-size:.7rem;color:rgba(255,255,255,.8);line-height:1.2;
+                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                        {tipo_badge[0]} {subtitulo}
+                    </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
         with col2:
-            if st.button("✏️", key="btn_edit_profile"):
-                st.session_state['modo_atual'] = 'Perfil'
-                st.rerun()
+            if tipo != "corban":
+                if st.button("✏️", key="btn_edit_profile"):
+                    st.session_state['modo_atual'] = 'Perfil'
+                    st.rerun()
