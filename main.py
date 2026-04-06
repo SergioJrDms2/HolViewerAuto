@@ -1,6 +1,6 @@
 """
 StarCheck — Analisador de Holerite com IA
-Motor: Groq (Llama 4 Scout) | Assistente: Stella 
+Motor: Groq (Llama 4 Scout) | Assistente: Stella ✨
 Cálculo de Margem Consignável integrado via IA
 """
 
@@ -17,12 +17,16 @@ import re as _re
 import streamlit.components.v1 as components
 from crm_page import render_crm_page
 
+import tracking
+import time as _time
+
 from feedback_page import render_feedback_page
 from ui_pages import render_individual_header, render_lote_header
 from sidebar import render_sidebar
 from auth import render_auth_page, render_user_info_sidebar
 from profile_settings import render_profile_settings
-from admin import render_admin_page, init_db, load_cartoes
+from admin import render_admin_panel
+from validador_arquivos import render_validador_page
 
 # ============================================================================
 # PORTFÓLIO — base de conhecimento da Stella
@@ -960,18 +964,6 @@ CARTOES_CONHECIDOS    = ["NIO","DAYCOVAL","BMG","PAN","MEUCASHCARD","PINE",
 CARTOES_NAO_COMPRADOS = ["QISTA","PIX CARD","C CONSIG","CAPITAL","MAXIMA",
                          "FY DIGITAL","CLICKBANK","PIXCARD","VEMCARD"]
 
-def refresh_cartoes_from_db():
-    global NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS
-    try:
-        init_db()
-        n  = load_cartoes("nossos_produtos")
-        c  = load_cartoes("cartoes_conhecidos")
-        nc = load_cartoes("cartoes_nao_comprados")
-        if n or c:
-            NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS = n, c, nc
-    except Exception:
-        pass
-
 # ============================================================================
 # EXTRAÇÃO DE TEXTO
 # ============================================================================
@@ -1027,7 +1019,7 @@ def extrair_texto_imagem(bytes_: bytes) -> str:
 
 
 def _groq_key() -> str:
-    try: return "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"
+    try: return "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"
     except Exception: return os.environ.get("GROQ_API_KEY","")
 
 # ============================================================================
@@ -1546,7 +1538,9 @@ RETORNE SO O JSON."""
         if isinstance(result.get("plano_de_acao"), str):
             result["plano_de_acao"] = [result["plano_de_acao"]]
         return result
-    except Exception:
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Stella — erro interno: {e}")
         return {}
 
 
@@ -2035,7 +2029,10 @@ def _section(label: str, content: str) -> str:
 
 
 def render_stella_panel(dados: dict, estr: dict):
-    if not estr:
+    if estr is None:
+        return   # nunca gerado — não exibe nada
+    if not estr:  # {} = geração falhou
+        st.warning("⚠️ Não foi possível gerar a estratégia. Tente novamente.")
         return
 
     prods   = estr.get("produtos_recomendados", [])
@@ -2203,18 +2200,19 @@ def render_chat_stella(modo_lote=False, lote_resultados=None):
         with st.spinner(""):
             if modo_lote:
                 resp = stella_chat_lote(
-                    msg_hidden,
-                    lote_resultados,
-                    st.session_state[hist_key]
+                    msg_hidden, lote_resultados, st.session_state[hist_key]
                 )
+                tracking.track_stella_chat(                         # ← NOVO
+                    msg_hidden, resp, "lote", None, ""              # ← NOVO
+                )                                                   # ← NOVO
             else:
                 margem_ss = st.session_state.get("margem_calculada", {})
-                resp = stella_chat(
-                    msg_hidden,
-                    dados,
-                    st.session_state[hist_key],
-                    margem_ss
-                )
+                resp = stella_chat(msg_hidden, dados, st.session_state[hist_key], margem_ss)
+                tracking.track_stella_chat(                         # ← NOVO
+                    msg_hidden, resp, "individual",                  # ← NOVO
+                    st.session_state.get("analise_id_atual"),        # ← NOVO
+                    dados.get("prefeitura", "")                      # ← NOVO
+                )                                                    # ← NOVO
         st.session_state[hist_key].append({"role": "user",      "content": msg_hidden})
         st.session_state[hist_key].append({"role": "assistant", "content": resp})
         st.rerun()
@@ -2958,22 +2956,29 @@ def render_resultado(dados: Dict):
         st.markdown("<hr class='divider'>", unsafe_allow_html=True)
     
         # ── Botão Stella ──────────────────────────────────────────────────────
-        if not st.session_state.get("stella_estrategia"):
-            if st.button("✨ Gerar Estratégia com Stella", type="secondary",
-                        key="btn_stella_individual"):
+        # Substitua o bloco do botão Stella em render_resultado por:
+
+        if st.session_state.get("stella_estrategia") is None:
+            # Ainda não foi tentado — mostra botão
+            if st.button("✨ Gerar Estratégia com Stella", type="secondary", key="btn_stella_individual"):
                 with st.spinner("✨ Stella pensando..."):
-                    estr = stella_estrategia(
-                        dados,
-                        st.session_state.get("margem_calculada", {})
+                    estr = stella_estrategia(dados, st.session_state.get("margem_calculada"))
+                    # Usa sentinela distinta de None para indicar "já tentou"
+                    st.session_state["stella_estrategia"] = estr if estr else {}
+                    st.session_state["stella_estrategia_gerada"] = True
+                    tracking.track_stella_estrategia(
+                        dados, estr,
+                        st.session_state.get("analise_id_atual"),
+                        "individual"
                     )
-                    st.session_state["stella_estrategia"] = estr
                     st.rerun()
-        if not st.session_state.get("stella_estrategia"):
-           st.info("Clique para gerar insights estratégicos com IA.")
+            st.info("Clique para gerar insights estratégicos com IA.")
+        else:
+            # Já foi gerado (com ou sem conteúdo) — renderiza painel
+            render_stella_panel(dados, st.session_state.get("stella_estrategia"))
 
-        render_stella_panel(dados, st.session_state.get("stella_estrategia", {}))
-        render_chat_stella()
-
+    # ── FAB Stella Individual ───────────────────────────────────────────────
+    render_chat_stella(modo_lote=False)
 
 
 def render_resultado_sem_chat(dados: Dict):
@@ -3152,10 +3157,19 @@ def processar_lote(arquivos) -> list:
         pb.progress((i + 1) / len(arquivos))
         st_t.text(f"Processando {i+1}/{len(arquivos)}: {arq.name}")
         try:
-            d = analisar_arquivo(arq.read(), arq.name)
+            _bytes_lote = arq.read()                                            # ← NOVO
+            d = analisar_arquivo(_bytes_lote, arq.name)
             if "erro" in d:
-                st.warning(f"⚠️ {arq.name}: {d['erro']}")
+                st.warning(...)
                 continue
+            # Upload do holerite para Storage                                   ← NOVO
+            _uid_lote = st.session_state.usuario.get("id", "") if 'usuario' in st.session_state else ""  # ← NOVO
+            if _uid_lote:                                                       # ← NOVO
+                _sp = tracking.upload_holerite(                                 # ← NOVO
+                    _bytes_lote, arq.name, _uid_lote,                          # ← NOVO
+                    d.get("prefeitura", ""), d.get("nome", "")                 # ← NOVO
+                )                                                               # ← NOVO
+                d["_storage_path"] = _sp                                        # ← NOVO (usado por _track_lote_itens)
 
             margem      = calcular_margem_ia(d)
             marg_ok     = margem.get("disponivel", False)
@@ -5417,14 +5431,16 @@ def render_dashboard_lote(resultados: list):
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine="openpyxl") as w:
                 df_exp.to_excel(w, index=False)
-            st.download_button("📥 Baixar Excel Completo", buf.getvalue(),
+            if st.download_button("📥 Baixar Excel Completo", buf.getvalue(),
                 f"lote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                use_container_width=True)
+                use_container_width=True):
+                tracking.track_export("excel", "lote", "", len(resultados))    # ← NOVO
         with c2:
-            st.download_button("📥 Baixar CSV",
+            if st.download_button("📥 Baixar CSV",
                 df_exp.to_csv(index=False, encoding="utf-8-sig"),
                 f"lote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                use_container_width=True)
+                use_container_width=True):
+                tracking.track_export("csv", "lote", "", len(resultados))      # ← NOVO
 
     # ── FAB Stella Lote ─────────────────────────────────────────────────────
     render_chat_stella(modo_lote=True, lote_resultados=resultados)
@@ -5472,64 +5488,82 @@ PREFEITURAS = {
     'ALEGO':             {'nome': 'Assembleia Legislativa de Goiás - ALEGO', 'descricao': 'Assembleia Legislativa - Goiás'},
     'GOVERNO_GOIAS':     {'nome': 'Governo do Estado de Goiás',          'descricao': 'Estado de Goiás'},
 }
-
-
-# ============================================================================
 # MAIN
 # ============================================================================
 def main():
-    refresh_cartoes_from_db()
 
     if not render_auth_page():
         st.stop()
 
-    # if "daycoval_warning_shown" not in st.session_state:
-    #     st.session_state["daycoval_warning_shown"] = False
-    # if not st.session_state["daycoval_warning_shown"]:
-    #     show_daycoval_warning()
-    #     st.session_state["daycoval_warning_shown"] = True
+    # ── Redirecionamento direto para admin ───────────────────────────────
+    if st.session_state.get("is_admin_redirect"):
+        # Limpar a flag e mostrar painel admin diretamente
+        del st.session_state["is_admin_redirect"]
+        st.session_state["show_admin_page"] = True
 
+    # if "daycoval_warning_shown" not in st.session_state:
     prefeitura_selecionada, modo = render_sidebar(
         PREFEITURAS, NOSSOS_PRODUTOS, CARTOES_CONHECIDOS, CARTOES_NAO_COMPRADOS
     )
 
-    # with st.sidebar:
-    #     st.markdown("---")
-    #     if st.button("⚙️ Painel Admin", use_container_width=True, key="btn_admin_panel",
-    #                  help="Acesso ao painel administrativo (requer credenciais)"):
-    #         st.session_state["show_admin_page"] = not st.session_state.get("show_admin_page",False)
-    #         if st.session_state.get("show_admin_page") and not st.session_state.get("admin_logged_in"):
-    #             st.session_state["admin_logged_in"] = False
-    #         st.rerun()
+    # ── Painel Admin (acesso direto via login ou toggle no sidebar para não-admin) ──
+    if st.session_state.get("show_admin_page", False):
+        render_admin_panel(); st.stop()
 
-    if st.session_state.get("show_admin_page",False):
-        render_admin_page(); st.stop()
+    def file_uploader(label, type, help):
+        return st.file_uploader(
+            label,
+            type=type,
+            help=help
+        )
 
     if modo == "Análise Individual":
         render_individual_header(prefeitura_selecionada, PREFEITURAS)
 
-        arquivo_upload = st.file_uploader(
+        arquivo_upload = file_uploader(
             "Faça upload do PDF ou imagem do holerite",
-            type=["pdf","png","jpg","jpeg","webp","bmp","tiff"],
-            help="A IA detecta a prefeitura automaticamente e calcula a margem."
+            ["pdf","png","jpg","jpeg","webp","bmp","tiff"],
+            "A IA detecta a prefeitura automaticamente e calcula a margem."
         )
 
         if arquivo_upload:
             if st.button("🔍 Analisar com a Stella", type="primary", use_container_width=False):
-                st.session_state.pop("resultado_individual", None)
-                st.session_state.pop("stella_estrategia",   None)
-                st.session_state.pop("margem_calculada",    None)
+                # Limpa estado anterior
+                for k in ("resultado_individual", "stella_estrategia",
+                        "stella_estrategia_gerada", "margem_calculada", "analise_id_atual"):
+                    st.session_state.pop(k, None)
                 st.session_state["chat_history"] = []
 
                 with st.spinner("🤖 Stella lendo o holerite..."):
-                    dados = analisar_arquivo(arquivo_upload.read(), arquivo_upload.name)
+                    _t0 = _time.time()
+                    _arq_bytes = arquivo_upload.read()
+                    dados = analisar_arquivo(_arq_bytes, arquivo_upload.name)
+                    _duracao_ms = int((_time.time() - _t0) * 1000)
                     st.session_state["resultado_individual"] = dados
 
                 if "erro" not in dados:
                     margem_temp = calcular_margem_ia(dados)
                     st.session_state["margem_calculada"] = margem_temp
-                    st.session_state["stella_estrategia"] = {}
+                    st.session_state["stella_estrategia"] = None   # só None no primeiro load
 
+                    uid = st.session_state.usuario.get("id", "")
+                    _spath = tracking.upload_holerite(
+                        _arq_bytes, arquivo_upload.name, uid,
+                        dados.get("prefeitura", ""), dados.get("nome", "")
+                    )
+                    _aid = tracking.track_analise_individual(
+                        dados, margem_temp,
+                        arquivo_upload.name, len(_arq_bytes),
+                        _spath, _duracao_ms
+                    )
+                    st.session_state["analise_id_atual"] = _aid
+                    tracking.track_holerite_salvo(
+                        uid, arquivo_upload.name, _spath, len(_arq_bytes),
+                        f"application/{'pdf' if arquivo_upload.name.lower().endswith('pdf') else 'image'}",
+                        dados.get("prefeitura", ""), dados.get("nome", ""), _aid
+                    )
+
+            # Renderiza resultado se já foi analisado (persiste entre reruns)
             if "resultado_individual" in st.session_state:
                 render_resultado(st.session_state["resultado_individual"])
 
@@ -5546,11 +5580,14 @@ def main():
             if st.button("🚀 Processar Todos com a Stella", type="primary", use_container_width=False):
                 for k in ("lote_resultados", "df_resultados", "chat_history_lote", "insights_ia_lote"):
                     st.session_state.pop(k, None)
+                _t0_lote = _time.time()                                         # ← NOVO
                 with st.spinner(f"Analisando {len(arquivos_upload)} holerite(s)..."):
                     resultados = processar_lote(arquivos_upload)
                     st.session_state["lote_resultados"] = resultados
                 if isinstance(resultados, list) and len(resultados) > 0:
                     st.success(f"✅ {len(resultados)} servidor(es) processado(s) com sucesso!")
+                    _dur_lote = int((_time.time() - _t0_lote) * 1000)          # ← NOVO
+                    tracking.track_lote_sessao(resultados, _dur_lote)          # ← NOVO
                 else:
                     st.error("Nenhum holerite processado com sucesso.")
 
@@ -5567,6 +5604,9 @@ def main():
 
     elif modo == "Busca CRM":
         render_crm_page()
+
+    elif modo == "Validador de Documentos":
+        render_validador_page()
 
 
 if __name__ == "__main__":
