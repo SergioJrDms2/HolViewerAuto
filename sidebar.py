@@ -13,7 +13,6 @@ USO no main.py:
 
 import streamlit as st
 from auth import render_auth_page, render_user_info_sidebar
-from admin import load_cartoes
 import base64
 import os
 
@@ -32,10 +31,6 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
     Os parâmetros de cartões são mantidos por compatibilidade, mas as listas
     são sempre carregadas diretamente do Supabase via load_cartoes().
     """
-    # Busca sempre do Supabase — garante dados atualizados para todos os usuários
-    NOSSOS_PRODUTOS       = load_cartoes("nossos_produtos")
-    CARTOES_CONHECIDOS    = load_cartoes("cartoes_conhecidos")
-    CARTOES_NAO_COMPRADOS = load_cartoes("cartoes_nao_comprados")
 
     # INICIALIZA O MODO ATUAL NO SESSION STATE (se não existir)
     if 'modo_atual' not in st.session_state:
@@ -218,8 +213,11 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
         # ── Divisor ───────────────────────────────────────────────────────
         st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
 
-        # ── Modo ──────────────────────────────────────────────────────────
-        st.markdown("""
+        _tipo_usuario = st.session_state.get("usuario", {}).get("tipo", "corban")
+
+        # ── Modo (NÃO mostra para admins - eles vão direto para o painel admin) ──
+        if _tipo_usuario != "admin":
+            st.markdown("""
             <div style='
                 display: flex; 
                 align-items: center; 
@@ -239,51 +237,66 @@ def render_sidebar(PREFEITURAS, NOSSOS_PRODUTOS=None, CARTOES_CONHECIDOS=None, C
         """, unsafe_allow_html=True)
 
         # Opções de modo SEM Perfil (Perfil é controlado separadamente)
-        opcoes_modo = ["Análise Individual", "Análise em Lote", "Feedback", "Busca CRM"]
-        
-        # Determina o índice atual baseado no modo_atual do session_state
-        # Se o modo_atual for "Perfil", mantem a seleção anterior do radio
-        if st.session_state['modo_atual'] in opcoes_modo:
-            index_atual = opcoes_modo.index(st.session_state['modo_atual'])
+            opcoes_modo = ["Análise Individual", "Análise em Lote", "Feedback", "Validador de Documentos"]
+            if _tipo_usuario != "corban":
+                opcoes_modo.append("Busca CRM")
+            
+            # Determina o índice atual baseado no modo_atual do session_state
+            # Se o modo_atual for "Perfil", mantem a seleção anterior do radio
+            if st.session_state['modo_atual'] in opcoes_modo:
+                index_atual = opcoes_modo.index(st.session_state['modo_atual'])
+            else:
+                # Se estiver em Perfil ou outro modo, mantém a última seleção válida
+                # ou usa a primeira opção como padrão
+                index_atual = 0
+            
+            # Renderiza o radio button
+            modo_selecionado_radio = st.radio(
+                "Selecione o Modo",
+                opcoes_modo,
+                index=index_atual,
+                help="Escolha entre analisar um único PDF, múltiplos PDFs ou enviar feedback",
+                label_visibility="collapsed",
+                key="radio_modo"
+            )
+            
+            # Atualiza o modo_atual baseado no radio button (a não ser que esteja em Perfil)
+            # Se o usuário mudou o radio button, isso significa que ele quer sair do Perfil
+            if st.session_state['modo_atual'] == 'Perfil' and modo_selecionado_radio != st.session_state.get('ultimo_modo_radio'):
+                # Usuário clicou em um modo diferente, sai do Perfil
+                st.session_state['modo_atual'] = modo_selecionado_radio
+            elif st.session_state['modo_atual'] != 'Perfil':
+                # Não está em Perfil, então atualiza normalmente
+                st.session_state['modo_atual'] = modo_selecionado_radio
+            
+            # Salva a última seleção do radio para detectar mudanças
+            st.session_state['ultimo_modo_radio'] = modo_selecionado_radio
+            
+            # Retorna o modo atual (que pode ser Perfil ou o modo do radio)
+            modo = st.session_state['modo_atual']
+
+            # ── Divisor ───────────────────────────────────────────────────────
+            st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
+
+            
+            # ── Dica ──────────────────────────────────────────────────────────
+            st.info("Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote.", icon="💡")
         else:
-            # Se estiver em Perfil ou outro modo, mantém a última seleção válida
-            # ou usa a primeira opção como padrão
-            index_atual = 0
-        
-        # Renderiza o radio button
-        modo_selecionado_radio = st.radio(
-            "Selecione o Modo",
-            opcoes_modo,
-            index=index_atual,
-            help="Escolha entre analisar um único PDF, múltiplos PDFs ou enviar feedback",
-            label_visibility="collapsed",
-            key="radio_modo"
-        )
-        
-        # Atualiza o modo_atual baseado no radio button (a não ser que esteja em Perfil)
-        # Se o usuário mudou o radio button, isso significa que ele quer sair do Perfil
-        if st.session_state['modo_atual'] == 'Perfil' and modo_selecionado_radio != st.session_state.get('ultimo_modo_radio'):
-            # Usuário clicou em um modo diferente, sai do Perfil
-            st.session_state['modo_atual'] = modo_selecionado_radio
-        elif st.session_state['modo_atual'] != 'Perfil':
-            # Não está em Perfil, então atualiza normalmente
-            st.session_state['modo_atual'] = modo_selecionado_radio
-        
-        # Salva a última seleção do radio para detectar mudanças
-        st.session_state['ultimo_modo_radio'] = modo_selecionado_radio
-        
-        # Retorna o modo atual (que pode ser Perfil ou o modo do radio)
-        modo = st.session_state['modo_atual']
+            # Para admin, não mostra seleção de modo nem dica
+            modo = "Admin"
+            st.session_state['modo_atual'] = "Admin"
+            
+            # ── Botão Sair para admin ─────────────────────────────────────
+            st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
+            if st.button("🚪 Sair", use_container_width=True, key="btn_logout_admin"):
+                # Logout completo
+                for key in ["admin_logged_in", "show_admin_page", "autenticado", "usuario", "access_token", "modo_atual"]:
+                    st.session_state.pop(key, None)
+                st.rerun()
 
-        # ── Divisor ───────────────────────────────────────────────────────
-        st.markdown("<hr style='border: none; height: 2px; background: linear-gradient(90deg, transparent 0%, #DDD6FE 50%, transparent 100%); margin: 1.5rem 0;'>", unsafe_allow_html=True)
-
-        
-        # ── Dica ──────────────────────────────────────────────────────────
-        st.info("Você pode fazer upload de múltiplos PDFs de uma vez no modo de análise em lote.", icon="💡")
-
-        # ── Versão ────────────────────────────────────────────────────────
-        st.markdown("""
+        # ── Versão (NÃO mostra para admins) ───────────────────────────────
+        if _tipo_usuario != "admin":
+            st.markdown("""
             <div style='
                 text-align: center; 
                 margin-top: 2rem; 
