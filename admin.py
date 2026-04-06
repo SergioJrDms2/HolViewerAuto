@@ -98,6 +98,471 @@ def check_admin_credentials(email: str, password: str) -> bool:
     return email.strip().lower() == ADMIN_EMAIL and pw_hash == ADMIN_PASSWORD_HASH
 
 
+def get_validador_analytics(dias=30) -> dict:
+    """Retorna métricas gerais de uso do validador no período."""
+    try:
+        from datetime import datetime, timedelta
+        data_inicio = (datetime.now() - timedelta(days=dias)).isoformat()
+        
+        # Buscar sessões no período
+        resp_sessoes = _sb().table("track_validador_sessoes").select("*").gte("created_at", data_inicio).execute()
+        sessoes = resp_sessoes.data or []
+        
+        # Buscar itens no período
+        resp_itens = _sb().table("track_validador_itens").select("*").gte("created_at", data_inicio).execute()
+        itens = resp_itens.data or []
+        
+        if not sessoes and not itens:
+            return {"total_sessoes": 0, "total_arquivos": 0, "sucessos": 0, "erros": 0, 
+                    "taxa_sucesso": 0, "usuarios_ativos": 0, "categorias": {}}
+        
+        total_arquivos = len(itens)
+        sucessos = sum(1 for i in itens if i.get("sucesso"))
+        erros = total_arquivos - sucessos
+        taxa_sucesso = (sucessos / total_arquivos * 100) if total_arquivos > 0 else 0
+        
+        usuarios_unicos = set(s.get("user_id") for s in sessoes if s.get("user_id"))
+        
+        # Contagem por categoria
+        categorias = Counter(i.get("categoria") for i in itens if i.get("categoria"))
+        
+        return {
+            "total_sessoes": len(sessoes),
+            "total_arquivos": total_arquivos,
+            "sucessos": sucessos,
+            "erros": erros,
+            "taxa_sucesso": taxa_sucesso,
+            "usuarios_ativos": len(usuarios_unicos),
+            "categorias": dict(categorias.most_common(8)),
+        }
+    except Exception as e:
+        st.error(f"Erro ao buscar analytics: {e}")
+        return {"total_sessoes": 0, "total_arquivos": 0, "sucessos": 0, "erros": 0, 
+                "taxa_sucesso": 0, "usuarios_ativos": 0, "categorias": {}, "erro": str(e)}
+
+
+def get_validador_por_usuario(user_id: str, dias=30) -> dict:
+    """Retorna métricas de uso do validador para um usuário específico."""
+    try:
+        from datetime import datetime, timedelta
+        data_inicio = (datetime.now() - timedelta(days=dias)).isoformat()
+        
+        # Buscar sessões do usuário
+        resp_sessoes = (_sb().table("track_validador_sessoes")
+                       .select("*")
+                       .eq("user_id", user_id)
+                       .gte("created_at", data_inicio)
+                       .execute())
+        sessoes = resp_sessoes.data or []
+        
+        # Buscar itens do usuário
+        resp_itens = (_sb().table("track_validador_itens")
+                      .select("*")
+                      .eq("user_id", user_id)
+                      .gte("created_at", data_inicio)
+                      .order("created_at", desc=True)
+                      .execute())
+        itens = resp_itens.data or []
+        
+        if not sessoes and not itens:
+            return {"encontrado": False}
+        
+        total_arquivos = len(itens)
+        sucessos = sum(1 for i in itens if i.get("sucesso"))
+        erros = total_arquivos - sucessos
+        taxa_sucesso = (sucessos / total_arquivos * 100) if total_arquivos > 0 else 0
+        
+        # Categorias mais usadas
+        categorias = Counter(i.get("categoria") for i in itens if i.get("categoria"))
+        
+        # Últimos arquivos processados
+        ultimos = [
+            {
+                "arquivo_original": i.get("arquivo_original", "—"),
+                "novo_nome": i.get("novo_nome", "—"),
+                "categoria": i.get("categoria", "—"),
+                "sucesso": i.get("sucesso", False),
+                "data": i.get("created_at", "")[:16],
+            }
+            for i in itens[:10]
+        ]
+        
+        return {
+            "encontrado": True,
+            "total_sessoes": len(sessoes),
+            "total_arquivos": total_arquivos,
+            "sucessos": sucessos,
+            "erros": erros,
+            "taxa_sucesso": taxa_sucesso,
+            "categorias": dict(categorias.most_common(5)),
+            "ultimos_arquivos": ultimos,
+        }
+    except Exception as e:
+        st.error(f"Erro ao buscar analytics do usuário: {e}")
+        return {"encontrado": False, "erro": str(e)}
+
+
+def get_ranking_usuarios_validador(dias=30, limite=10) -> list:
+    """Retorna ranking dos usuários mais ativos no validador."""
+    try:
+        from datetime import datetime, timedelta
+        data_inicio = (datetime.now() - timedelta(days=dias)).isoformat()
+        
+        # Buscar todos os itens no período com info de usuário
+        resp = (_sb().table("track_validador_itens")
+                .select("user_id, sucesso, categoria, user_profiles(nome, email)")
+                .gte("created_at", data_inicio)
+                .execute())
+        itens = resp.data or []
+        
+        if not itens:
+            return []
+        
+        # Agregar por usuário
+        stats = defaultdict(lambda: {"arquivos": 0, "sucessos": 0, "nome": "", "email": ""})
+        
+        for item in itens:
+            uid = item.get("user_id")
+            if not uid:
+                continue
+            
+            stats[uid]["arquivos"] += 1
+            if item.get("sucesso"):
+                stats[uid]["sucessos"] += 1
+            
+            # Pegar nome/email do relacionamento
+            perfil = item.get("user_profiles", {})
+            if perfil:
+                stats[uid]["nome"] = perfil.get("nome", "Desconhecido")
+                stats[uid]["email"] = perfil.get("email", "")
+        
+        # Calcular sessões por usuário
+        resp_sessoes = (_sb().table("track_validador_sessoes")
+                       .select("user_id")
+                       .gte("created_at", data_inicio)
+                       .execute())
+        sessoes = resp_sessoes.data or []
+        
+        sessoes_por_user = Counter(s.get("user_id") for s in sessoes if s.get("user_id"))
+        
+        # Montar ranking
+        ranking = []
+        for uid, data in stats.items():
+            total = data["arquivos"]
+            ranking.append({
+                "user_id": uid,
+                "nome": data["nome"] or "Desconhecido",
+                "email": data["email"],
+                "arquivos": total,
+                "sucessos": data["sucessos"],
+                "taxa": (data["sucessos"] / total * 100) if total > 0 else 0,
+                "sessoes": sessoes_por_user.get(uid, 0),
+            })
+        
+        # Ordenar por quantidade de arquivos
+        ranking.sort(key=lambda x: x["arquivos"], reverse=True)
+        return ranking[:limite]
+    except Exception as e:
+        st.error(f"Erro ao buscar ranking: {e}")
+        return []
+
+
+# ============================================================================
+# ANALYTICS COMPLETO DO SISTEMA
+# ============================================================================
+
+def get_system_analytics(dias=30) -> dict:
+    """Retorna métricas abrangentes de todo o sistema StarCheck."""
+    try:
+        from datetime import datetime, timedelta
+        data_inicio = (datetime.now() - timedelta(days=dias)).isoformat()
+        
+        analytics = {
+            "periodo_dias": dias,
+            "data_inicio": data_inicio[:10],
+        }
+        
+        # 1. SESSÕES (Logins)
+        try:
+            resp = _sb().table("track_sessoes").select("*").gte("created_at", data_inicio).execute()
+            sessoes = resp.data or []
+            logins = [s for s in sessoes if s.get("evento") == "login"]
+            analytics["sessoes"] = {
+                "total_logins": len(logins),
+                "usuarios_ativos": len(set(s.get("user_id") for s in logins if s.get("user_id")))
+            }
+        except Exception as e:
+            analytics["sessoes"] = {"erro": str(e)}
+        
+        # 2. HOLERITES (Uploads)
+        try:
+            resp = _sb().table("track_holerites").select("*").gte("created_at", data_inicio).execute()
+            holerites = resp.data or []
+            analytics["holerites"] = {
+                "total_uploads": len(holerites),
+                "usuarios_unicos": len(set(h.get("user_id") for h in holerites if h.get("user_id")))
+            }
+        except Exception as e:
+            analytics["holerites"] = {"erro": str(e)}
+        
+        # 3. ANÁLISES INDIVIDUAIS
+        try:
+            resp = _sb().table("track_analises_individuais").select("*").gte("created_at", data_inicio).execute()
+            analises = resp.data or []
+            analytics["analises_individuais"] = {
+                "total": len(analises),
+                "com_margem": sum(1 for a in analises if a.get("margem_liquida")),
+                "por_prefeitura": dict(Counter(a.get("prefeitura") for a in analises if a.get("prefeitura")).most_common(8))
+            }
+        except Exception as e:
+            analytics["analises_individuais"] = {"erro": str(e)}
+        
+        # 4. ANÁLISES EM LOTE
+        try:
+            resp_sessoes = _sb().table("track_lote_sessoes").select("*").gte("created_at", data_inicio).execute()
+            sessoes_lote = resp_sessoes.data or []
+            resp_itens = _sb().table("track_lote_itens").select("*").gte("created_at", data_inicio).execute()
+            itens_lote = resp_itens.data or []
+            analytics["analises_lote"] = {
+                "total_sessoes": len(sessoes_lote),
+                "total_holerites": len(itens_lote),
+                "media_por_sessao": round(len(itens_lote) / len(sessoes_lote), 1) if sessoes_lote else 0,
+                "taxa_sucesso": sum(1 for i in itens_lote if i.get("sucesso")) / len(itens_lote) * 100 if itens_lote else 0
+            }
+        except Exception as e:
+            analytics["analises_lote"] = {"erro": str(e)}
+        
+        # 5. STELLA ESTRATÉGIAS
+        try:
+            resp = _sb().table("track_stella_estrategias").select("*").gte("created_at", data_inicio).execute()
+            estrategias = resp.data or []
+            analytics["stella_estrategias"] = {
+                "total": len(estrategias),
+                "com_proposta": sum(1 for e in estrategias if e.get("proposta_gerada"))
+            }
+        except Exception as e:
+            analytics["stella_estrategias"] = {"erro": str(e)}
+        
+        # 6. STELLA CHATS
+        try:
+            resp = _sb().table("track_stella_chats").select("*").gte("created_at", data_inicio).execute()
+            chats = resp.data or []
+            analytics["stella_chats"] = {
+                "total": len(chats),
+                "modo_individual": sum(1 for c in chats if c.get("modo") == "individual"),
+                "modo_lote": sum(1 for c in chats if c.get("modo") == "lote")
+            }
+        except Exception as e:
+            analytics["stella_chats"] = {"erro": str(e)}
+        
+        # 7. EXPORTS
+        try:
+            resp = _sb().table("track_exports").select("*").gte("created_at", data_inicio).execute()
+            exports = resp.data or []
+            por_tipo = Counter(e.get("tipo") for e in exports if e.get("tipo"))
+            analytics["exports"] = {
+                "total": len(exports),
+                "por_tipo": dict(por_tipo)
+            }
+        except Exception as e:
+            analytics["exports"] = {"erro": str(e)}
+        
+        # 8. VALIDADOR DE DOCUMENTOS
+        try:
+            resp_sessoes = _sb().table("track_validador_sessoes").select("*").gte("created_at", data_inicio).execute()
+            sessoes_val = resp_sessoes.data or []
+            resp_itens = _sb().table("track_validador_itens").select("*").gte("created_at", data_inicio).execute()
+            itens_val = resp_itens.data or []
+            analytics["validador"] = {
+                "total_sessoes": len(sessoes_val),
+                "total_arquivos": len(itens_val),
+                "sucessos": sum(1 for i in itens_val if i.get("sucesso")),
+                "categorias": dict(categorias.most_common(8))
+            }
+        except Exception as e:
+            analytics["validador"] = {"erro": str(e)}
+        
+        # 9. RESUMO GERAL
+        total_acoes = (
+            analytics.get("sessoes", {}).get("total_logins", 0) +
+            analytics.get("holerites", {}).get("total_uploads", 0) +
+            analytics.get("analises_individuais", {}).get("total", 0) +
+            analytics.get("analises_lote", {}).get("total_holerites", 0) +
+            analytics.get("stella_chats", {}).get("total", 0) +
+            analytics.get("validador", {}).get("total_arquivos", 0)
+        )
+        analytics["resumo"] = {
+            "total_acoes": total_acoes,
+            "usuarios_ativos_unicos": len(set(
+                [s.get("user_id") for s in logins if s.get("user_id")] +
+                [h.get("user_id") for h in holerites if h.get("user_id")] +
+                [a.get("user_id") for a in analises if a.get("user_id")] +
+                [i.get("user_id") for i in itens_lote if i.get("user_id")] +
+                [c.get("user_id") for c in chats if c.get("user_id")] +
+                [v.get("user_id") for v in itens_val if v.get("user_id")]
+            ))
+        }
+        
+        return analytics
+    except Exception as e:
+        st.error(f"Erro geral no analytics: {e}")
+        return {"erro": str(e)}
+
+
+def get_usuarios_ativos_detalhado(dias=30, limite=15) -> list:
+    """Retorna ranking detalhado de usuários por atividade no sistema."""
+    try:
+        from datetime import datetime, timedelta
+        data_inicio = (datetime.now() - timedelta(days=dias)).isoformat()
+        
+        # Buscar dados de todas as tabelas
+        stats = defaultdict(lambda: {
+            "nome": "", "email": "", "setor": "",
+            "logins": 0, "holerites": 0, "analises_ind": 0,
+            "analises_lote": 0, "chats": 0, "validador": 0,
+            "ultimo_acesso": None
+        })
+        
+        # Logins
+        try:
+            resp = _sb().table("track_sessoes").select("user_id, created_at, user_profiles(nome, email, setor)").gte("created_at", data_inicio).execute()
+            for row in resp.data or []:
+                uid = row.get("user_id")
+                if uid:
+                    stats[uid]["logins"] += 1
+                    stats[uid]["ultimo_acesso"] = max(stats[uid]["ultimo_acesso"] or row["created_at"], row["created_at"])
+                    perfil = row.get("user_profiles", {})
+                    if perfil:
+                        stats[uid]["nome"] = perfil.get("nome", stats[uid]["nome"])
+                        stats[uid]["email"] = perfil.get("email", stats[uid]["email"])
+                        stats[uid]["setor"] = perfil.get("setor", stats[uid]["setor"])
+        except: pass
+        
+        # Holerites
+        try:
+            resp = _sb().table("track_holerites").select("user_id").gte("created_at", data_inicio).execute()
+            for row in resp.data or []:
+                if row.get("user_id"):
+                    stats[row["user_id"]]["holerites"] += 1
+        except: pass
+        
+        # Análises individuais
+        try:
+            resp = _sb().table("track_analises_individuais").select("user_id").gte("created_at", data_inicio).execute()
+            for row in resp.data or []:
+                if row.get("user_id"):
+                    stats[row["user_id"]]["analises_ind"] += 1
+        except: pass
+        
+        # Itens de lote
+        try:
+            resp = _sb().table("track_lote_itens").select("user_id").gte("created_at", data_inicio).execute()
+            for row in resp.data or []:
+                if row.get("user_id"):
+                    stats[row["user_id"]]["analises_lote"] += 1
+        except: pass
+        
+        # Chats
+        try:
+            resp = _sb().table("track_stella_chats").select("user_id").gte("created_at", data_inicio).execute()
+            for row in resp.data or []:
+                if row.get("user_id"):
+                    stats[row["user_id"]]["chats"] += 1
+        except: pass
+        
+        # Validador
+        try:
+            resp = _sb().table("track_validador_itens").select("user_id").gte("created_at", data_inicio).execute()
+            for row in resp.data or []:
+                if row.get("user_id"):
+                    stats[row["user_id"]]["validador"] += 1
+        except: pass
+        
+        # Buscar nomes dos usuários da tabela user_profiles (fallback para quem não tem login no período)
+        try:
+            user_ids = list(stats.keys())
+            if user_ids:
+                # Buscar em batches de 100 (limite do Supabase para IN clause)
+                for i in range(0, len(user_ids), 100):
+                    batch = user_ids[i:i+100]
+                    resp = _sb().table("user_profiles").select("user_id, nome, email, setor").in_("user_id", batch).execute()
+                    for row in resp.data or []:
+                        uid = row.get("user_id")
+                        if uid and uid in stats:
+                            if row.get("nome"):
+                                stats[uid]["nome"] = row["nome"]
+                            if row.get("email"):
+                                stats[uid]["email"] = row["email"]
+                            if row.get("setor"):
+                                stats[uid]["setor"] = row["setor"]
+        except: pass
+        
+        # Montar ranking
+        ranking = []
+        for uid, data in stats.items():
+            total = data["holerites"] + data["analises_ind"] + data["analises_lote"] + data["chats"] + data["validador"]
+            if total > 0:
+                ranking.append({
+                    "user_id": uid,
+                    **data,
+                    "total_acoes": total,
+                    "score_engajamento": data["logins"] * 2 + total
+                })
+        
+        ranking.sort(key=lambda x: x["score_engajamento"], reverse=True)
+        return ranking[:limite]
+    except Exception as e:
+        st.error(f"Erro ao buscar usuários ativos: {e}")
+        return []
+
+
+def get_tendencia_semanal(dias=14) -> dict:
+    """Retorna dados de tendência diária para gráficos."""
+    try:
+        from datetime import datetime, timedelta
+        hoje = datetime.now()
+        
+        tendencia = {"dias": [], "logins": [], "holerites": [], "analises": [], "validador": []}
+        
+        for i in range(dias, 0, -1):
+            dia = hoje - timedelta(days=i)
+            dia_str = dia.strftime("%d/%m")
+            data_inicio = dia.replace(hour=0, minute=0, second=0).isoformat()
+            data_fim = dia.replace(hour=23, minute=59, second=59).isoformat()
+            
+            tendencia["dias"].append(dia_str)
+            
+            # Contar por tabela
+            try:
+                resp = _sb().table("track_sessoes").select("id").gte("created_at", data_inicio).lt("created_at", data_fim).execute()
+                tendencia["logins"].append(len(resp.data or []))
+            except:
+                tendencia["logins"].append(0)
+            
+            try:
+                resp = _sb().table("track_holerites").select("id").gte("created_at", data_inicio).lt("created_at", data_fim).execute()
+                tendencia["holerites"].append(len(resp.data or []))
+            except:
+                tendencia["holerites"].append(0)
+            
+            try:
+                resp = _sb().table("track_analises_individuais").select("id").gte("created_at", data_inicio).lt("created_at", data_fim).execute()
+                tendencia["analises"].append(len(resp.data or []))
+            except:
+                tendencia["analises"].append(0)
+            
+            try:
+                resp = _sb().table("track_validador_itens").select("id").gte("created_at", data_inicio).lt("created_at", data_fim).execute()
+                tendencia["validador"].append(len(resp.data or []))
+            except:
+                tendencia["validador"].append(0)
+        
+        return tendencia
+    except Exception as e:
+        st.error(f"Erro na tendência: {e}")
+        return {"dias": [], "logins": [], "holerites": [], "analises": [], "validador": []}
+
+
 def render_admin_login():
     st.markdown("""
     <style>
@@ -139,29 +604,28 @@ def _calcular_tendencias(todos: list) -> dict:
     novos_atual = sum(1 for u in todos if u.get("created_at") and 
                       semana_atual <= datetime.fromisoformat(str(u.get("created_at")).replace("Z", "+00:00").replace("+00:00", "")) <= hoje)
     novos_anterior = sum(1 for u in todos if u.get("created_at") and 
-                         semana_anterior <= datetime.fromisoformat(str(u.get("created_at")).replace("Z", "+00:00").replace("+00:00", "")) < semana_atual)
+                       semana_anterior <= datetime.fromisoformat(str(u.get("created_at")).replace("Z", "+00:00").replace("+00:00", "")) < semana_atual)
     
     tendencia = ((novos_atual - novos_anterior) / max(novos_anterior, 1)) * 100 if novos_anterior else 0
     return {"novos": novos_atual, "tendencia": round(tendencia, 1)}
 
 
-def _render_kpi_card(col, titulo: str, valor: int, cor: str, icone: str, subtitulo: str = ""):
+def _render_kpi_card(titulo: str, valor: int, cor: str, icone: str, subtitulo: str = ""):
     """Renderiza um card de KPI estilizado."""
-    with col:
-        st.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, {cor}15 0%, {cor}08 100%);
-            border-left: 4px solid {cor};
-            border-radius: 12px;
-            padding: 1.2rem 1rem;
-            margin-bottom: 1rem;
-        ">
-            <div style="font-size: 2rem; margin-bottom: 0.3rem;">{icone}</div>
-            <div style="font-size: 2rem; font-weight: 700; color: #1f2937;">{valor}</div>
-            <div style="font-size: 0.85rem; font-weight: 600; color: #6b7280; text-transform: uppercase;">{titulo}</div>
-            {f'<div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.3rem;">{subtitulo}</div>' if subtitulo else ''}
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(135deg, {cor}15 0%, {cor}08 100%);
+        border-left: 4px solid {cor};
+        border-radius: 12px;
+        padding: 1.2rem 1rem;
+        margin-bottom: 1rem;
+    ">
+        <div style="font-size: 2rem; margin-bottom: 0.3rem;">{icone}</div>
+        <div style="font-size: 2rem; font-weight: 700; color: #1f2937;">{valor}</div>
+        <div style="font-size: 0.85rem; font-weight: 600; color: #6b7280; text-transform: uppercase;">{titulo}</div>
+        {f'<div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.3rem;">{subtitulo}</div>' if subtitulo else ''}
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def _render_dashboard(todos: list):
@@ -182,12 +646,17 @@ def _render_dashboard(todos: list):
     
     # Cards de KPI
     c1, c2, c3, c4, c5 = st.columns(5)
-    _render_kpi_card(c1, "Total Usuários", n_total, "#7C3AED", "👥", f"+{tendencias['novos']} novos (7d)")
-    _render_kpi_card(c2, "Pendentes", n_pend, "#F59E0B", "🟡", "Aguardando aprovação")
-    _render_kpi_card(c3, "Aprovados", n_aprov, "#10B981", "✅", f"{n_corban} CORBANs, {n_op} Ops")
-    _render_kpi_card(c4, "Rejeitados", n_rej, "#EF4444", "❌", "Acesso negado")
-    _render_kpi_card(c5, "Suspensos", n_susp, "#3B82F6", "🔵", "Temporariamente bloqueados")
-    
+    with c1:
+        _render_kpi_card("Total Usuários", n_total, "#7C3AED", "👥", f"+{tendencias['novos']} novos (7d)")
+    with c2:
+        _render_kpi_card("Pendentes", n_pend, "#F59E0B", "🟡", "Aguardando aprovação")
+    with c3:
+        _render_kpi_card("Aprovados", n_aprov, "#10B981", "✅", f"{n_corban} CORBANs, {n_op} Ops")
+    with c4:
+        _render_kpi_card("Rejeitados", n_rej, "#EF4444", "❌", "Acesso negado")
+    with c5:
+        _render_kpi_card("Suspensos", n_susp, "#3B82F6", "🔵", "Temporariamente bloqueados")
+            
     # ── Gráficos ─────────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -375,9 +844,10 @@ def render_usuarios_panel():
     tab_pendentes = f"Pendentes ({n_pend})" if n_pend > 0 else "Pendentes"
     tab_notifs = "Notificações"
     
-    sub_pend, sub_todos, sub_notif = st.tabs([
+    sub_pend, sub_todos, sub_validador, sub_notif = st.tabs([
         tab_pendentes,
         "Todos os Usuários",
+        "📊 Analytics Sistema",
         tab_notifs,
     ])
 
@@ -745,6 +1215,216 @@ def render_usuarios_panel():
             
             # Divisor sutil entre cards
             st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+
+    # =========================================================================
+    # ABA — ANALYTICS DO SISTEMA
+    # =========================================================================
+    with sub_validador:
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; color: white;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span style="font-size: 1.75rem;">�</span>
+                <div>
+                    <div style="font-weight: 700; font-size: 1.15rem;">
+                        Analytics do Sistema StarCheck
+                    </div>
+                    <div style="font-size: 0.9rem; opacity: 0.9;">
+                        Métricas completas de uso e engajamento
+                    </div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Filtro de período
+        col_periodo, col_espaco = st.columns([1, 3])
+        with col_periodo:
+            dias = st.selectbox("📅 Período", [7, 14, 30, 90], index=2, 
+                               format_func=lambda x: f"Últimos {x} dias",
+                               key="system_periodo")
+        
+        # Buscar métricas do sistema
+        analytics = get_system_analytics(dias)
+        tendencia = get_tendencia_semanal(min(dias, 14))
+        
+        if analytics.get("erro"):
+            st.error(f"Erro ao carregar analytics: {analytics['erro']}")
+        else:
+            # ── KPIs Gerais ─────────────────────────────────────────────
+            resumo = analytics.get("resumo", {})
+            sessoes = analytics.get("sessoes", {})
+            
+            k1, k2, k3, k4, k5 = st.columns(5)
+            
+            with k1:
+                _render_kpi_card("Logins", sessoes.get("total_logins", 0), 
+                               "#7C3AED", "🔐", f"Últimos {dias}d")
+            with k2:
+                _render_kpi_card("Usuários Ativos", resumo.get("usuarios_ativos_unicos", 0), 
+                               "#3B82F6", "👥", "Únicos no período")
+            with k3:
+                total_acoes = resumo.get("total_acoes", 0)
+                _render_kpi_card("Total Ações", total_acoes, 
+                               "#10B981", "🚀", "Todas interações")
+            with k4:
+                holerites = analytics.get("holerites", {}).get("total_uploads", 0)
+                _render_kpi_card("Holerites", holerites, 
+                               "#F59E0B", "📄", "Uploads")
+            with k5:
+                validador = analytics.get("validador", {}).get("total_arquivos", 0)
+                _render_kpi_card("Validados", validador, 
+                               "#8B5CF6", "✅", "Documentos")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # ── Gráfico de Tendência ─────────────────────────────────────
+            st.markdown("#### 📈 Tendência de Uso")
+            if tendencia.get("dias"):
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=tendencia["dias"], y=tendencia["logins"],
+                    mode='lines+markers', name='Logins',
+                    line=dict(color='#7C3AED', width=2), marker=dict(size=6)
+                ))
+                fig.add_trace(go.Scatter(
+                    x=tendencia["dias"], y=tendencia["holerites"],
+                    mode='lines+markers', name='Holerites',
+                    line=dict(color='#3B82F6', width=2), marker=dict(size=6)
+                ))
+                fig.add_trace(go.Scatter(
+                    x=tendencia["dias"], y=tendencia["analises"],
+                    mode='lines+markers', name='Análises',
+                    line=dict(color='#10B981', width=2), marker=dict(size=6)
+                ))
+                fig.add_trace(go.Scatter(
+                    x=tendencia["dias"], y=tendencia["validador"],
+                    mode='lines+markers', name='Validador',
+                    line=dict(color='#8B5CF6', width=2), marker=dict(size=6)
+                ))
+                fig.update_layout(
+                    height=300,
+                    xaxis_title="", yaxis_title="Quantidade",
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # ── Métricas por Funcionalidade ──────────────────────────────
+            st.markdown("#### 🎯 Métricas por Funcionalidade")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**📄 Holerites**")
+                hol = analytics.get("analises_individuais", {})
+                st.metric("Análises Individuais", hol.get("total", 0))
+                st.metric("Com Margem Calculada", hol.get("com_margem", 0))
+                
+                lote = analytics.get("analises_lote", {})
+                st.metric("Lotes Processados", lote.get("total_sessoes", 0))
+                st.metric("Holerites em Lote", lote.get("total_holerites", 0))
+                
+            with col2:
+                st.markdown("**🤖 Stella AI**")
+                est = analytics.get("stella_estrategias", {})
+                chat = analytics.get("stella_chats", {})
+                st.metric("Estratégias Geradas", est.get("total", 0))
+                st.metric("Com Proposta", est.get("com_proposta", 0))
+                st.metric("Conversas Chat", chat.get("total", 0))
+                st.metric("Chat Individual", chat.get("modo_individual", 0))
+                st.metric("Chat Lote", chat.get("modo_lote", 0))
+                
+            with col3:
+                st.markdown("**📤 Exports**")
+                exp = analytics.get("exports", {})
+                st.metric("Total Exports", exp.get("total", 0))
+                por_tipo = exp.get("por_tipo", {})
+                for tipo, qtd in list(por_tipo.items())[:4]:
+                    st.metric(f"{tipo.upper()}", qtd)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # ── Ranking de Usuários ─────────────────────────────────────
+            st.markdown("#### 🏆 Top 15 Usuários Mais Ativos")
+            ranking = get_usuarios_ativos_detalhado(dias, 15)
+            
+            if ranking:
+                for i, user in enumerate(ranking, 1):
+                    medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+                    nome = user.get('nome', 'Desconhecido')
+                    email = user.get('email', '')
+                    setor = user.get('setor', '')
+                    total_acoes = user.get('total_acoes', 0)
+                    holerites = user.get('holerites', 0)
+                    chats = user.get('chats', 0)
+                    validador = user.get('validador', 0)
+                    
+                    card_html = f"""<div style="background: white; border-radius: 12px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; margin-bottom: 0.75rem;">
+<div style="display: flex; justify-content: space-between; align-items: center;">
+<div style="display: flex; align-items: center; gap: 0.75rem;">
+<span style="font-size: 1.25rem;">{medal}</span>
+<div>
+<div style="font-weight: 700; color: #1f2937; font-size: 0.95rem;">{nome}</div>
+<div style="font-size: 0.8rem; color: #6b7280;">{email} - {setor}</div>
+</div>
+</div>
+<div style="display: flex; gap: 1rem; text-align: center;">
+<div><div style="font-weight: 700; color: #7c3aed; font-size: 1rem;">{total_acoes}</div><div style="font-size: 0.7rem; color: #6b7280;">ações</div></div>
+<div><div style="font-weight: 700; color: #3b82f6; font-size: 1rem;">{holerites}</div><div style="font-size: 0.7rem; color: #6b7280;">holerites</div></div>
+<div><div style="font-weight: 700; color: #10b981; font-size: 1rem;">{chats}</div><div style="font-size: 0.7rem; color: #6b7280;">chats</div></div>
+<div><div style="font-weight: 700; color: #8b5cf6; font-size: 1rem;">{validador}</div><div style="font-size: 0.7rem; color: #6b7280;">validador</div></div>
+</div>
+</div>
+</div>"""
+                    st.markdown(card_html, unsafe_allow_html=True)
+            else:
+                st.info("Nenhuma atividade registrada no período.")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # ── Análise Individual por Usuário ────────────────────────────
+            st.markdown("#### 👤 Detalhamento por Usuário")
+            
+            try:
+                resp_users = _sb().table("user_profiles").select("user_id, nome, email").execute()
+                usuarios = resp_users.data or []
+                
+                user_options = {u.get("user_id"): f"{u.get('nome', '—')} ({u.get('email', '')})" 
+                             for u in usuarios}
+                
+                user_selecionado = st.selectbox(
+                    "Selecione um usuário para análise detalhada",
+                    options=list(user_options.keys()),
+                    format_func=lambda x: user_options.get(x, x),
+                    key="analise_user_sistema",
+                )
+                
+                if user_selecionado:
+                    # Buscar atividades do usuário
+                    user_stats = next((u for u in ranking if u.get("user_id") == user_selecionado), None)
+                    
+                    if user_stats:
+                        cols = st.columns(6)
+                        with cols[0]:
+                            st.metric("� Logins", user_stats.get("logins", 0))
+                        with cols[1]:
+                            st.metric("📄 Holerites", user_stats.get("holerites", 0))
+                        with cols[2]:
+                            st.metric("🔍 Análises Ind", user_stats.get("analises_ind", 0))
+                        with cols[3]:
+                            st.metric("� Análises Lote", user_stats.get("analises_lote", 0))
+                        with cols[4]:
+                            st.metric("💬 Chats", user_stats.get("chats", 0))
+                        with cols[5]:
+                            st.metric("✅ Validador", user_stats.get("validador", 0))
+                        
+                        if user_stats.get("ultimo_acesso"):
+                            st.info(f"� Último acesso: {user_stats['ultimo_acesso'][:16]}")
+                    else:
+                        st.info("Este usuário não teve atividades no período selecionado.")
+            except Exception as e:
+                st.error(f"Erro ao carregar usuários: {e}")
 
     # =========================================================================
     # ABA — NOTIFICAÇÕES
