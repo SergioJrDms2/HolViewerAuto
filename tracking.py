@@ -431,8 +431,7 @@ def track_stella_chat(
             "resposta":    (resposta or "")[:4000],
             "prefeitura":  prefeitura,
             "tokens_aprox": len((pergunta or "").split()) + len((resposta or "").split()),
-            "created_at":  _now(),
-        }).execute()
+            }).execute()
     except Exception as e:
         print(f"[tracking] track_stella_chat: {e}")
 
@@ -470,3 +469,114 @@ def track_export(
         }).execute()
     except Exception as e:
         print(f"[tracking] track_export: {e}")
+
+
+# ============================================================================
+# 8. VALIDADOR DE DOCUMENTOS
+# ============================================================================
+
+def upload_documento_validador(
+    file_bytes: bytes,
+    filename: str,
+    user_id: str,
+) -> Optional[str]:
+    """
+    Faz upload do documento processado para o Supabase Storage (bucket 'holerites').
+    Usa o mesmo bucket dos holerites para evitar problemas de permissão.
+    Organização: validador/{user_id}/{YYYY-MM}/{timestamp}_{filename}
+    
+    Retorna o storage_path em caso de sucesso, ou None em caso de erro.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        ts  = int(time.time())
+        safe = filename.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        path = f"validador/{user_id}/{now.strftime('%Y-%m')}/{ts}_{safe}"
+        
+        _get_sb().storage.from_("holerites").upload(
+            path=path,
+            file=file_bytes,
+            file_options={"content-type": "application/pdf", "upsert": "false"},
+        )
+        return path
+    except Exception as e:
+        # Silencia erro de bucket - tracking é secundário
+        error_msg = str(e).lower()
+        if "bucket" in error_msg and "not found" in error_msg:
+            print(f"[tracking] Bucket não configurado - upload ignorado")
+        else:
+            print(f"[tracking] upload_documento_validador '{filename}': {e}")
+        return None
+
+
+def track_validador_sessao(
+    arquivos_processados: list,
+    duracao_ms: int = 0,
+) -> Optional[str]:
+    """
+    Registra uma sessão de processamento do validador de documentos.
+    Retorna o UUID da sessão criada.
+    
+    Chamado em validador_arquivos.py após processar todos os arquivos.
+    """
+    uid = _uid()
+    if not uid or not arquivos_processados:
+        return None
+    try:
+        sucessos = sum(1 for a in arquivos_processados if a.get("sucesso"))
+        
+        row = {
+            "user_id":           uid,
+            "total_arquivos":    len(arquivos_processados),
+            "sucessos":          sucessos,
+            "erros":             len(arquivos_processados) - sucessos,
+            "duracao_ms":        duracao_ms,
+            "created_at":        _now(),
+        }
+        
+        resp = _get_sb().table("track_validador_sessoes").insert(row).execute()
+        if resp.data:
+            sessao_id = resp.data[0].get("id")
+            _track_validador_itens(sessao_id, uid, arquivos_processados)
+            return sessao_id
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "row-level security" in error_msg or "42501" in error_msg:
+            print(f"[tracking] Permissão negada na tabela track_validador_sessoes - sessão não registrada")
+        else:
+            print(f"[tracking] track_validador_sessao: {e}")
+    return None
+
+
+def _track_validador_itens(
+    sessao_id: str,
+    user_id: str,
+    arquivos_processados: list,
+):
+    """Batch-insere os itens individuais do validador (chunks de 100)."""
+    try:
+        rows = []
+        for a in arquivos_processados:
+            rows.append({
+                "sessao_id":       sessao_id,
+                "user_id":         user_id,
+                "arquivo_original": a.get("original", ""),
+                "novo_nome":       a.get("novo_nome", ""),
+                "categoria":       a.get("categoria", ""),
+                "referencia":      a.get("referencia", ""),
+                "sucesso":         a.get("sucesso", False),
+                "erro":            a.get("erro", "") if not a.get("sucesso") else None,
+                "storage_path":    a.get("storage_path"),
+                "tamanho_bytes":   len(a.get("pdf_bytes", b"")) if a.get("pdf_bytes") else 0,
+                "created_at":      _now(),
+            })
+        
+        sb = _get_sb()
+        for i in range(0, len(rows), 100):
+            sb.table("track_validador_itens").insert(rows[i:i + 100]).execute()
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "row-level security" in error_msg or "42501" in error_msg:
+            print(f"[tracking] Permissão negada na tabela track_validador_itens - itens não registrados")
+        else:
+            print(f"[tracking] _track_validador_itens: {e}")
