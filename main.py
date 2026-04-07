@@ -277,9 +277,9 @@ PREFEITURAS_CONFIG = {
        "emp": 0.35, "cc": 0.05, "cb": 0.10,
        "proventos_campos": [],
        "proventos_kw": [
-           # Vencimento Base é automático como salariobase — NÃO entra aqui
-           "adicional tempo servico", "adicional tempo serviço",
-           "horas estudo e pesquisa", "horas estudo", "hora estudo",
+            "adicional tempo servico", "adicional tempo serviço",
+            "horas estudo e pesquisa", "horas estudo e pesquisa (1/3)",
+            "horas estudo", "hora estudo",
        ],
        "descontos_campos": [
            "irrf",  # → lê descontos_obrigatorios.irrf
@@ -609,9 +609,13 @@ def calcular_margem_ia(dados: Dict) -> Dict:
     marg_cc_total  = base_calculo * perc_cc
     marg_cb_total  = base_calculo * perc_cb
 
+    total_cartoes_cc = cartoes_nossos + cartoes_concorrentes + cartoes_nao_comp + cartoes_desconhec
+
+    total_cartoes_cb = cartoes_nossos  
+
     marg_emp_disp = marg_emp_total - total_emprestimos
-    marg_cc_disp  = marg_cc_total  - total_cartoes
-    marg_cb_disp  = marg_cb_total  - total_cartoes
+    marg_cc_disp  = marg_cc_total  - total_cartoes_cc   
+    marg_cb_disp  = marg_cb_total  - total_cartoes_cb 
 
     liquido_calc = base_proventos - deducoes - total_emprestimos - total_cartoes
     perc_liq     = (liquido_calc / base_proventos * 100) if base_proventos > 0 else 0
@@ -624,7 +628,7 @@ def calcular_margem_ia(dados: Dict) -> Dict:
         "base_calculo":           base_calculo,
         "descontos_compulsorios": deducoes,
         "total_emprestimos":      total_emprestimos,
-        "total_cartoes":          total_cartoes,
+        "total_cartoes":          total_cartoes_cc,
         "cartoes_nossos":         cartoes_nossos,
         "cartoes_concorrentes":   cartoes_concorrentes,
         "cartoes_nao_comp":       cartoes_nao_comp,
@@ -638,13 +642,13 @@ def calcular_margem_ia(dados: Dict) -> Dict:
         "cartao_consignado": {
             "percentual":   perc_cc,
             "margem_total": marg_cc_total,
-            "comprometido": total_cartoes,
+            "comprometido": total_cartoes_cc,
             "disponivel":   marg_cc_disp,
         },
         "cartao_beneficio": {
             "percentual":   perc_cb,
             "margem_total": marg_cb_total,
-            "comprometido": total_cartoes,
+            "comprometido": total_cartoes_cb,
             "disponivel":   marg_cb_disp,
         },
         "liquido_calculado":   liquido_calc,
@@ -1935,6 +1939,19 @@ def render_margem_cards(margem: Dict, dados: Dict = None):
                                ("insalubridade","Insalubridade")]:
                     v = _abs_val(vf.get(k, 0))
                     if v > 0: html += item_extrato(lb, v)
+
+            # Proventos capturados via keyword (ex: HORAS ESTUDO E PESQUISA em Embu)
+            prov_kw_cfg_vis = cfg_pref.get("proventos_kw", [])
+            _proventos_raw_vis = (dados or {}).get("proventos_raw", []) if dados else []
+            _KW_BASE_VIS = ["salario","salário","vencimento","vencimentos","remuneracao","subsidio"]
+            if prov_kw_cfg_vis and _proventos_raw_vis:
+                for item in _proventos_raw_vis:
+                    desc = item.get("descricao", "")
+                    val  = _abs_val(item.get("valor", 0))
+                    if val <= 0: continue
+                    if _kw_match(desc, _KW_BASE_VIS): continue
+                    if _kw_match(desc, prov_kw_cfg_vis):
+                        html += item_extrato(str(desc)[:30], val)
 
             html += '<div style="font-size:.72rem;color:#9ca3af;padding:4px 0;">(-) DESCONTOS</div>'
 
