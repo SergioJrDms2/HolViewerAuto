@@ -14,6 +14,7 @@ from datetime import datetime
 from PIL import Image, ImageEnhance
 from groq import Groq
 import fitz  # PyMuPDF - para converter PDF em imagem sem depender do Poppler
+import tracking  # Importa funções de tracking
 
 # ================================================================
 #  CONFIGURAÇÃO
@@ -53,6 +54,9 @@ CATEGORIAS_VALIDAS = [
     "RESERVA_MARGEM",
     "TOKEN",
     "DOCUMENTO_DESCONHECIDO",
+    "CONTRATO",
+    "MEMORANDO",
+    "DECLARACAO"
 ]
 
 PROMPT = """Você é um especialista em classificação de documentos brasileiros para o sistema Banksoft.
@@ -74,6 +78,9 @@ Categorias disponíveis (use exatamente como escrito):
 - "DADOS_BANCARIOS"                  → Extrato bancário, dados bancários, comprovante de conta
 - "RESERVA_MARGEM"                   → Reserva de margem ou comprovante de margem
 - "TOKEN"                            → Token de autorização
+- "CONTRATO"                         → Contrato assinado, contrato de serviço ou contrato social
+- "MEMORANDO"                        → Memorando interno, ofício ou comunicação oficial
+- "DECLARACAO"                       → Declaração assinada, termo de responsabilidade ou declaração de vínculo
 - "DOCUMENTO_DESCONHECIDO"           → Nenhum dos anteriores ou ilegível
 
 Regras para o campo "referencia":
@@ -261,6 +268,35 @@ section[data-testid="stMain"] { font-family: 'Inter', sans-serif; }
 [data-testid="stExpander"] summary:hover {
     box-shadow: 0 4px 16px rgba(109,40,217,.12) !important;
     border-color: #C4B5FD !important;
+}
+
+/* ── Expander de Categorias (diferenciado roxinho) ────────────────── */
+/* Estiliza o segundo expander (de categorias) diferente do primeiro (como usar) */
+section[data-testid="stMain"] > div > div > div > div[data-testid="stExpander"]:nth-of-type(2) summary,
+section[data-testid="stMain"] div[data-testid="stExpander"][aria-expanded] summary:has-text("Categorias"),
+section[data-testid="stMain"] div[data-testid="stVerticalBlock"] div[data-testid="stExpander"]:nth-child(2) summary {
+    background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 50%, #DDD6FE 100%) !important;
+    border: 2px solid #A78BFA !important;
+    border-left: 5px solid #7C3AED !important;
+    border-radius: 0.85rem !important;
+    box-shadow: 0 4px 15px rgba(124,58,237,0.15) !important;
+    font-weight: 800 !important;
+    color: #5B21B6 !important;
+    font-size: 0.95rem !important;
+}
+section[data-testid="stMain"] div[data-testid="stExpander"]:nth-of-type(2) summary:hover,
+section[data-testid="stMain"] div[data-testid="stExpander"]:nth-child(2) summary:hover {
+    background: linear-gradient(135deg, #EDE9FE 0%, #DDD6FE 50%, #C4B5FD 100%) !important;
+    box-shadow: 0 6px 25px rgba(124,58,237,0.25) !important;
+    border-color: #8B5CF6 !important;
+    transform: translateY(-1px);
+}
+section[data-testid="stMain"] div[data-testid="stExpander"]:nth-of-type(2),
+section[data-testid="stMain"] div[data-testid="stExpander"]:nth-child(2) {
+    background: linear-gradient(180deg, #FAF5FF 0%, #F5F3FF 100%);
+    border-radius: 1rem;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
 }
 
 /* ── Categoria tag ────────────────────────────────────────────────── */
@@ -580,29 +616,31 @@ def render_validador_page():
         st.markdown("</div>", unsafe_allow_html=True)
     
     with col_info:
-        st.markdown("<div class='validador-info-card'> <div class='validador-info-title'>📖 Categorias</div> </div> ", unsafe_allow_html=True)
-        st.markdown("", unsafe_allow_html=True)
-        
-        categorias_resumo = [
-            ("🆔", "ID Frente/Verso", "RG, CNH"),
-            ("🏠", "Endereço", "Contas de serviços"),
-            ("💰", "Holerite", "Contracheque"),
-            ("🤳", "Selfie", "Foto do cliente"),
-            ("🏦", "Bancário", "Extrato, dados"),
-        ]
-        
-        for icone, nome, desc in categorias_resumo:
-            st.markdown(f"""
-            <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid #E5E7EB;">
-                <span style="font-size: 1.1rem;">{icone}</span>
-                <div>
-                    <div style="font-weight: 600; color: #111827; font-size: 0.8rem;">{nome}</div>
-                    <div style="font-size: 0.7rem; color: #6B7280;">{desc}</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("</div>", unsafe_allow_html=True)
+        # Expander com todas as categorias (igual ao "Como usar")
+        with st.expander("📖 Categorias — clique para expandir", expanded=False):
+            html_categorias = '''<div style="padding: 0.5rem 0;">'''
+            
+            cards = [
+                ("🆔", "ID Frente", "RG frente, CNH", "#EDE9FE", "#6D28D9"),
+                ("🆔", "ID Verso", "RG verso, CNH verso", "#EDE9FE", "#6D28D9"),
+                ("🏠", "Comprovante de Endereço", "Contas de serviços", "#DBEAFE", "#1E40AF"),
+                ("🏠", "Complemento Endereço", "Doc. complementar", "#DBEAFE", "#1E40AF"),
+                ("💰", "Holerite", "Contracheque", "#D1FAE5", "#047857"),
+                ("🤳", "Selfie", "Foto do cliente", "#FCE7F3", "#BE185D"),
+                ("🏦", "Dados Bancários", "Extrato, comprovante", "#E0E7FF", "#4338CA"),
+                ("📋", "Reserva de Margem", "Comprovante de margem", "#FEF3C7", "#B45309"),
+                ("🔑", "Token", "Token de autorização", "#F3E8FF", "#7C3AED"),
+                ("📄", "Contrato", "Contrato assinado", "#E0F2FE", "#0369A1"),
+                ("📨", "Memorando", "Ofício, comunicação", "#FEF9C3", "#A16207"),
+                ("📝", "Declaração", "Termo de responsabilidade", "#FFEDD5", "#C2410C"),
+                ("❓", "Desconhecido", "Não identificado", "#F3F4F6", "#6B7280"),
+            ]
+            
+            for icone, nome, desc, bg, tc in cards:
+                html_categorias += f'<div style="background: linear-gradient(135deg, {bg} 0%, #FFFFFF 100%); border: 1.5px solid {bg}; border-radius: 0.75rem; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);"><div style="background: {bg}; border-radius: 0.5rem; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0;">{icone}</div><div style="flex: 1; min-width: 0;"><div style="font-weight: 700; color: {tc}; font-size: 0.82rem; margin-bottom: 0.15rem;">{nome}</div><div style="font-size: 0.7rem; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{desc}</div></div></div>'
+            
+            html_categorias += '</div>'
+            st.markdown(html_categorias, unsafe_allow_html=True)
     
     # Processamento
     if st.session_state.processando and uploaded_files:
@@ -648,6 +686,26 @@ def render_validador_page():
                 })
         
         progress_bar.empty()
+        
+        # Upload dos documentos processados para o storage e tracking
+        user_id = st.session_state.usuario.get("id") if st.session_state.get("usuario") else None
+        if user_id:
+            for arquivo in arquivos_resultado:
+                if arquivo.get("pdf_bytes") and arquivo.get("sucesso"):
+                    # Upload do PDF para o storage
+                    storage_path = tracking.upload_documento_validador(
+                        file_bytes=arquivo["pdf_bytes"],
+                        filename=arquivo["novo_nome"],
+                        user_id=user_id
+                    )
+                    arquivo["storage_path"] = storage_path
+            
+            # Tracking da sessão de processamento
+            tracking.track_validador_sessao(
+                arquivos_processados=arquivos_resultado,
+                duracao_ms=0  # Pode ser calculado se necessário
+            )
+        
         st.session_state.arquivos_processados = arquivos_resultado
         st.session_state.processando = False
         st.success("✅ Processamento concluído! Todos os arquivos foram convertidos para PDF.")
@@ -687,6 +745,9 @@ def render_validador_page():
             "DADOS_BANCARIOS": "🏦",
             "RESERVA_MARGEM": "📋",
             "TOKEN": "🔑",
+            "CONTRATO": "📄",
+            "MEMORANDO": "📨",
+            "DECLARACAO": "📝",
             "DOCUMENTO_DESCONHECIDO": "❓",
             "ERRO": "⚠️",
         }
@@ -753,6 +814,9 @@ def render_validador_page():
             "DADOS_BANCARIOS": "🏦",
             "RESERVA_MARGEM": "📋",
             "TOKEN": "🔑",
+            "CONTRATO": "📄",
+            "MEMORANDO": "📨",
+            "DECLARACAO": "📝",
             "DOCUMENTO_DESCONHECIDO": "❓",
             "ERRO": "⚠️",
         }
@@ -815,6 +879,9 @@ def render_validador_page():
             "DADOS_BANCARIOS": "🏦",
             "RESERVA_MARGEM": "📋",
             "TOKEN": "🔑",
+            "CONTRATO": "📄",
+            "MEMORANDO": "📨",
+            "DECLARACAO": "📝",
             "DOCUMENTO_DESCONHECIDO": "❓",
             "ERRO": "⚠️",
         }
