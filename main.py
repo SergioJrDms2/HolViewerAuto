@@ -400,6 +400,28 @@ PREFEITURAS_CONFIG = {
        ],
    },
 
+   "NOVA_ODESSA": {
+        "emp": 0.30, "cc": 0.00, "cb": 0.00,
+        "proventos_campos": [],
+        "proventos_kw": [
+            # Salário Base é automático — NÃO entra aqui
+            "adic anuenio", "adic anuênio", "adicional anuenio", "adicional anuênio",
+            "sexta parte",
+            "evolucao funcio", "evolução funcio", "evolucao funcional", "evolução funcional",
+            "insalubridade",
+        ],
+        "descontos_campos": [
+            "irrf",        # → I.R.R.F
+            "previdencia", # → I.N.S.S / Previdência
+        ],
+        "descontos_kw": [
+            "pensao alimt", "pensão alimt", "pensao aliment", "pensão aliment",
+            "plano odonto", "odontologico", "odontológico", "cv odontologico",
+            "convenio sspmano", "convênio sspmano",
+            "mensal sspmano", "sspmano",
+        ],
+    },
+
     "MARINGA": {
         "emp": 0.35, "cc": 0.10, "cb": 0.00,
         "base_type": "apenas_base",
@@ -468,6 +490,7 @@ PREFEITURAS_KEYWORDS = {
     "UBERABA":           ["uberaba"],
     "ITAITUBA":          ["itaituba"],
     "BARCARENA":         ["barcarena"],
+    "NOVA_ODESSA":       ["nova odessa", "prefeitura de nova odessa", "pref munic nova odessa", "prefeitura municipal nova odessa"],
 }
 
 def detectar_prefeitura_key(prefeitura_str: str) -> str:
@@ -1145,8 +1168,8 @@ REGRAS CRÍTICAS — LEIA COM ATENÇÃO:
                     item["valor"] = abs(item.get("valor", 0))
 
         _EMP_KW  = ["emprestimo","emprest","financiamento","delta global","bmp",
-                    "credito pessoal","cp consig","cef","banco industrial","taormina",
-                    "uasprev"]
+            "credito pessoal","cp consig","cef","banco industrial","taormina",
+            "uasprev","consignado"]
         _CART_KW = ["cartao","cred ","cart.","saque","anticipay","starcard","starbank",
                     "panamericano car","daycoval cart","bmg cart","credcesta",
                     "meucashcard","big card","brcard","monetarie","credifin","pixcard"]
@@ -5487,6 +5510,7 @@ PREFEITURAS = {
     'CUIABA':            {'nome': 'Prefeitura de Cuiabá - MT',           'descricao': 'Cidade: Cuiabá - Mato Grosso'},
     'ALEGO':             {'nome': 'Assembleia Legislativa de Goiás - ALEGO', 'descricao': 'Assembleia Legislativa - Goiás'},
     'GOVERNO_GOIAS':     {'nome': 'Governo do Estado de Goiás',          'descricao': 'Estado de Goiás'},
+    'NOVA_ODESSA':       {'nome': 'Prefeitura de Nova Odessa - SP', 'descricao': 'Cidade: Nova Odessa - São Paulo'},
 }
 # MAIN
 # ============================================================================
