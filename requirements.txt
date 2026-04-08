@@ -41,6 +41,7 @@ google-generativeai
 openai
 json-repair
 openpyxl
+groq
 
 # ============================================================================
 # NOTAS DE INSTALAÇÃO
