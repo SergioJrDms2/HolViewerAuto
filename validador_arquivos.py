@@ -23,7 +23,7 @@ import tracking  # Importa funções de tracking
 def _get_groq_key() -> str:
     """Obtém a chave da API Groq."""
     try:
-        return "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"
+        return "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"
     except Exception:
         return os.environ.get("GROQ_API_KEY", "")
 
