@@ -59,6 +59,7 @@ CATEGORIAS_VALIDAS = [
     "DECLARACAO"
 ]
 
+
 PROMPT = """Você é um especialista em classificação de documentos brasileiros para o sistema Banksoft.
 
 Analise a imagem com atenção e retorne um JSON com dois campos:
@@ -69,8 +70,9 @@ Analise a imagem com atenção e retorne um JSON com dois campos:
 }
 
 Categorias disponíveis (use exatamente como escrito):
-- "DOCUMENTO_DE_IDENTIFICACAO"       → RG frente, CNH frente ou CNH verso
-- "DOCUMENTO_DE_IDENTIFICACAO_VERSO" → RG verso (lado com impressão digital / assinatura)
+- "DOCUMENTO_DE_IDENTIFICACAO"       → RG FRENTE: contém foto 3x4, nome completo, número do RG, data de nascimento, CPF, naturalidade, "Carteira de Identidade" no cabeçalho.
+                                        CNH FRENTE ou CNH VERSO: contém categoria (A, B, AB...), RENACH, validade, DETRAN.
+- "DOCUMENTO_DE_IDENTIFICACAO_VERSO" → RG VERSO EXCLUSIVAMENTE: contém campo de impressão digital (área com linhas de dedo), campo de assinatura do titular, filiação (nomes dos pais), local de nascimento, órgão expedidor, data de expedição. NÃO há foto de rosto neste lado. Se houver qualquer dúvida entre frente e verso do RG, prefira VERSO se houver impressão digital ou campo de assinatura visível.
 - "COMPROVANTE_DE_ENDERECO"          → Conta de luz, água, gás, boleto, fatura com endereço
 - "COMPLEMENTO_ENDERECO"             → Documento complementar de endereço
 - "HOLERITE"                         → Holerite, contracheque ou demonstrativo de pagamento
@@ -95,6 +97,11 @@ Regras gerais:
 - RG verso tem impressão digital, assinatura e observações no verso — nunca confunda com frente
 - CNH tem campos: categoria (A, B, AB...), validade, RENACH, DETRAN
 - Holerite tem: salário bruto, líquido, INSS, FGTS, competência (mês/ano)
+
+REGRA DE DESEMPATE para RG:
+- Tem FOTO DO ROSTO → DOCUMENTO_DE_IDENTIFICACAO (frente)
+- Tem IMPRESSÃO DIGITAL ou campo de ASSINATURA, sem foto de rosto → DOCUMENTO_DE_IDENTIFICACAO_VERSO
+
 """
 
 # ================================================================
@@ -419,10 +426,10 @@ section[data-testid="stMain"] div[data-testid="stExpander"]:nth-child(2) {
 # ================================================================
 
 def melhorar_imagem(img: Image.Image) -> Image.Image:
-    """Melhora a qualidade da imagem para OCR."""
     img = img.convert("RGB")
-    img = ImageEnhance.Contrast(img).enhance(1.5)
-    img = ImageEnhance.Sharpness(img).enhance(2.0)
+    img = ImageEnhance.Contrast(img).enhance(1.8)   
+    img = ImageEnhance.Sharpness(img).enhance(2.5)  
+    img = ImageEnhance.Brightness(img).enhance(1.1) 
     return img
 
 def imagem_para_base64(img: Image.Image) -> str:
@@ -488,7 +495,7 @@ def classificar_imagem(img: Image.Image, client: Groq) -> dict:
                     {"type": "text",      "text": PROMPT},
                 ],
             }],
-            max_tokens=80,
+            max_tokens=150,
             temperature=0,
         )
         
