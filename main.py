@@ -1046,8 +1046,8 @@ def extrair_texto_imagem(bytes_: bytes) -> str:
 
 
 def _groq_key() -> str:
-    try: return "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"
-    except Exception: return os.environ.get("GROQ_API_KEY","")
+    try: return st.secrets["GROQ_API_KEY"]
+    except Exception: return os.environ.get("GROQ_API_KEY", "")
 
 # ============================================================================
 # ANÁLISE HOLERITE VIA IA
